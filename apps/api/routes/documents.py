@@ -78,9 +78,9 @@ async def upload_document(
 
 
 # ─────────────────────────────────────────────────────────────────
-# Upload + full auto pipeline
+# Upload + process (background — returns job ID immediately)
 # ─────────────────────────────────────────────────────────────────
-@router.post("/companies/{ticker}/documents/upload-and-process", status_code=200)
+@router.post("/companies/{ticker}/documents/upload-and-process", status_code=202)
 async def upload_and_process(
     ticker: str,
     file: UploadFile = File(...),
@@ -90,11 +90,11 @@ async def upload_and_process(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    One-click pipeline: upload → parse → extract KPIs → compare thesis → generate all outputs.
-    Returns full content of every step.
+    Upload a document and start background processing.
+    Returns a job_id immediately — poll /jobs/{job_id} for progress.
     """
-    import json as _json
-    from services.output_generator import generate_briefing, generate_ir_questions, generate_thesis_drift_report
+    from apps.api.models import ProcessingJob
+    from services.background_processor import run_single_pipeline, start_background_job
 
     # Look up company
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
@@ -102,21 +102,7 @@ async def upload_and_process(
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
 
-    output = {
-        "company": {"ticker": company.ticker, "name": company.name},
-        "period": period_label,
-        "pipeline_status": [],
-        "classification": None,
-        "metrics": [],
-        "guidance": [],
-        "thesis_comparison": None,
-        "surprises": [],
-        "briefing": None,
-        "ir_questions": [],
-        "thesis_drift": None,
-    }
-
-    # ── Step 1: Ingest ───────────────────────────────────────────
+    # Ingest
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
@@ -125,133 +111,43 @@ async def upload_and_process(
 
     try:
         doc = await ingest_document(
-            db=db,
-            company_id=company.id,
-            ticker=company.ticker,
-            file_path=tmp_path,
-            filename=file.filename or f"upload{suffix}",
-            document_type=document_type,
-            period_label=period_label,
-            title=title,
+            db=db, company_id=company.id, ticker=company.ticker,
+            file_path=tmp_path, filename=file.filename or f"upload{suffix}",
+            document_type=document_type, period_label=period_label, title=title,
         )
-        output["pipeline_status"].append({"step": "upload", "status": "ok", "document_id": str(doc.id)})
     except ValueError as exc:
         raise HTTPException(409, str(exc))
 
-    # ── Step 2: Parse ────────────────────────────────────────────
-    try:
-        parse_result = await process_document(db, doc, ticker=company.ticker)
-        output["classification"] = parse_result["classification"]
-        output["pipeline_status"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"], "tables": parse_result["tables_found"]})
-    except Exception as e:
-        output["pipeline_status"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
-        return output
+    # Create job record
+    job = ProcessingJob(
+        id=uuid.uuid4(),
+        company_id=company.id,
+        period_label=period_label,
+        job_type="single",
+        status="queued",
+        current_step="queued",
+        progress_pct=0,
+    )
+    db.add(job)
+    await db.commit()
 
-    # ── Step 3: Extract KPIs ─────────────────────────────────────
-    try:
-        from configs.settings import settings as _settings
-        text_path = Path(_settings.storage_base_path) / "processed" / company.ticker / period_label / "parsed_text.json"
-        pages = _json.loads(text_path.read_text())
-        full_text = "\n\n".join(p["text"] for p in pages)
+    # Launch background processing
+    start_background_job(
+        run_single_pipeline(job.id, company.id, company.ticker, doc.id, period_label)
+    )
 
-        metrics = await extract_metrics(db, doc, full_text)
-        guidance = await extract_guidance(db, doc, full_text)
-
-        output["metrics"] = [
-            {
-                "metric_name": m.metric_name,
-                "metric_value": float(m.metric_value) if m.metric_value else None,
-                "metric_text": m.metric_text,
-                "unit": m.unit,
-                "segment": m.segment,
-                "geography": m.geography,
-                "source_snippet": m.source_snippet,
-                "confidence": float(m.confidence) if m.confidence else None,
-            }
-            for m in metrics
-        ]
-        output["guidance"] = guidance
-        output["pipeline_status"].append({"step": "extract", "status": "ok", "metrics": len(metrics), "guidance": len(guidance)})
-    except Exception as e:
-        output["pipeline_status"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
-
-    # ── Steps 4-6: Run thesis comparison, surprises, briefing, IR questions IN PARALLEL ──
-    import asyncio as _aio
-
-    async def _compare():
-        try:
-            c = await compare_thesis(db, company.id, doc.id, period_label)
-            return ("compare", c.model_dump(), c.thesis_direction)
-        except ValueError:
-            return ("compare", None, "skipped")
-        except Exception as e:
-            return ("compare", None, str(e)[:200])
-
-    async def _surprises():
-        try:
-            from services.surprise_detector import detect_surprises as _ds
-            s = await _ds(db, company.id, doc.id, period_label)
-            return ("surprises", [x.model_dump() for x in s])
-        except Exception as e:
-            return ("surprises", [], str(e)[:200])
-
-    async def _briefing():
-        try:
-            b = await generate_briefing(db, company.id, period_label)
-            return ("briefing", b.model_dump())
-        except Exception as e:
-            return ("briefing", None, str(e)[:200])
-
-    async def _ir():
-        try:
-            q = await generate_ir_questions(db, company.id, period_label)
-            return ("ir_questions", [x.model_dump() for x in q])
-        except Exception as e:
-            return ("ir_questions", [], str(e)[:200])
-
-    # Run all four in parallel
-    results = await _aio.gather(_compare(), _surprises(), _briefing(), _ir(), return_exceptions=True)
-
-    for r in results:
-        if isinstance(r, Exception):
-            continue
-        if r[0] == "compare":
-            output["thesis_comparison"] = r[1]
-            status = "ok" if r[1] else ("skipped" if r[2] == "skipped" else "error")
-            output["pipeline_status"].append({"step": "compare", "status": status})
-        elif r[0] == "surprises":
-            output["surprises"] = r[1]
-            output["pipeline_status"].append({"step": "surprises", "status": "ok", "count": len(r[1])})
-        elif r[0] == "briefing":
-            output["briefing"] = r[1]
-            output["pipeline_status"].append({"step": "briefing", "status": "ok" if r[1] else "error"})
-        elif r[0] == "ir_questions":
-            output["ir_questions"] = r[1]
-            output["pipeline_status"].append({"step": "ir_questions", "status": "ok", "count": len(r[1])})
-
-    # Save full analysis to DB for history
-    try:
-        import json as _save_json
-        ro = ResearchOutput(
-            id=uuid.uuid4(),
-            company_id=company.id,
-            period_label=period_label,
-            output_type="full_analysis",
-            content_json=_save_json.dumps(output, default=str),
-            review_status="draft",
-        )
-        db.add(ro)
-        await db.commit()
-    except Exception:
-        pass
-
-    return output
+    return {
+        "job_id": str(job.id),
+        "status": "queued",
+        "message": "Processing started. Poll /api/v1/jobs/" + str(job.id) + " for progress.",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
-# Batch upload: type-specific extraction per doc, then synthesis
+# Batch upload (background)
 # ─────────────────────────────────────────────────────────────────
-@router.post("/companies/{ticker}/documents/batch-upload", status_code=200)
+
+@router.post("/companies/{ticker}/documents/batch-upload", status_code=202)
 async def batch_upload_and_process(
     ticker: str,
     files: list[UploadFile] = File(...),
@@ -261,208 +157,103 @@ async def batch_upload_and_process(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Upload multiple documents for the same period. Each document is
-    processed with a TYPE-SPECIFIC prompt (earnings get number extraction,
-    transcripts get tone/guidance analysis, broker notes get consensus
-    comparison). Then everything is synthesised into one opinionated briefing.
-
-    document_types: comma-separated list matching each file, e.g. "earnings_release,transcript,broker_note"
-    titles: comma-separated list matching each file (optional)
+    Upload multiple documents and start background processing.
+    Returns a job_id immediately — poll /jobs/{job_id} for progress.
     """
-    import json as _json
-    from services.metric_extractor import extract_by_document_type
-    from services.surprise_detector import detect_surprises
-    from services.output_generator import generate_ir_questions
-    from services.llm_client import call_llm_json
-    from prompts import SYNTHESIS_BRIEFING
+    from apps.api.models import ProcessingJob
+    from services.background_processor import run_batch_pipeline, start_background_job
 
-    # Parse comma-separated strings into lists
-    doc_types_list = [t.strip() for t in document_types.split(",")]
-    titles_list = [t.strip() for t in titles.split(",")] if titles else []
-
-    # Look up company
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
 
-    # Load thesis
-    from apps.api.models import ThesisVersion
-    thesis_q = await db.execute(
-        select(ThesisVersion).where(
-            ThesisVersion.company_id == company.id, ThesisVersion.active == True
-        ).order_by(ThesisVersion.thesis_date.desc()).limit(1)
-    )
-    thesis = thesis_q.scalar_one_or_none()
-    thesis_text = thesis.core_thesis if thesis else "No thesis on file."
-
-    if not titles_list or titles_list == ['']:
-        titles_list = [None] * len(files)
+    doc_types_list = [t.strip() for t in document_types.split(",")]
+    titles_list = [t.strip() for t in titles.split(",")] if titles else []
     while len(doc_types_list) < len(files):
         doc_types_list.append("other")
     while len(titles_list) < len(files):
         titles_list.append(None)
 
-    # Buckets for type-specific extraction results
-    earnings_data = []
-    transcript_data = []
-    broker_data = []
-    presentation_data = []
-
-    output = {
-        "company": {"ticker": company.ticker, "name": company.name},
-        "period": period_label,
-        "documents_processed": [],
-        "per_document_extractions": {},
-        "thesis_comparison": None,
-        "surprises": [],
-        "synthesis": None,
-        "ir_questions": [],
-    }
-
-    last_doc_id = None
-
-    # ── Process each file with type-specific prompts ─────────────
+    # Ingest all files first (fast)
+    doc_ids = []
     for i, file in enumerate(files):
-        doc_type = doc_types_list[i]
-        doc_result = {"filename": file.filename, "document_type": doc_type, "steps": []}
-
-        # Ingest
         suffix = Path(file.filename).suffix if file.filename else ".pdf"
         with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
-
         try:
             doc = await ingest_document(
-                db=db,
-                company_id=company.id,
-                ticker=company.ticker,
-                file_path=tmp_path,
-                filename=file.filename or f"upload_{i}{suffix}",
-                document_type=doc_type,
-                period_label=period_label,
-                title=titles_list[i] or file.filename,
+                db=db, company_id=company.id, ticker=company.ticker,
+                file_path=tmp_path, filename=file.filename or f"upload_{i}{suffix}",
+                document_type=doc_types_list[i], period_label=period_label,
+                title=titles_list[i] or (file.filename if file.filename else None),
             )
-            doc_result["document_id"] = str(doc.id)
-            doc_result["steps"].append({"step": "upload", "status": "ok"})
-            last_doc_id = doc.id
-        except ValueError as exc:
-            doc_result["steps"].append({"step": "upload", "status": "skipped", "detail": str(exc)})
-            output["documents_processed"].append(doc_result)
-            continue
+            doc_ids.append(doc.id)
+        except ValueError:
+            continue  # skip duplicates
 
-        # Parse
+    if not doc_ids:
+        raise HTTPException(409, "All documents are duplicates")
+
+    # Create job
+    job = ProcessingJob(
+        id=uuid.uuid4(),
+        company_id=company.id,
+        period_label=period_label,
+        job_type="batch",
+        status="queued",
+        current_step="queued",
+        progress_pct=0,
+    )
+    db.add(job)
+    await db.commit()
+
+    # Launch background processing
+    start_background_job(
+        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types_list[:len(doc_ids)], period_label)
+    )
+
+    return {
+        "job_id": str(job.id),
+        "documents_uploaded": len(doc_ids),
+        "status": "queued",
+        "message": "Processing started. Poll /api/v1/jobs/" + str(job.id) + " for progress.",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Job status polling
+# ─────────────────────────────────────────────────────────────────
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Poll this endpoint for processing progress and results."""
+    import json as _json
+    from apps.api.models import ProcessingJob
+
+    result = await db.execute(select(ProcessingJob).where(ProcessingJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    out = {
+        "job_id": str(job.id),
+        "status": job.status,
+        "current_step": job.current_step,
+        "progress_pct": job.progress_pct,
+        "steps_completed": _json.loads(job.steps_completed) if job.steps_completed else [],
+        "error_message": job.error_message,
+    }
+
+    # Include full result when completed
+    if job.status == "completed" and job.result_json:
         try:
-            parse_result = await process_document(db, doc, ticker=company.ticker)
-            doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
-        except Exception as e:
-            doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
-            output["documents_processed"].append(doc_result)
-            continue
+            out["result"] = _json.loads(job.result_json)
+        except Exception:
+            out["result"] = None
 
-        # Type-specific extraction
-        try:
-            from configs.settings import settings as _settings
-            text_path = Path(_settings.storage_base_path) / "processed" / company.ticker / period_label / "parsed_text.json"
-            pages = _json.loads(text_path.read_text())
-            full_text = "\n\n".join(p["text"] for p in pages)
-
-            extraction = await extract_by_document_type(db, doc, full_text)
-            items = extraction.get("raw_items", [])
-            doc_result["steps"].append({
-                "step": "extract",
-                "status": "ok",
-                "prompt_type": doc_type,
-                "items_extracted": len(items),
-            })
-
-            # Route to the right bucket
-            items_summary = _json.dumps(items[:30], indent=2, default=str)  # cap for prompt size
-            if doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
-                earnings_data.append(items_summary)
-            elif doc_type == "transcript":
-                transcript_data.append(items_summary)
-            elif doc_type == "broker_note":
-                broker_data.append(items_summary)
-            elif doc_type == "presentation":
-                presentation_data.append(items_summary)
-            else:
-                earnings_data.append(items_summary)  # fallback
-
-            output["per_document_extractions"][file.filename] = {
-                "type": doc_type,
-                "items_count": len(items),
-                "sample": items[:5],
-            }
-
-        except Exception as e:
-            doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
-
-        output["documents_processed"].append(doc_result)
-
-    if last_doc_id is None:
-        return output
-
-    # ── Thesis comparison (uses all metrics in DB for this period) ─
-    try:
-        comparison = await compare_thesis(db, company.id, last_doc_id, period_label)
-        output["thesis_comparison"] = comparison.model_dump()
-    except ValueError:
-        output["thesis_comparison"] = None
-    except Exception as e:
-        output["thesis_comparison"] = {"error": str(e)[:200]}
-
-    # ── Surprises ─────────────────────────────────────────────────
-    try:
-        surprises = await detect_surprises(db, company.id, last_doc_id, period_label)
-        output["surprises"] = [s.model_dump() for s in surprises]
-    except Exception:
-        pass
-
-    # ── SYNTHESIS: combine all sources into one briefing ──────────
-    try:
-        synthesis_prompt = SYNTHESIS_BRIEFING.format(
-            company=company.name,
-            ticker=company.ticker,
-            period=period_label,
-            thesis=thesis_text,
-            earnings_data="\n".join(earnings_data) if earnings_data else "No earnings data available.",
-            transcript_data="\n".join(transcript_data) if transcript_data else "No transcript data available.",
-            broker_data="\n".join(broker_data) if broker_data else "No broker notes available.",
-            presentation_data="\n".join(presentation_data) if presentation_data else "No presentation data available.",
-            thesis_comparison=_json.dumps(output.get("thesis_comparison"), indent=2, default=str) if output.get("thesis_comparison") else "Not available.",
-            surprises=_json.dumps(output.get("surprises"), indent=2, default=str) if output.get("surprises") else "None detected.",
-        )
-        synthesis = call_llm_json(synthesis_prompt, max_tokens=8192)
-        output["synthesis"] = synthesis
-    except Exception as e:
-        output["synthesis"] = {"error": str(e)[:200]}
-
-    # ── IR Questions ──────────────────────────────────────────────
-    try:
-        questions = await generate_ir_questions(db, company.id, period_label)
-        output["ir_questions"] = [q.model_dump() for q in questions]
-    except Exception:
-        pass
-
-    # Save full analysis to DB for history
-    try:
-        ro = ResearchOutput(
-            id=uuid.uuid4(),
-            company_id=company.id,
-            period_label=period_label,
-            output_type="batch_synthesis",
-            content_json=_json.dumps(output, default=str),
-            review_status="draft",
-        )
-        db.add(ro)
-        await db.commit()
-    except Exception:
-        pass
-
-    return output
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────

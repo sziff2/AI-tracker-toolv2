@@ -252,17 +252,60 @@ async function submitForm(){
   document.getElementById('error').style.display='none';document.getElementById('status').style.display='none';
   btn.disabled=true;btn.textContent='Setting up…';
   if(!await ensureCompanyExists(t)){btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
-  await ensureThesisExists(t);btn.textContent='Processing…';
+  await ensureThesisExists(t);btn.textContent='Uploading…';
   const batch=uploadedFiles.length>1;
+  let jobId=null;
+
   if(batch){
-    ld.style.display='block';ld.textContent='Processing '+uploadedFiles.length+' documents — 3–5 min…';
     const fd=new FormData();fd.append('period_label',p);fd.append('document_types',uploadedFiles.map(f=>f.docType).join(','));fd.append('titles',uploadedFiles.map(f=>f.file.name).join(','));uploadedFiles.forEach(f=>{fd.append('files',f.file);});
-    try{const r=await fetch('/api/v1/companies/'+t+'/documents/batch-upload',{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);renderBatchResult(await r.json());}catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';ld.style.display='none';}
+    try{
+      const r=await fetch('/api/v1/companies/'+t+'/documents/batch-upload',{method:'POST',body:fd});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);
+      const data=await r.json(); jobId=data.job_id;
+    }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   } else {
-    ld.style.display='block';ld.textContent='Processing — 2–3 min…';
     const f=uploadedFiles[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
-    try{const r=await fetch('/api/v1/companies/'+t+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);renderSingleResult(await r.json());}catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';ld.style.display='none';}
+    try{
+      const r=await fetch('/api/v1/companies/'+t+'/documents/upload-and-process',{method:'POST',body:fd});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);
+      const data=await r.json(); jobId=data.job_id;
+    }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   }
+
+  // Poll for progress
+  if(!jobId){showError('No job ID returned');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+  ld.style.display='block';
+  ld.textContent='Processing started…';
+
+  const pollInterval=setInterval(async()=>{
+    try{
+      const r=await fetch('/api/v1/jobs/'+jobId);
+      if(!r.ok)return;
+      const job=await r.json();
+      const pct=job.progress_pct||0;
+      const step=job.current_step||'processing';
+      const steps=job.steps_completed||[];
+      ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>'
+        +'<div style="width:100%;height:6px;background:#1a1c25;border-radius:3px;overflow:hidden">'
+        +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#c9a960,#a88932);border-radius:3px;transition:width .5s"></div></div>'
+        +'<div style="margin-top:8px;font-size:12px;color:#5a5d68">Steps: '+steps.join(' → ')+'</div>';
+
+      if(job.status==='completed'){
+        clearInterval(pollInterval);
+        ld.style.display='none';
+        if(job.result){
+          if(job.result.synthesis)renderBatchResult(job.result);
+          else renderSingleResult(job.result);
+        }else{showError('Job completed but no results returned.');}
+        btn.disabled=false;btn.textContent='Analyse & Synthesise';
+      } else if(job.status==='failed'){
+        clearInterval(pollInterval);
+        ld.style.display='none';
+        showError('Processing failed: '+(job.error_message||'Unknown error'));
+        btn.disabled=false;btn.textContent='Analyse & Synthesise';
+      }
+    }catch(e){}
+  },3000); // poll every 3 seconds
 }
 
 // ── KPI TRACKER ─────────────────────────────────────────────

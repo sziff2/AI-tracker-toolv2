@@ -207,3 +207,23 @@ class KPIScore(Base, TimestampMixin):
 
     tracked_kpi = relationship("TrackedKPI", back_populates="scores")
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Processing Jobs — track background pipeline status
+# ─────────────────────────────────────────────────────────────────
+class ProcessingJob(Base, TimestampMixin):
+    __tablename__ = "processing_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    period_label = Column(Text, nullable=False)
+    job_type = Column(Text, default="single")       # single | batch
+    status = Column(Text, default="queued")          # queued | processing | completed | failed
+    current_step = Column(Text)                      # upload | parse | extract | compare | surprises | briefing | ir_questions | synthesis
+    steps_completed = Column(Text, default="[]")     # JSON array of completed step names
+    progress_pct = Column(Integer, default=0)
+    result_json = Column(Text)                       # full output JSON when done
+    error_message = Column(Text)
+
+    company = relationship("Company")
