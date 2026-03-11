@@ -17,80 +17,77 @@ body{min-height:100vh;background:#0f1117;color:#e2e4e9;font-family:'Newsreader',
 .nav-btn:hover,.nav-btn.active{border-color:#c9a960;color:#c9a960}
 .container{max-width:960px;margin:0 auto;padding:40px 24px 80px}
 h1{font-size:32px;font-weight:300;line-height:1.3;color:#f0f1f4;margin-bottom:8px}
+h2{font-size:22px;font-weight:300;color:#f0f1f4;margin:32px 0 16px}
 .subtitle{font-family:'DM Sans',sans-serif;font-size:14px;color:#6b6e7a;margin-bottom:40px;line-height:1.6}
-.field-label{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#7a7d88;margin-bottom:6px}
-.field-input,textarea.field-input{width:100%;background:#15171e;border:1px solid #2a2d37;border-radius:8px;padding:10px 14px;color:#e2e4e9;font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .2s}
-.field-input:focus{border-color:#c9a960}
-textarea.field-input{resize:vertical;min-height:80px;line-height:1.5}
-select.field-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7d88' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
-.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
-.fields-full{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
-.submit-btn{width:100%;padding:14px;margin-top:28px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:.5px;transition:all .2s}
-.submit-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 20px rgba(201,169,96,.3)}
-.submit-btn:disabled{opacity:.5;cursor:not-allowed}
-.loading{text-align:center;margin-top:32px;font-family:'DM Sans',sans-serif;font-size:14px;color:#c9a960;animation:pulse 2s ease-in-out infinite}
+.fl{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#7a7d88;margin-bottom:6px}
+.fi,.fi-ta{width:100%;background:#15171e;border:1px solid #2a2d37;border-radius:8px;padding:10px 14px;color:#e2e4e9;font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .2s}
+.fi:focus,.fi-ta:focus{border-color:#c9a960}
+.fi-ta{resize:vertical;min-height:80px;line-height:1.5}
+select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7d88' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
+.g1{display:grid;grid-template-columns:1fr;gap:16px;margin-top:16px}
+.btn{width:100%;padding:14px;margin-top:28px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:.5px;transition:all .2s}
+.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 20px rgba(201,169,96,.3)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn2{padding:10px 20px;background:transparent;border:1px solid #2a2d37;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#7a7d88;cursor:pointer;transition:all .2s}
+.btn2:hover{border-color:#c9a960;color:#c9a960}
+.btn-sm{padding:6px 14px;background:#c9a960;color:#0f1117;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;margin-left:8px}
+.ld{text-align:center;margin-top:32px;font-family:'DM Sans',sans-serif;font-size:14px;color:#c9a960;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.error-msg{margin-top:20px;padding:12px 16px;background:#1c1215;border:1px solid #3d1f23;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#f87171}
-.success-msg{margin-top:20px;padding:12px 16px;background:#121c15;border:1px solid #1f3d23;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#4ade80}
-.file-list{margin-top:16px}
-.file-row{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-bottom:8px}
-.file-row .file-icon{font-size:20px;flex-shrink:0}.file-row .file-info{flex:1;min-width:0}
-.file-row .file-name{font-family:'DM Sans',sans-serif;font-size:13px;color:#e2e4e9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.file-row .file-size{font-family:'DM Sans',sans-serif;font-size:11px;color:#5a5d68}
-.file-row select{background:#1a1c25;border:1px solid #2a2d37;border-radius:6px;padding:6px 28px 6px 10px;color:#c9a960;font-family:'DM Sans',sans-serif;font-size:12px;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23c9a960' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
-.file-row .remove-btn{background:none;border:none;color:#5a5d68;cursor:pointer;font-size:18px;padding:4px 8px;border-radius:4px;transition:color .2s}
-.file-row .remove-btn:hover{color:#f87171}
-.add-file-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:transparent;border:2px dashed #2a2d37;border-radius:10px;color:#7a7d88;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all .2s;margin-top:8px}
-.add-file-btn:hover{border-color:#c9a960;color:#c9a960;background:#15171e}
-.section-card{background:#15171e;border-radius:12px;padding:28px 32px;margin-bottom:16px;border-left:3px solid transparent}
-.section-card.highlight{border-left-color:#c9a960;background:#1a1c25}
-.section-card.meta{background:#12141a;border-left-color:#3b82f6}
-.section-card.synthesis{border-left-color:#c9a960;background:#1a1c25}
-.section-title{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#7a7d88;margin-bottom:12px}
-.section-card.highlight .section-title,.section-card.synthesis .section-title{color:#c9a960}
-.section-content{font-size:14.5px;line-height:1.75;color:#c4c6ce;white-space:pre-wrap}
-.section-card.highlight .section-content{font-size:16px;color:#f0f1f4}
-.result-header{font-size:28px;font-weight:300;line-height:1.3;color:#f0f1f4;margin-bottom:4px}
-.gold-line{width:60px;height:2px;background:linear-gradient(90deg,#c9a960,transparent);margin:12px 0 32px}
-.new-btn{display:block;max-width:300px;margin:40px auto 0}
-.collapsible{cursor:pointer;padding:12px 16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;font-family:'DM Sans',sans-serif;font-size:13px;color:#7a7d88;transition:all .2s}
-.collapsible:hover{border-color:#c9a960;color:#c9a960}
-.collapsible-content{display:none;padding:16px;background:#12141a;border:1px solid #2a2d37;border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
-.collapsible-content.open{display:block}
-.history-item{padding:16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-bottom:12px;cursor:pointer;transition:all .2s}
-.history-item:hover{border-color:#c9a960}
-.history-period{font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#e2e4e9}
-.history-meta{font-family:'DM Sans',sans-serif;font-size:12px;color:#5a5d68;margin-top:4px}
-.history-docs{font-family:'DM Sans',sans-serif;font-size:12px;color:#7a7d88;margin-top:6px}
-.pipeline-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
-.pipeline-step{font-family:'DM Sans',sans-serif;font-size:12px;padding:4px 12px;border-radius:20px;background:#1a1c25;display:flex;align-items:center}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}
-.dot-ok{background:#22c55e}.dot-error{background:#ef4444}.dot-skipped{background:#f59e0b}
-/* KPI Tracker */
-.kpi-table{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;font-family:'DM Sans',sans-serif;font-size:13px}
-.kpi-table th{text-align:left;padding:10px 12px;color:#7a7d88;font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2d37;position:sticky;top:0;background:#0f1117;z-index:1}
-.kpi-table td{padding:8px 12px;border-bottom:1px solid #1a1c25;color:#c4c6ce}
-.kpi-table tr:hover td{background:#15171e}
-.kpi-table .kpi-name{color:#c9a960;font-weight:500;white-space:nowrap}
-.kpi-table .kpi-val{text-align:center;min-width:80px}
-.kpi-table .kpi-val.has-value{color:#e2e4e9}
-.kpi-table .kpi-val.no-value{color:#3a3d48}
-.score-row td{border-bottom:2px solid #2a2d37}
-.score-btn{width:28px;height:28px;border:1px solid #2a2d37;border-radius:6px;background:#15171e;color:#7a7d88;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;transition:all .15s;margin:0 2px}
-.score-btn:hover{border-color:#c9a960;color:#c9a960}
-.score-btn.active{background:#c9a960;color:#0f1117;border-color:#c9a960;font-weight:700}
-.score-avg{font-weight:600;font-size:14px}
-.score-avg.good{color:#22c55e}.score-avg.ok{color:#f59e0b}.score-avg.bad{color:#ef4444}
-.kpi-add-row{display:flex;gap:8px;margin-top:12px}
-.kpi-add-row input{flex:1;background:#15171e;border:1px solid #2a2d37;border-radius:8px;padding:8px 12px;color:#e2e4e9;font-family:'DM Sans',sans-serif;font-size:13px;outline:none}
-.kpi-add-row input:focus{border-color:#c9a960}
-.kpi-add-row button{padding:8px 16px;background:#1a1c25;border:1px solid #2a2d37;border-radius:8px;color:#c9a960;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;white-space:nowrap;transition:all .2s}
-.kpi-add-row button:hover{background:#c9a960;color:#0f1117}
-.suggest-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
-.suggest-chip{padding:4px 12px;background:#1a1c25;border:1px solid #2a2d37;border-radius:20px;font-family:'DM Sans',sans-serif;font-size:11px;color:#7a7d88;cursor:pointer;transition:all .2s}
-.suggest-chip:hover{border-color:#c9a960;color:#c9a960}
-.kpi-del{background:none;border:none;color:#3a3d48;cursor:pointer;font-size:14px;transition:color .2s}
-.kpi-del:hover{color:#f87171}
+.err{margin-top:20px;padding:12px 16px;background:#1c1215;border:1px solid #3d1f23;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#f87171}
+.ok{margin-top:20px;padding:12px 16px;background:#121c15;border:1px solid #1f3d23;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#4ade80}
+.fr{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-bottom:8px}
+.fr .fi-icon{font-size:20px;flex-shrink:0}.fr .fi-info{flex:1;min-width:0}
+.fr .fi-name{font-family:'DM Sans',sans-serif;font-size:13px;color:#e2e4e9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fr .fi-sz{font-family:'DM Sans',sans-serif;font-size:11px;color:#5a5d68}
+.fr select{background:#1a1c25;border:1px solid #2a2d37;border-radius:6px;padding:6px 28px 6px 10px;color:#c9a960;font-family:'DM Sans',sans-serif;font-size:12px;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23c9a960' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.fr .x{background:none;border:none;color:#5a5d68;cursor:pointer;font-size:18px;padding:4px 8px;border-radius:4px}
+.fr .x:hover{color:#f87171}
+.af{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:transparent;border:2px dashed #2a2d37;border-radius:10px;color:#7a7d88;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all .2s;margin-top:8px}
+.af:hover{border-color:#c9a960;color:#c9a960;background:#15171e}
+.sc{background:#15171e;border-radius:12px;padding:28px 32px;margin-bottom:16px;border-left:3px solid transparent}
+.sc.hl{border-left-color:#c9a960;background:#1a1c25}
+.sc.mt{background:#12141a;border-left-color:#3b82f6}
+.sc.syn{border-left-color:#c9a960;background:#1a1c25}
+.st{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#7a7d88;margin-bottom:12px}
+.sc.hl .st,.sc.syn .st{color:#c9a960}
+.scc{font-size:14.5px;line-height:1.75;color:#c4c6ce;white-space:pre-wrap}
+.sc.hl .scc{font-size:16px;color:#f0f1f4}
+.rh{font-size:28px;font-weight:300;line-height:1.3;color:#f0f1f4;margin-bottom:4px}
+.gl{width:60px;height:2px;background:linear-gradient(90deg,#c9a960,transparent);margin:12px 0 32px}
+.col{cursor:pointer;padding:12px 16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;font-family:'DM Sans',sans-serif;font-size:13px;color:#7a7d88;transition:all .2s}
+.col:hover{border-color:#c9a960;color:#c9a960}
+.col-c{display:none;padding:16px;background:#12141a;border:1px solid #2a2d37;border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
+.col-c.open{display:block}
+.hi{padding:16px;background:#15171e;border:1px solid #2a2d37;border-radius:10px;margin-bottom:12px;cursor:pointer;transition:all .2s}
+.hi:hover{border-color:#c9a960}
+.hi-p{font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#e2e4e9}
+.hi-m{font-family:'DM Sans',sans-serif;font-size:12px;color:#5a5d68;margin-top:4px}
+.hi-d{font-family:'DM Sans',sans-serif;font-size:12px;color:#7a7d88;margin-top:6px}
+/* KPI */
+.kt{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;font-family:'DM Sans',sans-serif;font-size:13px}
+.kt th{text-align:left;padding:10px 12px;color:#7a7d88;font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #2a2d37;position:sticky;top:0;background:#0f1117;z-index:1}
+.kt td{padding:8px 12px;border-bottom:1px solid #1a1c25;color:#c4c6ce}
+.kt tr:hover td{background:#15171e}
+.kt .kn{color:#c9a960;font-weight:500;white-space:nowrap}
+.kt .kv{text-align:center;min-width:80px}
+.kt .kv.hv{color:#e2e4e9}.kt .kv.nv{color:#3a3d48}
+.sb{width:28px;height:28px;border:1px solid #2a2d37;border-radius:6px;background:#15171e;color:#7a7d88;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;transition:all .15s;margin:0 2px}
+.sb:hover{border-color:#c9a960;color:#c9a960}
+.sb.ac{background:#c9a960;color:#0f1117;border-color:#c9a960;font-weight:700}
+.kar{display:flex;gap:8px;margin-top:12px}
+.kar input{flex:1;background:#15171e;border:1px solid #2a2d37;border-radius:8px;padding:8px 12px;color:#e2e4e9;font-family:'DM Sans',sans-serif;font-size:13px;outline:none}
+.kar input:focus{border-color:#c9a960}
+.kar button{padding:8px 16px;background:#1a1c25;border:1px solid #2a2d37;border-radius:8px;color:#c9a960;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all .2s}
+.kar button:hover{background:#c9a960;color:#0f1117}
+.schips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.schip{padding:4px 12px;background:#1a1c25;border:1px solid #2a2d37;border-radius:20px;font-family:'DM Sans',sans-serif;font-size:11px;color:#7a7d88;cursor:pointer;transition:all .2s}
+.schip:hover{border-color:#c9a960;color:#c9a960}
+.kdel{background:none;border:none;color:#3a3d48;cursor:pointer;font-size:14px}
+.kdel:hover{color:#f87171}
+.tab-row{display:flex;gap:4px;margin-bottom:20px;background:#15171e;border-radius:10px;padding:4px}
+.tab{flex:1;padding:10px;text-align:center;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#7a7d88;border-radius:8px;cursor:pointer;border:none;background:none;transition:all .2s}
+.tab.ac{background:#1e2028;color:#c9a960}.tab:hover:not(.ac){color:#e2e4e9}
 </style>
 </head>
 <body>
@@ -99,407 +96,258 @@ select.field-input{appearance:none;background-image:url("data:image/svg+xml,%3Cs
   <div><div class="header-title">Research CoWork Agent</div><div class="header-sub">Investment Research Intelligence</div></div>
   <div class="header-nav">
     <button class="nav-btn active" id="nav-new" onclick="showPage('new')">New Analysis</button>
-    <button class="nav-btn" id="nav-tracker" onclick="showPage('tracker')">KPI Tracker</button>
-    <button class="nav-btn" id="nav-history" onclick="showPage('history')">History</button>
+    <button class="nav-btn" id="nav-company" onclick="showPage('company')">Company View</button>
   </div>
 </div>
 <div class="container">
 
-<!-- ═══ NEW ANALYSIS PAGE ═══ -->
+<!-- ═══ NEW ANALYSIS ═══ -->
 <div id="page-new">
   <div id="form-section">
     <h1>Upload documents</h1>
     <p class="subtitle">Add your earnings release, transcript, broker notes, and presentations. Each is analysed with a tailored prompt, then synthesised into one opinionated briefing.</p>
-    <div class="fields">
-      <div><div class="field-label">Company</div>
-        <select class="field-input" id="company-select" onchange="onCompanySelect()"><option value="">— Select or type new —</option></select>
+    <div class="g2">
+      <div><div class="fl">Company</div><select class="fi" id="company-select" onchange="onCompanySelect()"><option value="">— Select or type new —</option></select></div>
+      <div><div class="fl">Period</div><input class="fi" id="period" placeholder="e.g. 2025_Q2"></div>
+    </div>
+    <div class="g2" id="new-co" style="display:none">
+      <div><div class="fl">Ticker</div><input class="fi" id="ticker" placeholder="e.g. ENI IM"></div>
+      <div><div class="fl">Company Name</div><input class="fi" id="co-name" placeholder="e.g. ENI S.p.A."></div>
+      <div><div class="fl">Sector</div><input class="fi" id="sector" placeholder="e.g. Oil & Gas"></div>
+      <div><div class="fl">Country</div><input class="fi" id="country" placeholder="e.g. Italy"></div>
+    </div>
+    <div class="col" onclick="toggleEl('thesis-sec','thesis-arr')"><span>Investment Thesis</span><span id="thesis-arr">▸</span></div>
+    <div class="col-c" id="thesis-sec">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn2" id="gen-thesis-btn" onclick="generateThesis()">✨ Auto-generate thesis</button></div>
+      <div class="g1">
+        <div><div class="fl">Core Thesis</div><textarea class="fi-ta" id="th-core" placeholder="What is the investment case?"></textarea></div>
+        <div><div class="fl">Key Risks</div><textarea class="fi-ta" id="th-risks" placeholder="What could go wrong?" style="min-height:60px"></textarea></div>
+        <div><div class="fl">Valuation Framework</div><textarea class="fi-ta" id="th-val" placeholder="How do you value this?" style="min-height:60px"></textarea></div>
       </div>
-      <div><div class="field-label">Period</div><input class="field-input" id="period" placeholder="e.g. 2025_Q2"></div>
     </div>
-    <div class="fields" id="new-company-fields" style="display:none">
-      <div><div class="field-label">Ticker</div><input class="field-input" id="ticker" placeholder="e.g. BNZL"></div>
-      <div><div class="field-label">Company Name</div><input class="field-input" id="company-name" placeholder="e.g. Bunzl plc"></div>
-      <div><div class="field-label">Sector</div><input class="field-input" id="sector" placeholder="e.g. Industrials"></div>
-      <div><div class="field-label">Country</div><input class="field-input" id="country" placeholder="e.g. United Kingdom"></div>
-    </div>
-    <div class="collapsible" onclick="toggleThesis()"><span>Investment Thesis (optional)</span><span id="thesis-arrow">▸</span></div>
-    <div class="collapsible-content" id="thesis-section">
-      <div class="fields-full">
-        <div><div class="field-label">Core Thesis</div><textarea class="field-input" id="thesis-core" placeholder="e.g. Premium global brewer with pricing power..."></textarea></div>
-        <div><div class="field-label">Key Risks</div><textarea class="field-input" id="thesis-risks" placeholder="e.g. Consumer downtrading, FX headwinds..." style="min-height:60px"></textarea></div>
-        <div><div class="field-label">Valuation Framework</div><textarea class="field-input" id="thesis-valuation" placeholder="e.g. DCF with 7.5% WACC..." style="min-height:60px"></textarea></div>
-      </div>
-    </div>
-    <div class="field-label" style="margin-top:28px">Documents</div>
-    <div class="file-list" id="file-list"></div>
-    <button class="add-file-btn" onclick="addFile()"><span style="font-size:18px">+</span> Add document</button>
-    <input type="file" id="hidden-file-input" accept=".pdf,.docx,.txt" style="display:none">
-    <button class="submit-btn" id="submit-btn" onclick="submitForm()">Analyse & Synthesise</button>
-    <div class="loading" id="loading" style="display:none"></div>
-    <div class="error-msg" id="error" style="display:none"></div>
-    <div class="success-msg" id="status" style="display:none"></div>
+    <div class="fl" style="margin-top:28px">Documents</div>
+    <div id="file-list"></div>
+    <button class="af" onclick="addFile()"><span style="font-size:18px">+</span> Add document</button>
+    <input type="file" id="hfi" accept=".pdf,.docx,.txt" style="display:none">
+    <button class="btn" id="sub-btn" onclick="submitForm()">Analyse & Synthesise</button>
+    <div class="ld" id="loading" style="display:none"></div>
+    <div class="err" id="error" style="display:none"></div>
+    <div class="ok" id="status" style="display:none"></div>
   </div>
   <div id="result-section" style="display:none"></div>
 </div>
 
-<!-- ═══ KPI TRACKER PAGE ═══ -->
-<div id="page-tracker" style="display:none">
-  <h1>KPI Tracker</h1>
-  <p class="subtitle">Track key metrics over time. Select a company, set up the KPIs that matter, and score each period.</p>
-  <div class="fields">
-    <div><div class="field-label">Company</div>
-      <select class="field-input" id="tracker-company" onchange="loadTracker()"><option value="">— Select company —</option></select>
-    </div>
-  </div>
-  <div id="tracker-content" style="margin-top:24px"></div>
-</div>
-
-<!-- ═══ HISTORY PAGE ═══ -->
-<div id="page-history" style="display:none">
-  <h1>Research History</h1>
-  <p class="subtitle">View past analyses by company.</p>
-  <div><div class="field-label">Company</div>
-    <select class="field-input" id="history-company" onchange="loadHistory()"><option value="">— Select company —</option></select>
-  </div>
-  <div id="history-content" style="margin-top:24px"></div>
-  <div id="history-detail" style="display:none"></div>
+<!-- ═══ COMPANY VIEW (History + KPI Tracker combined) ═══ -->
+<div id="page-company" style="display:none">
+  <h1>Company View</h1>
+  <p class="subtitle">Track KPIs, view past analyses, and manage your research.</p>
+  <div><div class="fl">Company</div><select class="fi" id="cv-company" onchange="loadCompanyView()"><option value="">— Select company —</option></select></div>
+  <div id="cv-content" style="margin-top:24px"></div>
+  <div id="cv-detail" style="display:none"></div>
 </div>
 
 </div>
 <script>
-let uploadedFiles=[], companiesCache=[];
-const hiddenInput=document.getElementById('hidden-file-input');
+let UF=[],CC=[];const HFI=document.getElementById('hfi');
 
-// ── Navigation ──────────────────────────────────────────────
-function showPage(p) {
-  ['new','tracker','history'].forEach(x => {
-    document.getElementById('page-'+x).style.display = x===p?'block':'none';
-    document.getElementById('nav-'+x).classList.toggle('active', x===p);
-  });
-  if (p==='history'||p==='tracker') loadCompanyDropdowns();
-}
+function showPage(p){['new','company'].forEach(x=>{document.getElementById('page-'+x).style.display=x===p?'block':'none';document.getElementById('nav-'+x).classList.toggle('active',x===p);});if(p==='company')loadDD();}
+function toggleEl(id,arrId){const el=document.getElementById(id),a=document.getElementById(arrId);el.classList.toggle('open');a.textContent=el.classList.contains('open')?'▾':'▸';}
+function E(id){return document.getElementById(id);}
+function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function card(t,ti,c){return '<div class="sc '+t+'"><div class="st">'+esc(ti)+'</div><div class="scc">'+c+'</div></div>';}
 
 // ── Company dropdowns ───────────────────────────────────────
-async function loadCompanyDropdowns() {
-  try { const r=await fetch('/api/v1/companies-list'); if(r.ok) companiesCache=await r.json(); } catch(e){}
-  ['company-select','history-company','tracker-company'].forEach(id => {
-    const el=document.getElementById(id); if(!el) return;
-    const cur=el.value;
-    el.innerHTML = id==='company-select' ? '<option value="">— Select or type new —</option>' : '<option value="">— Select company —</option>';
-    companiesCache.forEach(c => { const o=document.createElement('option'); o.value=c.ticker; o.textContent=c.name+' ('+c.ticker+')'; el.appendChild(o); });
-    if (id==='company-select') { const o=document.createElement('option'); o.value='__new__'; o.textContent='+ Add new company'; el.appendChild(o); }
-    el.value=cur;
-  });
+async function loadDD(){
+  try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
+  ['company-select','cv-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;
+    el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';
+    CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});
+    if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}
+    el.value=cur;});
 }
 
-async function onCompanySelect() {
-  const val=document.getElementById('company-select').value;
-  const nf=document.getElementById('new-company-fields');
-  const ts=document.getElementById('thesis-section'), ta=document.getElementById('thesis-arrow');
-  if (val==='__new__') {
-    nf.style.display='grid';
-    ['ticker','company-name','sector','country','thesis-core','thesis-risks','thesis-valuation'].forEach(x=>document.getElementById(x).value='');
-    ts.classList.remove('open'); ta.textContent='▸';
-  } else if (val) {
-    nf.style.display='none';
-    const c=companiesCache.find(x=>x.ticker===val);
-    if(c){document.getElementById('ticker').value=c.ticker;document.getElementById('company-name').value=c.name;document.getElementById('sector').value=c.sector||'';}
-    try {
-      const r=await fetch('/api/v1/companies/'+encodeURIComponent(val)+'/thesis');
-      if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];
-        if(a){document.getElementById('thesis-core').value=a.core_thesis||'';document.getElementById('thesis-risks').value=a.key_risks||'';document.getElementById('thesis-valuation').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}
-        else{document.getElementById('thesis-core').value='';document.getElementById('thesis-risks').value='';document.getElementById('thesis-valuation').value='';ts.classList.remove('open');ta.textContent='▸';}}
-    } catch(e){}
-  }
+async function onCompanySelect(){
+  const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');
+  if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}
+  else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}
+    try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];
+      if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}
+      else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}
 }
 
-function getSelectedTicker(){const s=document.getElementById('company-select').value;if(s&&s!=='__new__')return s;return document.getElementById('ticker').value.trim().toUpperCase();}
-function toggleThesis(){const el=document.getElementById('thesis-section'),a=document.getElementById('thesis-arrow');el.classList.toggle('open');a.textContent=el.classList.contains('open')?'▾':'▸';}
+function getTicker(){const s=E('company-select').value;if(s&&s!=='__new__')return s;return E('ticker').value.trim().toUpperCase();}
+
+// ── Auto-generate thesis ────────────────────────────────────
+async function generateThesis(){
+  const t=getTicker();if(!t){alert('Select or enter a company first.');return;}
+  const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';
+  try{
+    // Ensure company exists first
+    await ensureCo(t);
+    const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/generate-thesis',{method:'POST'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    const d=await r.json();
+    E('th-core').value=d.core_thesis||'';
+    E('th-risks').value=d.key_risks||'';
+    E('th-val').value=d.valuation_framework||'';
+    E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';
+    btn.textContent='✨ Auto-generate thesis';btn.disabled=false;
+  }catch(e){alert('Thesis generation failed: '+e.message);btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
+}
 
 // ── Files ────────────────────────────────────────────────────
-function addFile(){hiddenInput.click();}
-hiddenInput.addEventListener('change',function(){const f=this.files[0];if(!f)return;let dt='other';const n=f.name.toLowerCase();
-  if(n.includes('transcript')||n.includes('call'))dt='transcript';
-  else if(n.includes('broker')||n.includes('note')||n.includes('research'))dt='broker_note';
-  else if(n.includes('presentation')||n.includes('slides'))dt='presentation';
-  else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';
-  uploadedFiles.push({file:f,docType:dt});this.value='';renderFileList();});
-function removeFile(i){uploadedFiles.splice(i,1);renderFileList();}
-function changeType(i,v){uploadedFiles[i].docType=v;}
-function renderFileList(){const c=document.getElementById('file-list');const tl={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',other:'Other'};const ic={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑','10-Q':'📋','10-K':'📋',annual_report:'📚',other:'📄'};let h='';uploadedFiles.forEach((f,i)=>{const sz=(f.file.size/1024/1024).toFixed(1);h+='<div class="file-row"><div class="file-icon">'+(ic[f.docType]||'📄')+'</div><div class="file-info"><div class="file-name">'+esc(f.file.name)+'</div><div class="file-size">'+sz+' MB</div></div><select onchange="changeType('+i+',this.value)">';Object.keys(tl).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+tl[k]+'</option>';});h+='</select><button class="remove-btn" onclick="removeFile('+i+')">&times;</button></div>';});c.innerHTML=h;}
+function addFile(){HFI.click();}
+HFI.addEventListener('change',function(){const f=this.files[0];if(!f)return;let dt='other';const n=f.name.toLowerCase();
+  if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note')||n.includes('research'))dt='broker_note';
+  else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|annual|[qh][1-4]/))dt='earnings_release';
+  UF.push({file:f,docType:dt});this.value='';renderFL();});
+function rmF(i){UF.splice(i,1);renderFL();}function chT(i,v){UF[i].docType=v;}
+function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑','10-Q':'📋','10-K':'📋',annual_report:'📚',other:'📄'};let h='';UF.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><div class="fi-icon">'+(I[f.docType]||'📄')+'</div><div class="fi-info"><div class="fi-name">'+esc(f.file.name)+'</div><div class="fi-sz">'+s+' MB</div></div><select onchange="chT('+i+',this.value)">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="rmF('+i+')">&times;</button></div>';});c.innerHTML=h;}
 
 // ── Submit ───────────────────────────────────────────────────
-function showError(m){document.getElementById('error').textContent=m;document.getElementById('error').style.display='block';}
-function showStatus(m){document.getElementById('status').textContent=m;document.getElementById('status').style.display='block';}
+function showErr(m){E('error').textContent=m;E('error').style.display='block';}
+function showOk(m){E('status').textContent=m;E('status').style.display='block';}
+function showDupErr(t,p){const el=E('error');el.innerHTML='Documents already uploaded. <button class="btn-sm" onclick="clearRetry(\''+esc(t)+'\',\''+esc(p)+'\')">Clear & retry</button> <button class="btn2" onclick="E(\'cv-company\').value=\''+esc(t)+'\';showPage(\'company\');loadCompanyView();" style="margin-left:4px;padding:6px 14px;font-size:12px">View existing</button>';el.style.display='block';}
+async function clearRetry(t,p){E('error').style.display='none';showOk('Clearing…');try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents',{method:'DELETE'});E('status').style.display='none';submitForm();}catch(e){showErr('Failed: '+e.message);}}
 
-function showDuplicateError(ticker, period) {
-  const el=document.getElementById('error');
-  el.innerHTML='These documents have already been uploaded. <button onclick="clearAndRetry(\''+ticker+'\',\''+period+'\')" style="background:#c9a960;color:#0f1117;border:none;border-radius:6px;padding:6px 14px;font-family:DM Sans,sans-serif;font-size:12px;font-weight:600;cursor:pointer;margin-left:8px">Clear old data & retry</button> <button onclick="viewExisting(\''+ticker+'\')" style="background:none;border:1px solid #2a2d37;border-radius:6px;padding:6px 14px;font-family:DM Sans,sans-serif;font-size:12px;color:#7a7d88;cursor:pointer;margin-left:4px">View existing analysis</button>';
-  el.style.display='block';
-}
-
-async function clearAndRetry(ticker, period) {
-  document.getElementById('error').style.display='none';
-  showStatus('Clearing old documents for '+ticker+'…');
-  try {
-    await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/documents',{method:'DELETE'});
-    showStatus('Cleared. Uploading again…');
-    document.getElementById('status').style.display='none';
-    submitForm();
-  } catch(e) { showError('Failed to clear: '+e.message); }
-}
-
-function viewExisting(ticker) {
-  document.getElementById('history-company').value=ticker;
-  showPage('history');
-  loadHistory();
-}
-
-async function ensureCompanyExists(t){
-  const n=document.getElementById('company-name').value.trim(),s=document.getElementById('sector').value.trim(),co=document.getElementById('country')?.value?.trim()||'';
+async function ensureCo(t){
+  const n=E('co-name').value.trim(),s=E('sector').value.trim(),co=E('country')?.value?.trim()||'';
   try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t));if(r.ok)return true;}catch(e){}
-  if(!n){showError('Company not found. Enter a name to create it.');return false;}
-  try{const r=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');showStatus('Created: '+n);await loadCompanyDropdowns();}catch(e){showError('Failed: '+e.message);return false;}return true;
+  if(!n){showErr('Company not found. Enter a name.');return false;}
+  try{const r=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');showOk('Created: '+n);await loadDD();}catch(e){showErr(e.message);return false;}return true;
 }
-async function ensureThesisExists(t){
-  const core=document.getElementById('thesis-core').value.trim();if(!core)return;
-  const risks=document.getElementById('thesis-risks').value.trim(),val=document.getElementById('thesis-valuation').value.trim();
-  try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:risks||null,valuation_framework:val||null})});}catch(e){}
+async function saveThesis(t){
+  const core=E('th-core').value.trim();if(!core)return;
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:E('th-risks').value.trim()||null,valuation_framework:E('th-val').value.trim()||null})});}catch(e){}
 }
 
 async function submitForm(){
-  const t=getSelectedTicker(),p=document.getElementById('period').value.trim();
-  if(!t||!p){showError('Please select company and period.');return;}
-  if(!uploadedFiles.length){showError('Add at least one document.');return;}
-  const btn=document.getElementById('submit-btn'),ld=document.getElementById('loading');
-  document.getElementById('error').style.display='none';document.getElementById('status').style.display='none';
+  const t=getTicker(),p=E('period').value.trim();
+  if(!t||!p){showErr('Select company and period.');return;}if(!UF.length){showErr('Add a document.');return;}
+  const btn=E('sub-btn'),ld=E('loading');E('error').style.display='none';E('status').style.display='none';
   btn.disabled=true;btn.textContent='Setting up…';
-  if(!await ensureCompanyExists(t)){btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
-  await ensureThesisExists(t);btn.textContent='Uploading…';
-  const batch=uploadedFiles.length>1;
-  let jobId=null;
-
+  if(!await ensureCo(t)){btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+  await saveThesis(t);btn.textContent='Uploading…';
+  const batch=UF.length>1;let jobId;
   if(batch){
-    const fd=new FormData();fd.append('period_label',p);fd.append('document_types',uploadedFiles.map(f=>f.docType).join(','));fd.append('titles',uploadedFiles.map(f=>f.file.name).join(','));uploadedFiles.forEach(f=>{fd.append('files',f.file);});
-    try{
-      const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/batch-upload',{method:'POST',body:fd});
-      if(!r.ok){const err=await r.json().catch(()=>({}));const msg=err.detail||'Error '+r.status;if(msg.includes('uplicate')||msg.includes('checksum')){showDuplicateError(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(msg);}
-      const data=await r.json(); jobId=data.job_id;
-    }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
-  } else {
-    const f=uploadedFiles[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
-    try{
-      const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/upload-and-process',{method:'POST',body:fd});
-      if(!r.ok){const err=await r.json().catch(()=>({}));const msg=err.detail||'Error '+r.status;if(msg.includes('uplicate')||msg.includes('checksum')){showDuplicateError(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(msg);}
-      const data=await r.json(); jobId=data.job_id;
-    }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+    const fd=new FormData();fd.append('period_label',p);fd.append('document_types',UF.map(f=>f.docType).join(','));fd.append('titles',UF.map(f=>f.file.name).join(','));UF.forEach(f=>{fd.append('files',f.file);});
+    try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/batch-upload',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+  }else{
+    const f=UF[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
+    try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   }
-
-  // Poll for progress
-  if(!jobId){showError('No job ID returned');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+  if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   ld.style.display='block';
-  ld.textContent='Processing started…';
-
-  const pollInterval=setInterval(async()=>{
-    try{
-      const r=await fetch('/api/v1/jobs/'+jobId);
-      if(!r.ok)return;
-      const job=await r.json();
-      const pct=job.progress_pct||0;
-      const step=job.current_step||'processing';
-      const steps=job.steps_completed||[];
-      ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>'
-        +'<div style="width:100%;height:6px;background:#1a1c25;border-radius:3px;overflow:hidden">'
-        +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#c9a960,#a88932);border-radius:3px;transition:width .5s"></div></div>'
-        +'<div style="margin-top:8px;font-size:12px;color:#5a5d68">Steps: '+steps.join(' → ')+'</div>';
-
-      if(job.status==='completed'){
-        clearInterval(pollInterval);
-        ld.style.display='none';
-        if(job.result){
-          if(job.result.synthesis)renderBatchResult(job.result);
-          else renderSingleResult(job.result);
-        }else{showError('Job completed but no results returned.');}
-        btn.disabled=false;btn.textContent='Analyse & Synthesise';
-      } else if(job.status==='failed'){
-        clearInterval(pollInterval);
-        ld.style.display='none';
-        showError('Processing failed: '+(job.error_message||'Unknown error'));
-        btn.disabled=false;btn.textContent='Analyse & Synthesise';
-      }
-    }catch(e){}
-  },3000); // poll every 3 seconds
+  const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
+    ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:#1a1c25;border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#c9a960,#a88932);border-radius:3px;transition:width .5s"></div></div><div style="margin-top:8px;font-size:12px;color:#5a5d68">'+steps.join(' → ')+'</div>';
+    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){if(j.result.synthesis)renderBR(j.result);else renderSR(j.result);}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+    else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+  }catch(e){}},3000);
 }
 
-// ── KPI TRACKER ─────────────────────────────────────────────
-async function loadTracker(){
-  const t=document.getElementById('tracker-company').value,c=document.getElementById('tracker-content');
-  if(!t){c.innerHTML='';return;}
-  c.innerHTML='<div class="loading">Loading tracker…</div>';
+// ── COMPANY VIEW ────────────────────────────────────────────
+async function loadCompanyView(){
+  const t=E('cv-company').value,c=E('cv-content'),d=E('cv-detail');d.style.display='none';
+  if(!t){c.innerHTML='';return;}c.innerHTML='<div class="ld">Loading…</div>';
   try{
-    const [trackerResp,suggestResp]=await Promise.all([fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpi-tracker'),fetch('/api/v1/companies/'+encodeURIComponent(t)+'/suggest-kpis')]);
-    const tracker=await trackerResp.json(), suggestions=suggestResp.ok?await suggestResp.json():[];
-    renderTracker(t,tracker,suggestions);
-  }catch(e){c.innerHTML='<div class="error-msg">'+esc(e.message)+'</div>';}
+    const [histR,trackerR,suggestR]=await Promise.all([fetch('/api/v1/companies/'+encodeURIComponent(t)+'/history'),fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpi-tracker'),fetch('/api/v1/companies/'+encodeURIComponent(t)+'/suggest-kpis')]);
+    const hist=histR.ok?await histR.json():null,tracker=trackerR.ok?await trackerR.json():null,suggestions=suggestR.ok?await suggestR.json():[];
+    renderCompanyView(t,hist,tracker,suggestions);
+  }catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
-function renderTracker(ticker,data,suggestions){
-  const c=document.getElementById('tracker-content');
-  const periods=data.periods||[];
-  const kpis=data.kpis||[];
-  const overall=data.overall_scores||{};
-  let h='';
+function renderCompanyView(ticker,hist,tracker,suggestions){
+  const c=E('cv-content');let h='';
+  // Company header
+  if(hist?.company)h+='<div class="rh">'+esc(hist.company.name)+' ('+esc(hist.company.ticker)+')</div><div class="gl"></div>';
+  if(hist?.thesis)h+='<div class="sc mt"><div class="st">Active Thesis</div><div class="scc" style="font-size:13px">'+esc((hist.thesis.core_thesis||'').substring(0,300))+'</div></div>';
 
-  if(!kpis.length&&!suggestions.length){
-    h+='<div style="text-align:center;padding:40px;color:#5a5d68;font-family:DM Sans,sans-serif;font-size:14px">No KPIs tracked yet. Upload and analyse some documents first, then come back to set up tracking.</div>';
-    c.innerHTML=h;return;
-  }
-
-  // Table
-  h+='<div style="overflow-x:auto"><table class="kpi-table"><thead><tr><th style="width:30px">★</th><th>KPI Name</th>';
-  periods.forEach(p=>{h+='<th class="kpi-val">'+esc(p)+'</th>';});
-  h+='<th style="width:30px"></th></tr></thead><tbody>';
-
-  // Overall score row
-  h+='<tr class="score-row"><td></td><td class="kpi-name">Score</td>';
-  periods.forEach(p=>{
-    const sc=overall[p];
-    h+='<td class="kpi-val"><div style="display:flex;justify-content:center;gap:2px">';
-    for(let i=1;i<=5;i++){h+='<button class="score-btn'+(sc!==null&&Math.round(sc)===i?' active':'')+'" disabled>'+i+'</button>';}
-    h+='</div></td>';
-  });
-  h+='<td></td></tr>';
-
-  // KPI rows
-  kpis.forEach((kpi,idx)=>{
-    h+='<tr><td style="color:#5a5d68;font-size:12px">'+(idx+1)+'</td><td class="kpi-name">'+esc(kpi.kpi_name)+(kpi.unit?' <span style="color:#5a5d68;font-size:11px">('+esc(kpi.unit)+')</span>':'')+'</td>';
-    periods.forEach(p=>{
-      const d=kpi.periods[p]||{};
-      const val=d.value!==null&&d.value!==undefined?d.value:null;
-      const txt=val!==null?String(val):'—';
-      const cls=val!==null?'kpi-val has-value':'kpi-val no-value';
-      h+='<td class="'+cls+'">';
-      h+='<div>'+esc(txt)+'</div>';
-      h+='<div style="display:flex;justify-content:center;gap:2px;margin-top:4px">';
-      for(let i=1;i<=5;i++){h+='<button class="score-btn'+(d.score===i?' active':'')+'" onclick="setScore(\''+ticker+'\',\''+kpi.id+'\',\''+p+'\','+i+')">'+i+'</button>';}
-      h+='</div></td>';
-    });
-    h+='<td><button class="kpi-del" onclick="deleteKPI(\''+ticker+'\',\''+kpi.id+'\')" title="Remove">✕</button></td></tr>';
-  });
-
-  h+='</tbody></table></div>';
-
-  // Add KPI row
-  h+='<div class="kpi-add-row"><input id="new-kpi-name" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="new-kpi-unit" placeholder="Unit (e.g. %)" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add</button></div>';
-
-  // Suggestions
-  if(suggestions.length){
-    h+='<div class="field-label" style="margin-top:20px">Suggested from extracted data</div><div class="suggest-chips">';
-    suggestions.forEach(s=>{
-      h+='<span class="suggest-chip" onclick="addSuggestedKPI(\''+ticker+'\',\''+esc(s.kpi_name).replace(/'/g,"\\'")+'\',\''+esc(s.unit||'').replace(/'/g,"\\'")+'\')">'+esc(s.kpi_name)+(s.unit?' ('+esc(s.unit)+')':'')+'</span>';
-    });
-    h+='</div>';
-  }
-
+  // Sub-tabs
+  h+='<div class="tab-row"><button class="tab ac" onclick="showCVTab(\'tracker\',this)">KPI Tracker</button><button class="tab" onclick="showCVTab(\'history\',this)">Analysis History</button></div>';
+  h+='<div id="cv-tracker">';h+=renderTrackerHTML(ticker,tracker,suggestions);h+='</div>';
+  h+='<div id="cv-history" style="display:none">';h+=renderHistoryHTML(hist);h+='</div>';
   c.innerHTML=h;
 }
 
-async function setScore(ticker,kpiId,period,score){
-  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis/'+kpiId+'/scores/'+period,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:score})});loadTracker();}catch(e){alert('Failed: '+e.message);}
+function showCVTab(tab,btn){
+  E('cv-tracker').style.display=tab==='tracker'?'block':'none';
+  E('cv-history').style.display=tab==='history'?'block':'none';
+  btn.parentElement.querySelectorAll('.tab').forEach(t=>t.classList.remove('ac'));btn.classList.add('ac');
 }
 
-async function addKPI(ticker){
-  const name=document.getElementById('new-kpi-name').value.trim(),unit=document.getElementById('new-kpi-unit').value.trim();
-  if(!name)return;
-  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});document.getElementById('new-kpi-name').value='';document.getElementById('new-kpi-unit').value='';loadTracker();}catch(e){alert('Failed: '+e.message);}
+function renderTrackerHTML(ticker,data,suggestions){
+  if(!data)return '<div style="text-align:center;padding:40px;color:#5a5d68;font-family:DM Sans,sans-serif;font-size:14px">No data yet. Upload documents first.</div>';
+  const periods=data.periods||[],kpis=data.kpis||[],overall=data.overall_scores||{};let h='';
+  if(!kpis.length&&!suggestions?.length)return '<div style="text-align:center;padding:40px;color:#5a5d68;font-family:DM Sans,sans-serif;font-size:14px">No KPIs tracked. Upload documents, then add KPIs from the suggestions below.</div>';
+  h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th style="width:30px">★</th><th>KPI</th>';
+  periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});
+  h+='<th style="width:30px"></th></tr></thead><tbody>';
+  // Score row
+  h+='<tr style="border-bottom:2px solid #2a2d37"><td></td><td class="kn">Score</td>';
+  periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' ac':'')+'" disabled>'+i+'</button>';h+='</div></td>';});
+  h+='<td></td></tr>';
+  kpis.forEach((k,idx)=>{
+    h+='<tr><td style="color:#5a5d68;font-size:12px">'+(idx+1)+'</td><td class="kn">'+esc(k.kpi_name)+(k.unit?' <span style="color:#5a5d68;font-size:11px">('+esc(k.unit)+')</span>':'')+'</td>';
+    periods.forEach(p=>{const d=k.periods[p]||{};const v=d.value!=null?d.value:null;const cls=v!=null?'kv hv':'kv nv';
+      h+='<td class="'+cls+'"><div>'+(v!=null?esc(String(v)):'—')+'</div><div style="display:flex;justify-content:center;gap:2px;margin-top:4px">';
+      for(let i=1;i<=5;i++)h+='<button class="sb'+(d.score===i?' ac':'')+'" onclick="setScore(\''+ticker+'\',\''+k.id+'\',\''+p+'\','+i+')">'+i+'</button>';
+      h+='</div></td>';});
+    h+='<td><button class="kdel" onclick="delKPI(\''+ticker+'\',\''+k.id+'\')" title="Remove">✕</button></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div class="kar"><input id="nkn" placeholder="Add KPI name"><input id="nku" placeholder="Unit" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add</button></div>';
+  if(suggestions?.length){h+='<div class="fl" style="margin-top:20px">Suggested from extracted data</div><div class="schips">';suggestions.forEach(s=>{h+='<span class="schip" onclick="addSKPI(\''+ticker+'\',\''+esc(s.kpi_name).replace(/'/g,"\\'")+'\',\''+esc(s.unit||'').replace(/'/g,"\\'")+'\')">'+esc(s.kpi_name)+(s.unit?' ('+esc(s.unit)+')':'')+'</span>';});h+='</div>';}
+  return h;
 }
 
-async function addSuggestedKPI(ticker,name,unit){
-  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});loadTracker();}catch(e){alert('Failed: '+e.message);}
-}
-
-async function deleteKPI(ticker,kpiId){
-  if(!confirm('Remove this KPI?'))return;
-  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis/'+kpiId,{method:'DELETE'});loadTracker();}catch(e){alert('Failed: '+e.message);}
-}
-
-// ── HISTORY ─────────────────────────────────────────────────
-async function loadHistory(){
-  const t=document.getElementById('history-company').value,c=document.getElementById('history-content'),d=document.getElementById('history-detail');
-  d.style.display='none';if(!t){c.innerHTML='';return;}
-  c.innerHTML='<div class="loading">Loading…</div>';
-  try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/history');if(!r.ok)throw new Error('Failed');renderHistory(await r.json());}catch(e){c.innerHTML='<div class="error-msg">'+esc(e.message)+'</div>';}
-}
-
-function renderHistory(data){
-  const c=document.getElementById('history-content');let h='';
-  h+='<div class="section-card meta"><div class="section-title">'+esc(data.company.name)+' ('+esc(data.company.ticker)+')</div>';
-  h+=data.thesis?'<div class="section-content" style="font-size:13px">'+esc((data.thesis.core_thesis||'').substring(0,200))+'…</div>':'<div class="section-content" style="font-size:13px;color:#f59e0b">No thesis</div>';
-  h+='</div>';
-  if(!data.periods||!data.periods.length){h+='<div style="text-align:center;padding:40px;color:#5a5d68;font-family:DM Sans,sans-serif">No analyses yet.</div>';c.innerHTML=h;return;}
+function renderHistoryHTML(data){
+  if(!data||!data.periods||!data.periods.length)return '<div style="text-align:center;padding:40px;color:#5a5d68;font-family:DM Sans,sans-serif">No analyses yet.</div>';
+  let h='';
   data.periods.forEach(p=>{
     const a=(p.analyses||[]).find(x=>x.output_type==='full_analysis'||x.output_type==='batch_synthesis');
     const dt=a?.created_at?new Date(a.created_at).toLocaleDateString():'';
-    h+='<div class="history-item" onclick=\'viewAnalysis('+JSON.stringify(a?.content||null).replace(/'/g,"&#39;")+')\'>'; 
-    h+='<div class="history-period">'+esc(p.period)+'</div>';
-    h+='<div class="history-meta">'+p.metrics_count+' metrics · '+(p.analyses||[]).length+' outputs · '+dt+'</div>';
-    h+='<div class="history-docs">'+(p.documents||[]).length+' docs: '+(p.documents||[]).map(d=>d.document_type).join(', ')+'</div></div>';
+    h+='<div class="hi" onclick=\'viewA('+JSON.stringify(a?.content||null).replace(/'/g,"&#39;")+')\'>'; 
+    h+='<div class="hi-p">'+esc(p.period)+'</div>';
+    h+='<div class="hi-m">'+p.metrics_count+' metrics · '+(p.analyses||[]).length+' outputs · '+dt+'</div>';
+    h+='<div class="hi-d">'+(p.documents||[]).length+' docs: '+(p.documents||[]).map(d=>d.document_type).join(', ')+'</div></div>';
   });
-  c.innerHTML=h;
+  return h;
 }
 
-function viewAnalysis(content){
-  if(!content)return;
-  const d=document.getElementById('history-detail');document.getElementById('history-content').style.display='none';d.style.display='block';
+// ── KPI actions ─────────────────────────────────────────────
+async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});loadCompanyView();}catch(e){}}
+async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});E('nkn').value='';E('nku').value='';loadCompanyView();}catch(e){}}
+async function addSKPI(t,n,u){try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCompanyView();}catch(e){}}
+async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpis/'+k,{method:'DELETE'});loadCompanyView();}catch(e){}}
+
+// ── View analysis detail ────────────────────────────────────
+function viewA(content){if(!content)return;const d=E('cv-detail');E('cv-content').style.display='none';d.style.display='block';
   if(content.synthesis)renderBatchInto(d,content);else if(content.briefing)renderSingleInto(d,content);
-  else d.innerHTML='<div class="section-card"><div class="section-content">'+esc(JSON.stringify(content,null,2))+'</div></div>';
-  d.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="submit-btn new-btn" onclick="backToHistory()">Back</button></div>';
-}
-function backToHistory(){document.getElementById('history-content').style.display='block';document.getElementById('history-detail').style.display='none';}
+  else d.innerHTML='<div class="sc"><div class="scc">'+esc(JSON.stringify(content,null,2))+'</div></div>';
+  d.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="btn" style="max-width:300px" onclick="E(\'cv-content\').style.display=\'block\';E(\'cv-detail\').style.display=\'none\';">Back</button></div>';}
 
 // ── Renderers ───────────────────────────────────────────────
-function renderBatchResult(d){document.getElementById('form-section').style.display='none';const c=document.getElementById('result-section');c.style.display='block';renderBatchInto(c,d);c.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="submit-btn new-btn" onclick="resetForm()">New Analysis</button></div>';}
-function renderSingleResult(d){document.getElementById('form-section').style.display='none';const c=document.getElementById('result-section');c.style.display='block';renderSingleInto(c,d);c.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="submit-btn new-btn" onclick="resetForm()">New Analysis</button></div>';}
+function renderBR(d){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';renderBatchInto(c,d);c.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="btn" style="max-width:300px" onclick="resetForm()">New Analysis</button></div>';}
+function renderSR(d){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';renderSingleInto(c,d);c.innerHTML+='<div style="margin-top:40px;text-align:center"><button class="btn" style="max-width:300px" onclick="resetForm()">New Analysis</button></div>';}
 
-function renderBatchInto(el,d){
-  const{company,period,synthesis,thesis_comparison,surprises,ir_questions}=d;let h='';
-  h+='<div class="result-header">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gold-line"></div>';
-  if(synthesis&&!synthesis.error){
-    if(synthesis.headline)h+=card('synthesis','Headline',esc(synthesis.headline));
-    if(synthesis.what_happened)h+=card('section','What Happened',esc(synthesis.what_happened));
-    if(synthesis.management_message)h+=card('section','Management Message',esc(synthesis.management_message));
-    if(synthesis.what_the_street_thinks)h+=card('section','Street View',esc(synthesis.what_the_street_thinks));
-    if(synthesis.thesis_impact)h+=card('section','Thesis Impact',esc(synthesis.thesis_impact));
-    if(synthesis.key_debates)h+=card('section','Key Debates',esc(synthesis.key_debates));
-    if(synthesis.risks_updated)h+=card('section','Risks',esc(synthesis.risks_updated));
-    if(synthesis.action_items)h+=card('section','Action Items',esc(synthesis.action_items));
-    if(synthesis.bottom_line)h+=card('highlight','Bottom Line',esc(synthesis.bottom_line));
-  }
-  if(thesis_comparison&&!thesis_comparison.error){let t='Direction: '+(thesis_comparison.thesis_direction||'').toUpperCase()+'\n\n'+esc(thesis_comparison.summary||'');if(thesis_comparison.supporting_signals?.length)t+='\n\nSupporting: '+thesis_comparison.supporting_signals.map(esc).join('. ')+'.';if(thesis_comparison.weakening_signals?.length)t+='\n\nWeakening: '+thesis_comparison.weakening_signals.map(esc).join('. ')+'.';h+=card('section','Thesis Comparison',t);}
-  if(surprises?.length)h+=card('section','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
-  if(ir_questions?.length)h+=card('section','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)+'\nRationale: '+esc(q.rationale)).join('\n\n'));
-  el.innerHTML=h;
-}
+function renderBatchInto(el,d){const{company,period,synthesis,thesis_comparison,surprises,ir_questions}=d;let h='';
+  h+='<div class="rh">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gl"></div>';
+  if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('syn','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.what_the_street_thinks)h+=card('','Street View',esc(synthesis.what_the_street_thinks));if(synthesis.thesis_impact)h+=card('','Thesis Impact',esc(synthesis.thesis_impact));if(synthesis.key_debates)h+=card('','Key Debates',esc(synthesis.key_debates));if(synthesis.risks_updated)h+=card('','Risks',esc(synthesis.risks_updated));if(synthesis.action_items)h+=card('','Action Items',esc(synthesis.action_items));if(synthesis.bottom_line)h+=card('hl','Bottom Line',esc(synthesis.bottom_line));}
+  if(thesis_comparison&&!thesis_comparison.error){let t='Direction: '+(thesis_comparison.thesis_direction||'').toUpperCase()+'\n\n'+esc(thesis_comparison.summary||'');if(thesis_comparison.supporting_signals?.length)t+='\n\nSupporting: '+thesis_comparison.supporting_signals.map(esc).join('. ')+'.';if(thesis_comparison.weakening_signals?.length)t+='\n\nWeakening: '+thesis_comparison.weakening_signals.map(esc).join('. ')+'.';h+=card('','Thesis Comparison',t);}
+  if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
+  if(ir_questions?.length)h+=card('','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)+'\nRationale: '+esc(q.rationale)).join('\n\n'));
+  el.innerHTML=h;}
 
-function renderSingleInto(el,d){
-  const{company,period,briefing,thesis_comparison,surprises,ir_questions}=d;let h='';
-  h+='<div class="result-header">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gold-line"></div>';
-  if(briefing){h+=card('section','What Happened',esc(briefing.what_happened));h+=card('section','What Changed',esc(briefing.what_changed));h+=card('section','Thesis Status',esc(briefing.thesis_status));h+=card('section','Risks',esc(briefing.risks));h+=card('highlight','Bottom Line',esc(briefing.bottom_line));}
-  if(thesis_comparison)h+=card('section','Thesis Comparison','Direction: '+(thesis_comparison.thesis_direction||'').toUpperCase()+'\n\n'+esc(thesis_comparison.summary||''));
-  if(surprises?.length)h+=card('section','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
-  if(ir_questions?.length)h+=card('section','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
-  el.innerHTML=h;
-}
+function renderSingleInto(el,d){const{company,period,briefing,thesis_comparison,surprises,ir_questions}=d;let h='';
+  h+='<div class="rh">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gl"></div>';
+  if(briefing){h+=card('','What Happened',esc(briefing.what_happened));h+=card('','What Changed',esc(briefing.what_changed));h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('','Risks',esc(briefing.risks));h+=card('hl','Bottom Line',esc(briefing.bottom_line));}
+  if(thesis_comparison)h+=card('','Thesis Comparison','Direction: '+(thesis_comparison.thesis_direction||'').toUpperCase()+'\n\n'+esc(thesis_comparison.summary||''));
+  if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
+  if(ir_questions?.length)h+=card('','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
+  el.innerHTML=h;}
 
-function card(t,title,content){return '<div class="section-card '+t+'"><div class="section-title">'+esc(title)+'</div><div class="section-content">'+content+'</div></div>';}
-function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function resetForm(){
-  document.getElementById('form-section').style.display='block';document.getElementById('result-section').style.display='none';
-  document.getElementById('submit-btn').disabled=false;document.getElementById('submit-btn').textContent='Analyse & Synthesise';
-  document.getElementById('loading').style.display='none';document.getElementById('error').style.display='none';document.getElementById('status').style.display='none';
-  uploadedFiles=[];renderFileList();document.getElementById('period').value='';
-}
-loadCompanyDropdowns();
+function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();E('period').value='';}
+loadDD();
 </script>
 </body>
 </html>

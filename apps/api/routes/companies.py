@@ -109,53 +109,79 @@ async def seed_heineken_thesis(ticker: str, db: AsyncSession = Depends(get_db)):
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
-
-    # Check if thesis already exists
     existing = await db.execute(
         select(ThesisVersion).where(ThesisVersion.company_id == company.id, ThesisVersion.active == True)
     )
     if existing.scalar_one_or_none():
         return {"status": "thesis already exists"}
-
     thesis = ThesisVersion(
-        id=uuid.uuid4(),
-        company_id=company.id,
-        thesis_date=date(2025, 12, 1),
-        core_thesis=(
-            "Heineken is a premium global brewer with pricing power and "
-            "volume recovery tailwinds in emerging markets. The EverGreen "
-            "strategy should drive margin expansion through premiumisation "
-            "and cost discipline. The stock is undervalued relative to "
-            "the sector on a FCF yield basis."
-        ),
-        variant_perception=(
-            "The market underestimates the margin improvement trajectory "
-            "in Africa and Asia-Pacific, and overweights near-term input "
-            "cost headwinds."
-        ),
-        key_risks=(
-            "1. Prolonged consumer downtrading in Europe\n"
-            "2. FX headwinds in Africa\n"
-            "3. Regulatory risk (alcohol taxation)\n"
-            "4. Integration risk in recent acquisitions"
-        ),
-        debate_points=(
-            "1. Sustainability of premium mix shift\n"
-            "2. Africa volume growth vs currency translation\n"
-            "3. Capital allocation: M&A vs buybacks\n"
-            "4. Input cost outlook (barley, aluminium, energy)"
-        ),
-        capital_allocation_view=(
-            "Preference for organic growth reinvestment and selective bolt-on "
-            "acquisitions. Dividend payout ~30-35% of net profit. "
-            "Share buybacks only if FCF materially exceeds investment needs."
-        ),
-        valuation_framework=(
-            "DCF with 7.5% WACC, 2% terminal growth. Cross-check with "
-            "EV/EBITDA (target 10-11x forward) and FCF yield (target 6%+)."
-        ),
+        id=uuid.uuid4(), company_id=company.id, thesis_date=date(2025, 12, 1),
+        core_thesis="Heineken is a premium global brewer with pricing power and volume recovery tailwinds in emerging markets.",
+        key_risks="1. Consumer downtrading in Europe\n2. FX headwinds in Africa\n3. Regulatory risk",
+        valuation_framework="DCF with 7.5% WACC, cross-check EV/EBITDA 10-11x and FCF yield 6%+.",
         active=True,
     )
     db.add(thesis)
     await db.commit()
     return {"status": "thesis seeded", "thesis_id": str(thesis.id)}
+
+
+@router.post("/{ticker}/generate-thesis", status_code=200)
+async def generate_thesis(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Use the LLM to auto-generate an investment thesis based on
+    extracted data already in the system, plus web knowledge.
+    """
+    from services.llm_client import call_llm_json
+
+    result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    # Gather any extracted metrics for context
+    from apps.api.models import ExtractedMetric
+    from sqlalchemy import func
+    metrics_q = await db.execute(
+        select(ExtractedMetric)
+        .where(ExtractedMetric.company_id == company.id, ExtractedMetric.confidence >= 0.9)
+        .order_by(ExtractedMetric.created_at.desc())
+        .limit(50)
+    )
+    metrics = metrics_q.scalars().all()
+    metrics_text = "\n".join(
+        f"- {m.metric_name}: {m.metric_value} {m.unit or ''} ({m.period_label})"
+        for m in metrics
+    ) if metrics else "No extracted data available yet."
+
+    prompt = f"""\
+You are a senior buy-side equity analyst. Generate a structured investment thesis
+for the following company based on your knowledge and any data provided.
+
+COMPANY: {company.name} ({company.ticker})
+SECTOR: {company.sector or 'Unknown'}
+COUNTRY: {company.country or 'Unknown'}
+
+AVAILABLE DATA FROM OUR SYSTEM:
+{metrics_text}
+
+Generate a comprehensive investment thesis. Be specific, opinionated, and actionable.
+This is for an internal investment memo, not a marketing document.
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "core_thesis": "<3-4 sentences on why this is an attractive/unattractive investment>",
+  "variant_perception": "<where does the market disagree with our view, and why are we right>",
+  "key_risks": "<4-6 specific risks, numbered>",
+  "debate_points": "<3-5 key debates around the stock, numbered>",
+  "capital_allocation_view": "<how management allocates capital, and whether we agree>",
+  "valuation_framework": "<preferred valuation approach with specific parameters>"
+}}
+"""
+    try:
+        thesis_data = call_llm_json(prompt, max_tokens=4096)
+        return thesis_data
+    except Exception as e:
+        raise HTTPException(500, f"Thesis generation failed: {str(e)[:200]}")
