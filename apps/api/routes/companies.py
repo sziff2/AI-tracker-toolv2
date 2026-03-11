@@ -22,9 +22,15 @@ async def list_companies(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+def _clean_ticker(raw: str) -> str:
+    """Clean ticker: uppercase and trim outer whitespace. Keeps exchange suffix (e.g. 'ENI IM')."""
+    return raw.strip().upper()
+
+
 @router.get("/{ticker}", response_model=CompanyOut)
 async def get_company(ticker: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    clean = _clean_ticker(ticker)
+    result = await db.execute(select(Company).where(Company.ticker == clean))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
@@ -34,7 +40,7 @@ async def get_company(ticker: str, db: AsyncSession = Depends(get_db)):
 @router.post("", response_model=CompanyOut, status_code=201)
 async def create_company(body: CompanyCreate, db: AsyncSession = Depends(get_db)):
     company = Company(id=uuid.uuid4(), **body.model_dump())
-    company.ticker = company.ticker.upper()
+    company.ticker = _clean_ticker(company.ticker)
     db.add(company)
     await db.commit()
     await db.refresh(company)
@@ -43,7 +49,8 @@ async def create_company(body: CompanyCreate, db: AsyncSession = Depends(get_db)
 
 @router.patch("/{ticker}", response_model=CompanyOut)
 async def update_company(ticker: str, body: CompanyUpdate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    clean = _clean_ticker(ticker)
+    result = await db.execute(select(Company).where(Company.ticker == clean))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
@@ -59,7 +66,7 @@ async def update_company(ticker: str, body: CompanyUpdate, db: AsyncSession = De
 # ─────────────────────────────────────────────────────────────────
 @router.post("/{ticker}/thesis", response_model=ThesisOut, status_code=201)
 async def create_thesis(ticker: str, body: ThesisCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
@@ -85,7 +92,7 @@ async def create_thesis(ticker: str, body: ThesisCreate, db: AsyncSession = Depe
 
 @router.get("/{ticker}/thesis", response_model=list[ThesisOut])
 async def list_theses(ticker: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")
@@ -98,7 +105,7 @@ async def list_theses(ticker: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{ticker}/seed-thesis", status_code=201)
 async def seed_heineken_thesis(ticker: str, db: AsyncSession = Depends(get_db)):
     """One-click seed of the Heineken pilot thesis."""
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(404, f"Company {ticker} not found")

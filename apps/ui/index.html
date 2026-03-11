@@ -205,7 +205,7 @@ async function onCompanySelect() {
     const c=companiesCache.find(x=>x.ticker===val);
     if(c){document.getElementById('ticker').value=c.ticker;document.getElementById('company-name').value=c.name;document.getElementById('sector').value=c.sector||'';}
     try {
-      const r=await fetch('/api/v1/companies/'+val+'/thesis');
+      const r=await fetch('/api/v1/companies/'+encodeURIComponent(val)+'/thesis');
       if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];
         if(a){document.getElementById('thesis-core').value=a.core_thesis||'';document.getElementById('thesis-risks').value=a.key_risks||'';document.getElementById('thesis-valuation').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}
         else{document.getElementById('thesis-core').value='';document.getElementById('thesis-risks').value='';document.getElementById('thesis-valuation').value='';ts.classList.remove('open');ta.textContent='▸';}}
@@ -232,16 +232,39 @@ function renderFileList(){const c=document.getElementById('file-list');const tl=
 function showError(m){document.getElementById('error').textContent=m;document.getElementById('error').style.display='block';}
 function showStatus(m){document.getElementById('status').textContent=m;document.getElementById('status').style.display='block';}
 
+function showDuplicateError(ticker, period) {
+  const el=document.getElementById('error');
+  el.innerHTML='These documents have already been uploaded. <button onclick="clearAndRetry(\''+ticker+'\',\''+period+'\')" style="background:#c9a960;color:#0f1117;border:none;border-radius:6px;padding:6px 14px;font-family:DM Sans,sans-serif;font-size:12px;font-weight:600;cursor:pointer;margin-left:8px">Clear old data & retry</button> <button onclick="viewExisting(\''+ticker+'\')" style="background:none;border:1px solid #2a2d37;border-radius:6px;padding:6px 14px;font-family:DM Sans,sans-serif;font-size:12px;color:#7a7d88;cursor:pointer;margin-left:4px">View existing analysis</button>';
+  el.style.display='block';
+}
+
+async function clearAndRetry(ticker, period) {
+  document.getElementById('error').style.display='none';
+  showStatus('Clearing old documents for '+ticker+'…');
+  try {
+    await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/documents',{method:'DELETE'});
+    showStatus('Cleared. Uploading again…');
+    document.getElementById('status').style.display='none';
+    submitForm();
+  } catch(e) { showError('Failed to clear: '+e.message); }
+}
+
+function viewExisting(ticker) {
+  document.getElementById('history-company').value=ticker;
+  showPage('history');
+  loadHistory();
+}
+
 async function ensureCompanyExists(t){
   const n=document.getElementById('company-name').value.trim(),s=document.getElementById('sector').value.trim(),co=document.getElementById('country')?.value?.trim()||'';
-  try{const r=await fetch('/api/v1/companies/'+t);if(r.ok)return true;}catch(e){}
+  try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t));if(r.ok)return true;}catch(e){}
   if(!n){showError('Company not found. Enter a name to create it.');return false;}
   try{const r=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');showStatus('Created: '+n);await loadCompanyDropdowns();}catch(e){showError('Failed: '+e.message);return false;}return true;
 }
 async function ensureThesisExists(t){
   const core=document.getElementById('thesis-core').value.trim();if(!core)return;
   const risks=document.getElementById('thesis-risks').value.trim(),val=document.getElementById('thesis-valuation').value.trim();
-  try{await fetch('/api/v1/companies/'+t+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:risks||null,valuation_framework:val||null})});}catch(e){}
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:risks||null,valuation_framework:val||null})});}catch(e){}
 }
 
 async function submitForm(){
@@ -259,15 +282,15 @@ async function submitForm(){
   if(batch){
     const fd=new FormData();fd.append('period_label',p);fd.append('document_types',uploadedFiles.map(f=>f.docType).join(','));fd.append('titles',uploadedFiles.map(f=>f.file.name).join(','));uploadedFiles.forEach(f=>{fd.append('files',f.file);});
     try{
-      const r=await fetch('/api/v1/companies/'+t+'/documents/batch-upload',{method:'POST',body:fd});
-      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);
+      const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/batch-upload',{method:'POST',body:fd});
+      if(!r.ok){const err=await r.json().catch(()=>({}));const msg=err.detail||'Error '+r.status;if(msg.includes('uplicate')||msg.includes('checksum')){showDuplicateError(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(msg);}
       const data=await r.json(); jobId=data.job_id;
     }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   } else {
     const f=uploadedFiles[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
     try{
-      const r=await fetch('/api/v1/companies/'+t+'/documents/upload-and-process',{method:'POST',body:fd});
-      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Error '+r.status);
+      const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/documents/upload-and-process',{method:'POST',body:fd});
+      if(!r.ok){const err=await r.json().catch(()=>({}));const msg=err.detail||'Error '+r.status;if(msg.includes('uplicate')||msg.includes('checksum')){showDuplicateError(t,p);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(msg);}
       const data=await r.json(); jobId=data.job_id;
     }catch(e){showError(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   }
@@ -314,7 +337,7 @@ async function loadTracker(){
   if(!t){c.innerHTML='';return;}
   c.innerHTML='<div class="loading">Loading tracker…</div>';
   try{
-    const [trackerResp,suggestResp]=await Promise.all([fetch('/api/v1/companies/'+t+'/kpi-tracker'),fetch('/api/v1/companies/'+t+'/suggest-kpis')]);
+    const [trackerResp,suggestResp]=await Promise.all([fetch('/api/v1/companies/'+encodeURIComponent(t)+'/kpi-tracker'),fetch('/api/v1/companies/'+encodeURIComponent(t)+'/suggest-kpis')]);
     const tracker=await trackerResp.json(), suggestions=suggestResp.ok?await suggestResp.json():[];
     renderTracker(t,tracker,suggestions);
   }catch(e){c.innerHTML='<div class="error-msg">'+esc(e.message)+'</div>';}
@@ -382,22 +405,22 @@ function renderTracker(ticker,data,suggestions){
 }
 
 async function setScore(ticker,kpiId,period,score){
-  try{await fetch('/api/v1/companies/'+ticker+'/kpis/'+kpiId+'/scores/'+period,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:score})});loadTracker();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis/'+kpiId+'/scores/'+period,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:score})});loadTracker();}catch(e){alert('Failed: '+e.message);}
 }
 
 async function addKPI(ticker){
   const name=document.getElementById('new-kpi-name').value.trim(),unit=document.getElementById('new-kpi-unit').value.trim();
   if(!name)return;
-  try{await fetch('/api/v1/companies/'+ticker+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});document.getElementById('new-kpi-name').value='';document.getElementById('new-kpi-unit').value='';loadTracker();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});document.getElementById('new-kpi-name').value='';document.getElementById('new-kpi-unit').value='';loadTracker();}catch(e){alert('Failed: '+e.message);}
 }
 
 async function addSuggestedKPI(ticker,name,unit){
-  try{await fetch('/api/v1/companies/'+ticker+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});loadTracker();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:name,unit:unit||null}]})});loadTracker();}catch(e){alert('Failed: '+e.message);}
 }
 
 async function deleteKPI(ticker,kpiId){
   if(!confirm('Remove this KPI?'))return;
-  try{await fetch('/api/v1/companies/'+ticker+'/kpis/'+kpiId,{method:'DELETE'});loadTracker();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/companies/'+encodeURIComponent(ticker)+'/kpis/'+kpiId,{method:'DELETE'});loadTracker();}catch(e){alert('Failed: '+e.message);}
 }
 
 // ── HISTORY ─────────────────────────────────────────────────
@@ -405,7 +428,7 @@ async function loadHistory(){
   const t=document.getElementById('history-company').value,c=document.getElementById('history-content'),d=document.getElementById('history-detail');
   d.style.display='none';if(!t){c.innerHTML='';return;}
   c.innerHTML='<div class="loading">Loading…</div>';
-  try{const r=await fetch('/api/v1/companies/'+t+'/history');if(!r.ok)throw new Error('Failed');renderHistory(await r.json());}catch(e){c.innerHTML='<div class="error-msg">'+esc(e.message)+'</div>';}
+  try{const r=await fetch('/api/v1/companies/'+encodeURIComponent(t)+'/history');if(!r.ok)throw new Error('Failed');renderHistory(await r.json());}catch(e){c.innerHTML='<div class="error-msg">'+esc(e.message)+'</div>';}
 }
 
 function renderHistory(data){
