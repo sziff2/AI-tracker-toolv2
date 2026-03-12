@@ -85,14 +85,25 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
             # ── Step 2: Extract ──────────────────────────────
             await _update_step(job_id, "extract", 25, completed)
             try:
-                from services.metric_extractor import extract_combined
-                text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
-                pages = json.loads(text_path.read_text())
-                full_text = "\n\n".join(p["text"] for p in pages)
+                # Try combined extraction first
+                try:
+                    from services.metric_extractor import extract_combined
+                    text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
+                    pages = json.loads(text_path.read_text())
+                    full_text = "\n\n".join(p["text"] for p in pages)
 
-                extraction = await extract_combined(db, doc, full_text)
-                metrics = extraction["metrics"]
-                guidance = extraction.get("guidance", [])
+                    extraction = await extract_combined(db, doc, full_text)
+                    metrics = extraction["metrics"]
+                    guidance = extraction.get("guidance", [])
+                except Exception:
+                    # Fall back to legacy extraction
+                    from services.metric_extractor import extract_metrics, extract_guidance
+                    text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
+                    pages = json.loads(text_path.read_text())
+                    full_text = "\n\n".join(p["text"] for p in pages)
+                    metrics = await extract_metrics(db, doc, full_text)
+                    guidance_items = await extract_guidance(db, doc, full_text)
+                    guidance = guidance_items
 
                 output["metrics"] = [
                     {
@@ -107,11 +118,13 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
                     }
                     for m in metrics
                 ]
-                output["guidance"] = guidance
-                output["pipeline_status"].append({"step": "extract", "status": "ok", "metrics": len(metrics), "guidance": len(guidance)})
+                output["guidance"] = guidance if isinstance(guidance, list) else []
+                output["pipeline_status"].append({"step": "extract", "status": "ok", "metrics": len(metrics), "guidance": len(output["guidance"])})
                 completed.append("extract")
             except Exception as e:
-                output["pipeline_status"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
+                logger.error("Extraction failed for job %s: %s", job_id, str(e))
+                output["pipeline_status"].append({"step": "extract", "status": "error", "detail": str(e)[:500]})
+                output["extraction_error"] = str(e)[:500]
 
             # ── Steps 3-6: Compare, surprises, briefing, IR (parallel) ──
             await _update_step(job_id, "generating", 55, completed)
