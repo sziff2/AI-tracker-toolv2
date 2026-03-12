@@ -227,3 +227,37 @@ class ProcessingJob(Base, TimestampMixin):
     error_message = Column(Text)
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Decision Log — immutable record of analyst actions
+# ─────────────────────────────────────────────────────────────────
+class DecisionLog(Base, TimestampMixin):
+    __tablename__ = "decision_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    action = Column(Text, nullable=False)            # hold | add | trim | exit | initiate | watchlist
+    rationale = Column(Text, nullable=False)
+    old_weight = Column(Numeric)
+    new_weight = Column(Numeric)
+    conviction = Column(Integer)                     # 1-5
+    author = Column(Text)
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Analyst Notes — freeform research notes
+# ─────────────────────────────────────────────────────────────────
+class AnalystNote(Base, TimestampMixin):
+    __tablename__ = "analyst_notes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    note_type = Column(Text, default="general")      # general | call_note | meeting | thesis_update
+    title = Column(Text)
+    content = Column(Text, nullable=False)
+    author = Column(Text)
+
+    company = relationship("Company")
