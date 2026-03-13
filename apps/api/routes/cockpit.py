@@ -248,16 +248,18 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
 
     # ── All thesis assessments ────────────────────────────────
     all_assessments_q = await db.execute(
-        select(EventAssessment).where(EventAssessment.company_id == cid)
+        select(EventAssessment, Document.period_label)
+        .join(Document, EventAssessment.document_id == Document.id)
+        .where(EventAssessment.company_id == cid)
         .order_by(EventAssessment.created_at.desc())
     )
     all_assessments = [{
-        "period": a.period_label,
-        "thesis_direction": a.thesis_direction,
-        "surprise_level": a.surprise_level,
-        "summary": a.summary,
-        "created_at": a.created_at.isoformat() if a.created_at else None,
-    } for a in all_assessments_q.scalars().all()]
+        "period": row[1],
+        "thesis_direction": row[0].thesis_direction,
+        "surprise_level": row[0].surprise_level,
+        "summary": row[0].summary,
+        "created_at": row[0].created_at.isoformat() if row[0].created_at else None,
+    } for row in all_assessments_q.all()]
 
     # ── Group documents by period ─────────────────────────────
     docs_by_period = {}
