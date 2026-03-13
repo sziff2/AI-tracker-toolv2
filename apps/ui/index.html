@@ -25,7 +25,7 @@ h2{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:1.2px;t
 textarea.fi{resize:vertical;min-height:70px;line-height:1.5}
 select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7d88' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .btn{padding:12px 24px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:var(--bg);border:none;border-radius:10px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
 .btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 20px rgba(201,169,96,.3)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -37,7 +37,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .err{margin-top:16px;padding:12px 16px;background:#1c1215;border:1px solid #3d1f23;border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--red)}
 .ok{margin-top:16px;padding:12px 16px;background:#121c15;border:1px solid #1f3d23;border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--green)}
-/* Cards */
 .cd{background:var(--bg2);border-radius:12px;padding:24px;margin-bottom:12px;border-left:3px solid transparent}
 .cd.gold{border-left-color:var(--gold);background:var(--bg3)}
 .cd.blue{border-left-color:var(--blue);background:#12141a}
@@ -46,25 +45,24 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .cd-c{font-size:14.5px;line-height:1.75;color:var(--text2);white-space:pre-wrap}
 .cd.gold .cd-c{font-size:15px;color:#f0f1f4}
 .gl{width:60px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);margin:10px 0 28px}
-/* File upload */
 .fr{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
 .fr .fn{font-family:var(--sans);font-size:13px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fr .fs{font-family:var(--sans);font-size:11px;color:var(--text4)}
 .fr select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 26px 5px 10px;color:var(--gold);font-family:var(--sans);font-size:12px;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23c9a960' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
-.fr .x{background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px}
-.fr .x:hover{color:var(--red)}
+.fr .x{background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px}.fr .x:hover{color:var(--red)}
 .af{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:transparent;border:2px dashed var(--border);border-radius:10px;color:var(--text3);font-family:var(--sans);font-size:13px;cursor:pointer;transition:all .2s;margin-top:8px}
 .af:hover{border-color:var(--gold);color:var(--gold);background:var(--bg2)}
-/* Collapsible */
 .col{cursor:pointer;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;font-family:var(--sans);font-size:13px;color:var(--text3);transition:all .2s}
 .col:hover{border-color:var(--gold);color:var(--gold)}
 .col-c{display:none;padding:16px;background:#12141a;border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
 .col-c.open{display:block}
-/* Tabs */
 .tabs{display:flex;gap:4px;background:var(--bg2);border-radius:10px;padding:4px;margin-bottom:20px}
 .tab{flex:1;padding:10px;text-align:center;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text3);border-radius:8px;cursor:pointer;border:none;background:none;transition:all .2s}
 .tab.on{background:#1e2028;color:var(--gold)}.tab:hover:not(.on){color:var(--text)}
-/* KPI table */
+.ptabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px}
+.ptab{padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-family:var(--sans);font-size:12px;color:var(--text3);cursor:pointer;background:none;transition:all .2s}
+.ptab.on{border-color:var(--gold);color:var(--gold);background:var(--bg3)}
+.ptab:hover:not(.on){border-color:var(--text3)}
 .kt{width:100%;border-collapse:separate;border-spacing:0;font-family:var(--sans);font-size:13px}
 .kt th{text-align:left;padding:10px 12px;color:var(--text3);font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:1}
 .kt td{padding:8px 12px;border-bottom:1px solid #1a1c25;color:var(--text2)}
@@ -74,39 +72,31 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .sb{width:26px;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text3);font-family:var(--sans);font-size:11px;cursor:pointer;transition:all .15s;margin:0 1px}
 .sb:hover{border-color:var(--gold);color:var(--gold)}
 .sb.on{background:var(--gold);color:var(--bg);border-color:var(--gold);font-weight:700}
-/* Cockpit header strip */
 .ck-strip{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px}
 .ck-stat{background:var(--bg2);border-radius:10px;padding:14px 20px;flex:1;min-width:120px}
 .ck-stat-label{font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text4);margin-bottom:4px}
 .ck-stat-val{font-family:var(--sans);font-size:18px;font-weight:700;color:var(--text)}
 .ck-stat-val.up{color:var(--green)}.ck-stat-val.down{color:var(--red)}.ck-stat-val.neutral{color:var(--amber)}
-/* Timeline */
-.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #1a1c25;font-family:var(--sans);font-size:13px}
-.tl-date{color:var(--text4);font-size:11px;min-width:80px;padding-top:2px}
-.tl-icon{font-size:16px;min-width:24px;text-align:center}
-.tl-body{flex:1;color:var(--text2)}
-.tl-body strong{color:var(--text);font-weight:500}
-/* Decision log */
+.tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #1a1c25;font-family:var(--sans);font-size:13px}
+.tl-date{color:var(--text4);font-size:11px;min-width:80px}.tl-icon{font-size:16px;min-width:24px;text-align:center}.tl-body{flex:1;color:var(--text2)}.tl-body strong{color:var(--text);font-weight:500}
 .dl-item{padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
 .dl-action{font-family:var(--sans);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 .dl-action.add{color:var(--green)}.dl-action.trim,.dl-action.exit{color:var(--red)}.dl-action.hold{color:var(--amber)}.dl-action.initiate{color:var(--blue)}.dl-action.watchlist{color:var(--text3)}
 .dl-rat{font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:4px}
 .dl-meta{font-family:var(--sans);font-size:11px;color:var(--text4)}
-/* Note */
 .note-item{padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
 .note-title{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
 .note-body{font-family:var(--sans);font-size:13px;color:var(--text2);white-space:pre-wrap}
 .note-meta{font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:6px}
-/* Forms */
 .form-row{display:flex;gap:8px;margin-top:12px}
 .form-row input,.form-row textarea,.form-row select{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none}
 .form-row input:focus,.form-row textarea:focus{border-color:var(--gold)}
 .form-row button{padding:8px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--gold);font-family:var(--sans);font-size:13px;cursor:pointer;white-space:nowrap}
 .form-row button:hover{background:var(--gold);color:var(--bg)}
-.schips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.schip{padding:4px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;font-family:var(--sans);font-size:11px;color:var(--text3);cursor:pointer}
-.schip:hover{border-color:var(--gold);color:var(--gold)}
 .kdel{background:none;border:none;color:#3a3d48;cursor:pointer;font-size:14px}.kdel:hover{color:var(--red)}
+.th-hist{padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-family:var(--sans);font-size:12px;color:var(--text2);display:flex;justify-content:space-between;align-items:center}
+.th-hist .badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.5px}
+.th-hist .badge.up{background:#12261a;color:var(--green)}.th-hist .badge.down{background:#261215;color:var(--red)}.th-hist .badge.neutral{background:#26221a;color:var(--amber)}
 </style>
 </head>
 <body>
@@ -120,14 +110,17 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </div>
 <div class="wrap">
 
-<!-- ═══ NEW ANALYSIS PAGE ═══ -->
+<!-- ═══ NEW ANALYSIS ═══ -->
 <div id="page-new">
   <div id="form-section">
     <h1>Upload documents</h1>
     <p class="sub">Add your earnings release, transcript, broker notes, and presentations. Each is analysed with a tailored prompt, then synthesised into one opinionated briefing.</p>
     <div class="g2">
       <div><div class="fl">Company</div><select class="fi" id="company-select" onchange="onCompanySelect()"><option value="">— Select or type new —</option></select></div>
-      <div><div class="fl">Period</div><input class="fi" id="period" placeholder="e.g. 2025_Q2"></div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1"><div class="fl">Period</div><select class="fi" id="period-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div>
+        <div style="flex:1"><div class="fl">Year</div><select class="fi" id="period-year"></select></div>
+      </div>
     </div>
     <div class="g2" id="new-co" style="display:none">
       <div><div class="fl">Ticker</div><input class="fi" id="ticker" placeholder="e.g. ENI IM"></div>
@@ -154,11 +147,9 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="result-section" style="display:none"></div>
 </div>
 
-<!-- ═══ COMPANY COCKPIT ═══ -->
+<!-- ═══ COCKPIT ═══ -->
 <div id="page-cockpit" style="display:none">
-  <div class="g2" style="margin-top:0">
-    <div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="loadCockpit()"><option value="">— Select company —</option></select></div>
-  </div>
+  <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="loadCockpit()"><option value="">— Select company —</option></select></div></div>
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
@@ -171,31 +162,17 @@ function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t
 function enc(t){return encodeURIComponent(t);}
 function showPage(p){['new','cockpit'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
+function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
+
+// Populate year dropdown
+(function(){const sel=E('period-year');const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}})();
 
 // ── Companies ───────────────────────────────────────────────
-async function loadDD(){
-  try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
-  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;
-    el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';
-    CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});
-    if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}
-    el.value=cur;});
-}
-async function onCompanySelect(){
-  const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');
-  if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}
-  else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}
-    try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}
-}
+async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
+  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});}
+async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
-
-// ── Auto-generate thesis ────────────────────────────────────
-async function generateThesis(){
-  const t=getTicker();if(!t){alert('Select a company first.');return;}
-  const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';
-  try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}
-  btn.textContent='✨ Auto-generate thesis';btn.disabled=false;
-}
+async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
 // ── Files ────────────────────────────────────────────────────
 function addFile(){HFI.click();}
@@ -212,7 +189,7 @@ async function ensureCo(t){const n=E('co-name').value.trim(),s=E('sector').value
 async function saveThesis(t){const c=E('th-core').value.trim();if(!c)return;try{await fetch('/api/v1/companies/'+enc(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:c,key_risks:E('th-risks').value.trim()||null,valuation_framework:E('th-val').value.trim()||null})});}catch(e){}}
 
 async function submitForm(){
-  const t=getTicker(),p=E('period').value.trim();if(!t||!p){showErr('Select company and period.');return;}if(!UF.length){showErr('Add a document.');return;}
+  const t=getTicker(),p=getPeriod();if(!t||!p){showErr('Select company and period.');return;}if(!UF.length){showErr('Add a document.');return;}
   const btn=E('sub-btn'),ld=E('loading');E('error').style.display='none';E('status').style.display='none';btn.disabled=true;btn.textContent='Setting up…';
   if(!await ensureCo(t)){btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}await saveThesis(t);btn.textContent='Uploading…';
   const batch=UF.length>1;let jobId;
@@ -227,43 +204,29 @@ async function submitForm(){
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
   }catch(e){}},3000);
 }
-function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();E('period').value='';}
+function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();}
 
-// ── COMPANY COCKPIT ─────────────────────────────────────────
-async function loadCockpit(){
-  const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}
-  c.innerHTML='<div class="ld">Loading cockpit…</div>';
-  try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');const d=await r.json();renderCockpit(t,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
-}
+// ═══ COCKPIT ═══════════════════════════════════════════════
+async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}c.innerHTML='<div class="ld">Loading…</div>';try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');renderCockpit(t,await r.json());}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}}
+
 function renderCockpit(ticker,d){
-  const c=E('ck-content');const co=d.company;let h='';
-  // Header
+  const c=E('ck-content'),co=d.company;let h='';
   h+='<h1>'+esc(co.name)+' <span style="color:var(--gold)">'+esc(co.ticker)+'</span></h1>';
-  h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div>';
-  h+='<div class="gl"></div>';
-  // Stats strip
+  h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
-  h+='<div class="ck-strip">';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Thesis Status</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Metrics</div><div class="ck-stat-val">'+d.stats.total_metrics+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div>';
-  h+='</div>';
-  // Tabs
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Latest Results</button><button class="tab" onclick="ckTab(\'timeline\',this)">Timeline & Files</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
-  // Tab contents
+  h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Metrics</div><div class="ck-stat-val">'+d.stats.total_metrics+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
-  h+='<div id="ck-results" style="display:none">'+renderCkResults(d)+'</div>';
-  h+='<div id="ck-timeline" style="display:none">'+renderCkTimeline(d)+'</div>';
+  h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','kpis','results','timeline','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function ckTab(t,btn){['thesis','kpis','results','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
 
+// ── Thesis tab (with history) ────────────────────────────────
 function renderCkThesis(d){
-  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
+  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file.');
   const t=d.thesis;let h='';
   h+=card('gold','Core Thesis',esc(t.core_thesis||''));
   if(t.variant_perception)h+=card('','Variant Perception',esc(t.variant_perception));
@@ -271,111 +234,100 @@ function renderCkThesis(d){
   if(t.debate_points)h+=card('','Key Debates',esc(t.debate_points));
   if(t.capital_allocation_view)h+=card('','Capital Allocation',esc(t.capital_allocation_view));
   if(t.valuation_framework)h+=card('','Valuation Framework',esc(t.valuation_framework));
+  // Latest assessment
   if(d.thesis_assessment){const a=d.thesis_assessment;h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
+  // Assessment history
+  if(d.all_assessments?.length>1){
+    h+='<h2 style="margin-top:24px">Assessment History</h2>';
+    d.all_assessments.forEach(a=>{
+      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
+      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
+    });
+  }
+  // Thesis version history
+  if(d.thesis_history?.length>1){
+    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
+    d.thesis_history.forEach(tv=>{
+      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
+    });
+  }
   return h;
 }
 
+// ── KPIs tab ─────────────────────────────────────────────────
 function renderCkKPIs(ticker,d){
-  const tr=d.kpi_tracker;if(!tr||!tr.kpis.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No KPIs tracked yet. Run an analysis first.</div>';
+  const tr=d.kpi_tracker;if(!tr||!tr.kpis.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No KPIs tracked yet.</div>';
   const periods=tr.periods||[],kpis=tr.kpis||[],overall=tr.overall_scores||{};let h='';
   h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>#</th><th>KPI</th>';periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});h+='<th></th></tr></thead><tbody>';
-  h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';
-  periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
+  h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
   kpis.forEach((k,idx)=>{h+='<tr><td style="color:var(--text4);font-size:12px">'+(idx+1)+'</td><td class="kn">'+esc(k.kpi_name)+(k.unit?' <span style="color:var(--text4);font-size:11px">('+esc(k.unit)+')</span>':'')+'</td>';
     periods.forEach(p=>{const v=k.periods[p]||{};const val=v.value!=null?v.value:null;h+='<td class="kv">'+(val!=null?esc(String(val)):'—')+'<div style="display:flex;justify-content:center;gap:2px;margin-top:4px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(v.score===i?' on':'')+'" data-kpi="'+k.id+'" data-period="'+p+'" onclick="setScore(\''+ticker+'\',\''+k.id+'\',\''+p+'\','+i+')">'+i+'</button>';h+='</div></td>';});
-    h+='<td><button class="kdel" onclick="delKPI(\''+ticker+'\',\''+k.id+'\')" title="Remove">✕</button></td></tr>';});
+    h+='<td><button class="kdel" onclick="delKPI(\''+ticker+'\',\''+k.id+'\')">✕</button></td></tr>';});
   h+='</tbody></table></div>';
   h+='<div class="form-row"><input id="nkn" placeholder="Add KPI name"><input id="nku" placeholder="Unit" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add</button></div>';
   return h;
 }
 
-function renderCkResults(d){
-  if(!d.latest_briefing)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No analysis results yet. Upload documents from the New Analysis page.</div>';
-  const b=d.latest_briefing;let h='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:16px">'+esc(b.period)+' · '+esc(b.output_type)+' · '+esc(b.created_at?.split('T')[0]||'')+'</div>';
-  const c=b.content;if(!c)return h+'<div style="color:var(--text4)">No content.</div>';
-  if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}
-  else if(c.briefing){const b2=c.briefing;if(b2.what_happened)h+=card('','What Happened',esc(b2.what_happened));if(b2.what_changed)h+=card('','What Changed',esc(b2.what_changed));if(b2.bottom_line)h+=card('gold','Bottom Line',esc(b2.bottom_line));}
-  if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
+// ── Results tab (sub-tabs per period, with docs used) ────────
+function renderCkResults(ticker,d){
+  const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
+  const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
+  if(!allPeriods.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Upload documents from New Analysis.</div>';
+  let h='<div class="ptabs" id="res-ptabs">';
+  allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});
+  h+='</div>';
+  allPeriods.forEach((p,i)=>{
+    h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
+    // Documents used for this period
+    const pdocs=dbp[p]||[];
+    if(pdocs.length){
+      h+='<h2>Documents Used</h2>';
+      pdocs.forEach(doc=>{
+        const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
+        h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button></div>';
+      });
+    }
+    // Analysis output
+    const analysis=abp[p];
+    if(analysis?.content){
+      h+='<h2>Analysis Output</h2>';
+      const c=analysis.content;
+      if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}
+      else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}
+      if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
+      if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
+    } else if(!pdocs.length){
+      h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';
+    }
+    h+='</div>';
+  });
   return h;
 }
-
-function renderCkTimeline(d){
-  let h='';
-  // Documents / Files section
-  const docs=d.documents||[];
-  if(docs.length){
-    h+='<h2>Uploaded Files</h2>';
-    docs.forEach(doc=>{
-      const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
-      h+='<div class="fr" style="margin-bottom:8px">';
-      h+='<span>'+icon+'</span>';
-      h+='<span class="fn">'+esc(doc.title||'Untitled')+'</span>';
-      h+='<span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span>';
-      h+='<span class="fs">'+esc(doc.period_label)+'</span>';
-      h+='<span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span>';
-      h+='<button class="btn-sm" onclick="viewFile(\''+doc.id+'\',\''+esc(doc.title||'document')+'\')">View</button>';
-      h+='<button class="btn2" style="padding:4px 10px;font-size:11px" onclick="downloadFile(\''+doc.id+'\',\''+esc(doc.title||'document')+'\')">Download</button>';
-      h+='</div>';
-    });
-  }
-  // Activity timeline
-  h+='<h2 style="margin-top:32px">Activity</h2>';
-  const items=[];
-  docs.forEach(doc=>{items.push({date:doc.created_at,icon:'📄',text:'<strong>'+esc(doc.document_type)+'</strong> uploaded: '+esc(doc.title)+' ('+esc(doc.period_label)+')'});});
-  (d.decisions||[]).forEach(dec=>{items.push({date:dec.created_at,icon:'⚡',text:'<strong>'+esc(dec.action).toUpperCase()+'</strong> — '+esc(dec.rationale)});});
-  (d.notes||[]).forEach(n=>{items.push({date:n.created_at,icon:'📝',text:'<strong>'+(esc(n.title)||'Note')+'</strong> — '+esc(n.content?.substring(0,200))});});
-  items.sort((a,b)=>b.date?.localeCompare(a.date||'')||0);
-  if(!items.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No activity yet.</div>';
-  items.forEach(it=>{h+='<div class="tl-item"><div class="tl-date">'+esc(it.date?.split('T')[0]||'')+'</div><div class="tl-icon">'+it.icon+'</div><div class="tl-body">'+it.text+'</div></div>';});
-  return h;
+function showResPeriod(p,btn){
+  document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
+  const target=E('res-'+p);if(target)target.style.display='block';
+  E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
 }
 
-function viewFile(docId,title){
-  window.open('/api/v1/documents/'+docId+'/file','_blank');
-}
-function downloadFile(docId,title){
-  const a=document.createElement('a');a.href='/api/v1/documents/'+docId+'/file';a.download=title;a.click();
-}
-
+// ── Decisions tab ────────────────────────────────────────────
 function renderCkDecisions(ticker,d){
-  let h='';
-  // Add decision form
-  h+='<div style="margin-bottom:20px">';
-  h+='<div class="form-row"><select id="dec-action"><option value="hold">Hold</option><option value="add">Add</option><option value="trim">Trim</option><option value="exit">Exit</option><option value="initiate">Initiate</option><option value="watchlist">Watchlist</option></select>';
-  h+='<input id="dec-conviction" type="number" min="1" max="5" placeholder="Conviction 1-5" style="max-width:120px">';
-  h+='<input id="dec-author" placeholder="Your name" style="max-width:140px"></div>';
-  h+='<div class="form-row" style="margin-top:6px"><textarea id="dec-rationale" placeholder="Rationale for this decision…" style="min-height:50px"></textarea>';
-  h+='<button onclick="addDecision(\''+ticker+'\')">Log Decision</button></div></div>';
-  // Add note form
-  h+='<h2 style="margin-top:24px">Add Note</h2>';
-  h+='<div class="form-row"><select id="note-type"><option value="general">General</option><option value="call_note">Call Note</option><option value="meeting">Meeting</option><option value="thesis_update">Thesis Update</option></select>';
-  h+='<input id="note-title" placeholder="Title" style="max-width:200px"><input id="note-author" placeholder="Author" style="max-width:120px"></div>';
-  h+='<div class="form-row" style="margin-top:6px"><textarea id="note-content" placeholder="Note content…" style="min-height:50px"></textarea><button onclick="addNote(\''+ticker+'\')">Add Note</button></div>';
-  // Existing decisions
+  let h='<div style="margin-bottom:20px"><div class="form-row"><select id="dec-action"><option value="hold">Hold</option><option value="add">Add</option><option value="trim">Trim</option><option value="exit">Exit</option><option value="initiate">Initiate</option><option value="watchlist">Watchlist</option></select><input id="dec-conviction" type="number" min="1" max="5" placeholder="Conviction 1-5" style="max-width:120px"><input id="dec-author" placeholder="Your name" style="max-width:140px"></div><div class="form-row" style="margin-top:6px"><textarea id="dec-rationale" placeholder="Rationale…" style="min-height:50px"></textarea><button onclick="addDecision(\''+ticker+'\')">Log Decision</button></div></div>';
+  h+='<h2>Add Note</h2><div class="form-row"><select id="note-type"><option value="general">General</option><option value="call_note">Call Note</option><option value="meeting">Meeting</option><option value="thesis_update">Thesis Update</option></select><input id="note-title" placeholder="Title" style="max-width:200px"><input id="note-author" placeholder="Author" style="max-width:120px"></div><div class="form-row" style="margin-top:6px"><textarea id="note-content" placeholder="Note…" style="min-height:50px"></textarea><button onclick="addNote(\''+ticker+'\')">Add Note</button></div>';
   if(d.decisions?.length){h+='<h2 style="margin-top:28px">Decision History</h2>';d.decisions.forEach(dec=>{h+='<div class="dl-item"><div class="dl-action '+esc(dec.action)+'">'+esc(dec.action)+(dec.conviction?' · Conviction '+dec.conviction+'/5':'')+'</div><div class="dl-rat">'+esc(dec.rationale)+'</div><div class="dl-meta">'+esc(dec.author||'')+(dec.created_at?' · '+dec.created_at.split('T')[0]:'')+'</div></div>';});}
-  // Existing notes
   if(d.notes?.length){h+='<h2 style="margin-top:28px">Research Notes</h2>';d.notes.forEach(n=>{h+='<div class="note-item"><div class="note-title">'+(esc(n.title)||esc(n.note_type))+'</div><div class="note-body">'+esc(n.content)+'</div><div class="note-meta">'+esc(n.author||'')+(n.created_at?' · '+n.created_at.split('T')[0]:'')+'</div></div>';});}
   return h;
 }
 
-// ── KPI actions ─────────────────────────────────────────────
+// ── Actions ──────────────────────────────────────────────────
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
 async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
 async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
-async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){alert('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});loadCockpit();}catch(e){alert('Failed: '+e.message);}}
-async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){alert('Enter note content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});loadCockpit();}catch(e){alert('Failed: '+e.message);}}
+async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){alert('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});loadCockpit();}catch(e){}}
+async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){alert('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});loadCockpit();}catch(e){}}
 
-// ── Renderers ───────────────────────────────────────────────
-function renderBatchHTML(d){const{company,period,synthesis,thesis_comparison,surprises,ir_questions}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gl"></div>';
-  if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.what_the_street_thinks)h+=card('','Street View',esc(synthesis.what_the_street_thinks));if(synthesis.thesis_impact)h+=card('','Thesis Impact',esc(synthesis.thesis_impact));if(synthesis.key_debates)h+=card('','Key Debates',esc(synthesis.key_debates));if(synthesis.risks_updated)h+=card('','Risks',esc(synthesis.risks_updated));if(synthesis.action_items)h+=card('','Action Items',esc(synthesis.action_items));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));}
-  if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
-  if(ir_questions?.length)h+=card('','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));return h;}
-function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extraction_error}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' ('+esc(company?.ticker||'')+') — '+esc(period)+'</div><div class="gl"></div>';
-  if(pipeline_status?.length){const errs=pipeline_status.filter(s=>s.status==='error');if(errs.length)h+=card('blue','Pipeline Issues',errs.map(e=>esc(e.step)+': '+esc(e.detail)).join('\n\n'));}
-  if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));
-  if(briefing?.what_happened){h+=card('','What Happened',esc(briefing.what_happened));h+=card('','What Changed',esc(briefing.what_changed));h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('','Risks',esc(briefing.risks));h+=card('gold','Bottom Line',esc(briefing.bottom_line));}
-  else h+=card('blue','No Output','Analysis completed but no content generated. Check that the document is text-based and the API key has credits.');
-  if(d.metrics?.length)h+=card('blue','Metrics',d.metrics.length+' extracted');return h;}
+// ── Renderers for new analysis results ──────────────────────
+function renderBatchHTML(d){const{company,period,synthesis,surprises,ir_questions}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));}if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));return h;}
+function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extraction_error}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status?.length){const errs=pipeline_status.filter(s=>s.status==='error');if(errs.length)h+=card('blue','Pipeline Issues',errs.map(e=>esc(e.step)+': '+esc(e.detail)).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing?.what_happened){h+=card('','What Happened',esc(briefing.what_happened));h+=card('gold','Bottom Line',esc(briefing.bottom_line));}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
 
 loadDD();
 </script>

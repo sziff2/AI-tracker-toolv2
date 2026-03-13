@@ -147,25 +147,38 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         valid = [v for v in vals if v is not None]
         overall_scores[period] = round(sum(valid) / len(valid), 1) if valid else None
 
-    # ── Latest results / briefing ─────────────────────────────
+    # ── All analyses grouped by period ─────────────────────────
     outputs_q = await db.execute(
-        select(ResearchOutput).where(ResearchOutput.company_id == cid)
-        .order_by(ResearchOutput.created_at.desc()).limit(5)
+        select(ResearchOutput).where(
+            ResearchOutput.company_id == cid,
+            ResearchOutput.output_type.in_(["full_analysis", "batch_synthesis"]),
+        ).order_by(ResearchOutput.created_at.desc())
     )
-    outputs = outputs_q.scalars().all()
+    all_outputs = outputs_q.scalars().all()
+
+    # Group by period
+    analyses_by_period = {}
+    for o in all_outputs:
+        p = o.period_label or "unknown"
+        if p not in analyses_by_period:
+            content = None
+            if o.content_json:
+                try:
+                    content = json.loads(o.content_json)
+                except Exception:
+                    pass
+            analyses_by_period[p] = {
+                "period": p,
+                "output_type": o.output_type,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "content": content,
+            }
+
+    # Latest briefing (for backwards compat)
     latest_briefing = None
-    for o in outputs:
-        if o.content_json and o.output_type in ("full_analysis", "batch_synthesis"):
-            try:
-                latest_briefing = {
-                    "period": o.period_label,
-                    "output_type": o.output_type,
-                    "created_at": o.created_at.isoformat() if o.created_at else None,
-                    "content": json.loads(o.content_json),
-                }
-            except Exception:
-                pass
-            break
+    if analyses_by_period:
+        latest_period = sorted(analyses_by_period.keys(), reverse=True)[0]
+        latest_briefing = analyses_by_period[latest_period]
 
     # ── Documents timeline ────────────────────────────────────
     docs_q = await db.execute(
@@ -221,6 +234,39 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
     )
     total_metrics = metrics_count_q.scalar() or 0
 
+    # ── Thesis history ──────────────────────────────────────────
+    all_theses_q = await db.execute(
+        select(ThesisVersion).where(ThesisVersion.company_id == cid)
+        .order_by(ThesisVersion.thesis_date.desc())
+    )
+    thesis_history = [{
+        "id": str(t.id),
+        "thesis_date": t.thesis_date.isoformat() if t.thesis_date else None,
+        "core_thesis": t.core_thesis[:200] + "…" if t.core_thesis and len(t.core_thesis) > 200 else t.core_thesis,
+        "active": t.active,
+    } for t in all_theses_q.scalars().all()]
+
+    # ── All thesis assessments ────────────────────────────────
+    all_assessments_q = await db.execute(
+        select(EventAssessment).where(EventAssessment.company_id == cid)
+        .order_by(EventAssessment.created_at.desc())
+    )
+    all_assessments = [{
+        "period": a.period_label,
+        "thesis_direction": a.thesis_direction,
+        "surprise_level": a.surprise_level,
+        "summary": a.summary,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    } for a in all_assessments_q.scalars().all()]
+
+    # ── Group documents by period ─────────────────────────────
+    docs_by_period = {}
+    for d in docs:
+        p = d["period_label"] or "unknown"
+        if p not in docs_by_period:
+            docs_by_period[p] = []
+        docs_by_period[p].append(d)
+
     return {
         "company": {
             "ticker": company.ticker,
@@ -233,13 +279,17 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         },
         "thesis": thesis_data,
         "thesis_assessment": assessment_data,
+        "thesis_history": thesis_history,
+        "all_assessments": all_assessments,
         "kpi_tracker": {
             "periods": periods,
             "kpis": kpi_rows,
             "overall_scores": overall_scores,
         },
         "latest_briefing": latest_briefing,
+        "analyses_by_period": analyses_by_period,
         "documents": docs,
+        "docs_by_period": docs_by_period,
         "decisions": decisions,
         "notes": notes,
         "review_items": reviews,
