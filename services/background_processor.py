@@ -343,17 +343,47 @@ async def run_batch_pipeline(
             try:
                 from services.llm_client import call_llm_json
                 from prompts import SYNTHESIS_BRIEFING
+                from services.context_builder import build_thesis_context, build_prior_period_context
+
+                # Get structured context instead of raw dumps
+                async with AsyncSessionLocal() as db_ctx:
+                    thesis_ctx = await build_thesis_context(db_ctx, company_id)
+                    prior_ctx = await build_prior_period_context(db_ctx, company_id, period_label)
+
+                # Cap raw extraction data — compress to key facts, not full JSON
+                def _compress_items(items_list, label, max_items=20):
+                    if not items_list:
+                        return f"No {label} data."
+                    try:
+                        all_items = []
+                        for block in items_list:
+                            parsed = json.loads(block) if isinstance(block, str) else block
+                            if isinstance(parsed, list):
+                                all_items.extend(parsed)
+                        # Compress to key-value lines instead of raw JSON
+                        lines = []
+                        for item in all_items[:max_items]:
+                            name = item.get("metric_name") or item.get("topic") or item.get("category", "")
+                            val = item.get("metric_value") or item.get("metric_text") or item.get("description") or ""
+                            unit = item.get("unit") or ""
+                            lines.append(f"{name}: {val} {unit}".strip())
+                        return "\n".join(lines)
+                    except Exception:
+                        # Fall back to truncated raw
+                        raw = "\n".join(items_list)[:3000]
+                        return raw
+
                 synthesis_prompt = SYNTHESIS_BRIEFING.format(
                     company=company.name if company else ticker,
                     ticker=ticker,
                     period=period_label,
-                    thesis=thesis_text,
-                    earnings_data="\n".join(earnings_data) if earnings_data else "No earnings data.",
-                    transcript_data="\n".join(transcript_data) if transcript_data else "No transcript data.",
-                    broker_data="\n".join(broker_data) if broker_data else "No broker notes.",
-                    presentation_data="\n".join(presentation_data) if presentation_data else "No presentations.",
-                    thesis_comparison=json.dumps(output.get("thesis_comparison"), indent=2, default=str) if output.get("thesis_comparison") else "Not available.",
-                    surprises=json.dumps(output.get("surprises"), indent=2, default=str) if output.get("surprises") else "None detected.",
+                    thesis=thesis_ctx,
+                    earnings_data=_compress_items(earnings_data, "earnings"),
+                    transcript_data=_compress_items(transcript_data, "transcript"),
+                    broker_data=_compress_items(broker_data, "broker"),
+                    presentation_data=_compress_items(presentation_data, "presentation"),
+                    thesis_comparison=json.dumps(output.get("thesis_comparison"), default=str)[:1000] if output.get("thesis_comparison") else "Not available.",
+                    surprises=json.dumps(output.get("surprises"), default=str)[:1000] if output.get("surprises") else "None detected.",
                 )
                 synthesis = call_llm_json(synthesis_prompt, max_tokens=8192)
                 output["synthesis"] = synthesis

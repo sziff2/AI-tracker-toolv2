@@ -1,11 +1,8 @@
 """
-Output Generation Service (§7)
+Output Generation Service — briefings, IR questions, thesis drift.
 
-Responsibilities:
-  - Generate one-page briefing
-  - Generate IR questions
-  - Generate thesis drift report
-  - Persist outputs and add to review queue
+Uses the context_builder to assemble minimum required context per step.
+Each LLM call receives only what it needs — no full document dumps.
 """
 
 import json
@@ -16,19 +13,17 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import (
-    Company, ExtractedMetric, EventAssessment, ResearchOutput, ReviewQueueItem, ThesisVersion,
-)
+from apps.api.models import Company, ExtractedMetric, EventAssessment, ResearchOutput, ReviewQueueItem, ThesisVersion
 from configs.settings import settings
 from prompts import ONE_PAGE_BRIEFING, IR_QUESTION_GENERATOR
-from schemas import BriefingSection, IRQuestion, ThesisComparison
+from schemas import BriefingSection, IRQuestion
 from services.llm_client import call_llm_json
 
 logger = logging.getLogger(__name__)
 
 
-def _output_dir(ticker: str, period_label: str) -> Path:
-    d = Path(settings.storage_base_path) / "outputs" / ticker / period_label
+def _output_dir(ticker: str, period: str) -> Path:
+    d = Path(settings.storage_base_path) / "outputs" / ticker / period
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -38,60 +33,26 @@ async def _company_by_id(db: AsyncSession, company_id: uuid.UUID) -> Company:
     return result.scalar_one()
 
 
-async def _metrics_text(db: AsyncSession, company_id: uuid.UUID, period: str) -> str:
-    q = await db.execute(
-        select(ExtractedMetric).where(
-            ExtractedMetric.company_id == company_id,
-            ExtractedMetric.period_label == period,
-        )
-    )
-    lines = []
-    for m in q.scalars().all():
-        val = f"{m.metric_value} {m.unit}" if m.metric_value else m.metric_text
-        lines.append(f"- {m.metric_name}: {val}")
-    return "\n".join(lines) or "No metrics extracted."
-
-
-async def _thesis_text(db: AsyncSession, company_id: uuid.UUID) -> str:
-    q = await db.execute(
-        select(ThesisVersion).where(
-            ThesisVersion.company_id == company_id, ThesisVersion.active == True
-        ).order_by(ThesisVersion.thesis_date.desc()).limit(1)
-    )
-    tv = q.scalar_one_or_none()
-    return tv.core_thesis if tv else "No thesis on file."
-
-
-async def _drift_text(db: AsyncSession, company_id: uuid.UUID, period: str) -> str:
-    q = await db.execute(
-        select(EventAssessment).where(
-            EventAssessment.company_id == company_id,
-        ).order_by(EventAssessment.created_at.desc()).limit(1)
-    )
-    ea = q.scalar_one_or_none()
-    if ea:
-        return f"Direction: {ea.thesis_direction} | Surprise: {ea.surprise_level}\n{ea.summary}"
-    return "No prior comparison available."
-
-
 # ─────────────────────────────────────────────────────────────────
-# One-Page Briefing
+# One-Page Briefing (uses structured context)
 # ─────────────────────────────────────────────────────────────────
 
 async def generate_briefing(
     db: AsyncSession, company_id: uuid.UUID, period_label: str
 ) -> BriefingSection:
-    company = await _company_by_id(db, company_id)
-    kpis = await _metrics_text(db, company_id, period_label)
-    thesis_comp = await _drift_text(db, company_id, period_label)
+    from services.context_builder import build_briefing_context
 
+    company = await _company_by_id(db, company_id)
+    ctx = await build_briefing_context(db, company_id, period_label)
+
+    # Build focused prompt with structured context
     prompt = ONE_PAGE_BRIEFING.format(
         company=company.name,
         ticker=company.ticker,
         period=period_label,
-        kpis=kpis,
-        thesis_comparison=thesis_comp,
-        surprises="See thesis comparison summary.",
+        kpis=ctx["kpis"],
+        thesis_comparison=f"Thesis: {ctx['thesis']}\n\nPrior period: {ctx['prior_period']}",
+        surprises=f"Guidance items: {ctx['guidance']}\n\n{ctx['tracked_kpis']}",
     )
     data = call_llm_json(prompt)
     briefing = BriefingSection(**data)
@@ -144,21 +105,23 @@ async def generate_briefing(
 
 
 # ─────────────────────────────────────────────────────────────────
-# IR Questions
+# IR Questions (uses structured context)
 # ─────────────────────────────────────────────────────────────────
 
 async def generate_ir_questions(
     db: AsyncSession, company_id: uuid.UUID, period_label: str
 ) -> list[IRQuestion]:
-    company = await _company_by_id(db, company_id)
-    findings = await _metrics_text(db, company_id, period_label)
-    thesis = await _thesis_text(db, company_id)
+    from services.context_builder import build_briefing_context
 
+    company = await _company_by_id(db, company_id)
+    ctx = await build_briefing_context(db, company_id, period_label)
+
+    # IR questions need: key metrics, thesis, and guidance — not the full dump
     prompt = IR_QUESTION_GENERATOR.format(
         company=company.name,
         period=period_label,
-        findings=findings,
-        thesis=thesis,
+        findings=f"Key metrics:\n{ctx['kpis']}\n\nGuidance:\n{ctx['guidance']}",
+        thesis=ctx["thesis"],
     )
     raw = call_llm_json(prompt)
     if not isinstance(raw, list):
@@ -175,7 +138,6 @@ async def generate_ir_questions(
         lines.append(f"**Rationale:** {q.rationale}\n")
     md_path.write_text("\n".join(lines))
 
-    # Persist
     ro = ResearchOutput(
         id=uuid.uuid4(),
         company_id=company_id,
@@ -191,22 +153,17 @@ async def generate_ir_questions(
 
 
 # ─────────────────────────────────────────────────────────────────
-# Thesis Drift Report  (wraps thesis_comparator output into file)
+# Thesis Drift Report
 # ─────────────────────────────────────────────────────────────────
 
 async def generate_thesis_drift_report(
     db: AsyncSession, company_id: uuid.UUID, period_label: str
 ) -> dict:
-    """
-    Reads the already-generated thesis_drift.json and registers
-    it as a research output. If not yet generated, runs the comparator.
-    """
     company = await _company_by_id(db, company_id)
     drift_path = _output_dir(company.ticker, period_label) / "thesis_drift.json"
 
     if not drift_path.exists():
         from services.thesis_comparator import compare_thesis
-        # Find latest document for this period
         from apps.api.models import Document
         doc_q = await db.execute(
             select(Document).where(
@@ -221,7 +178,6 @@ async def generate_thesis_drift_report(
 
     drift_data = json.loads(drift_path.read_text())
 
-    # Register output
     ro = ResearchOutput(
         id=uuid.uuid4(),
         company_id=company_id,
