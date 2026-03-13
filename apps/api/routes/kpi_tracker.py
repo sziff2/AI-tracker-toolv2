@@ -104,6 +104,29 @@ async def delete_tracked_kpi(ticker: str, kpi_id: uuid.UUID, db: AsyncSession = 
     return {"status": "deleted"}
 
 
+# ── Rename / update a tracked KPI ────────────────────────────
+class KPIUpdate(BaseModel):
+    kpi_name: Optional[str] = None
+    unit: Optional[str] = None
+    display_order: Optional[int] = None
+
+
+@router.patch("/companies/{ticker}/kpis/{kpi_id}")
+async def update_tracked_kpi(ticker: str, kpi_id: uuid.UUID, body: KPIUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TrackedKPI).where(TrackedKPI.id == kpi_id))
+    kpi = result.scalar_one_or_none()
+    if not kpi:
+        raise HTTPException(404, "KPI not found")
+    if body.kpi_name is not None:
+        kpi.kpi_name = body.kpi_name
+    if body.unit is not None:
+        kpi.unit = body.unit
+    if body.display_order is not None:
+        kpi.display_order = body.display_order
+    await db.commit()
+    return {"status": "updated", "kpi_name": kpi.kpi_name, "unit": kpi.unit}
+
+
 # ── Get KPI tracker grid (all KPIs × all periods) ────────────
 @router.get("/companies/{ticker}/kpi-tracker")
 async def get_kpi_tracker(ticker: str, db: AsyncSession = Depends(get_db)):
