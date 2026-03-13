@@ -269,6 +269,52 @@ async def get_document(document_id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 
 # ─────────────────────────────────────────────────────────────────
+# Download / view a document file
+# ─────────────────────────────────────────────────────────────────
+@router.get("/documents/{document_id}/file")
+async def download_document_file(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import Response
+
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    # Try file_content from DB first
+    if doc.file_content:
+        filename = doc.title or "document.pdf"
+        suffix = Path(filename).suffix.lower()
+        content_type = {
+            ".pdf": "application/pdf",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt": "text/plain",
+        }.get(suffix, "application/octet-stream")
+        return Response(
+            content=doc.file_content,
+            media_type=content_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+
+    # Fall back to filesystem
+    file_path = Path(doc.file_path)
+    if file_path.exists():
+        filename = doc.title or file_path.name
+        suffix = file_path.suffix.lower()
+        content_type = {
+            ".pdf": "application/pdf",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt": "text/plain",
+        }.get(suffix, "application/octet-stream")
+        return Response(
+            content=file_path.read_bytes(),
+            media_type=content_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+
+    raise HTTPException(404, "File content not available")
+
+
+# ─────────────────────────────────────────────────────────────────
 # Process (parse) a document
 # ─────────────────────────────────────────────────────────────────
 @router.post("/documents/{document_id}/process")

@@ -251,7 +251,7 @@ function renderCockpit(ticker,d){
   h+='<div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div>';
   h+='</div>';
   // Tabs
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Latest Results</button><button class="tab" onclick="ckTab(\'timeline\',this)">Timeline</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Latest Results</button><button class="tab" onclick="ckTab(\'timeline\',this)">Timeline & Files</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   // Tab contents
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
@@ -300,14 +300,41 @@ function renderCkResults(d){
 }
 
 function renderCkTimeline(d){
-  let h='';const items=[];
-  (d.documents||[]).forEach(doc=>{items.push({date:doc.created_at,icon:'📄',text:'<strong>'+esc(doc.document_type)+'</strong> uploaded: '+esc(doc.title)+' ('+esc(doc.period_label)+')',type:'doc'});});
-  (d.decisions||[]).forEach(dec=>{items.push({date:dec.created_at,icon:'⚡',text:'<strong>'+esc(dec.action).toUpperCase()+'</strong> — '+esc(dec.rationale),type:'decision'});});
-  (d.notes||[]).forEach(n=>{items.push({date:n.created_at,icon:'📝',text:'<strong>'+(esc(n.title)||'Note')+'</strong> — '+esc(n.content?.substring(0,200)),type:'note'});});
+  let h='';
+  // Documents / Files section
+  const docs=d.documents||[];
+  if(docs.length){
+    h+='<h2>Uploaded Files</h2>';
+    docs.forEach(doc=>{
+      const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
+      h+='<div class="fr" style="margin-bottom:8px">';
+      h+='<span>'+icon+'</span>';
+      h+='<span class="fn">'+esc(doc.title||'Untitled')+'</span>';
+      h+='<span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span>';
+      h+='<span class="fs">'+esc(doc.period_label)+'</span>';
+      h+='<span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span>';
+      h+='<button class="btn-sm" onclick="viewFile(\''+doc.id+'\',\''+esc(doc.title||'document')+'\')">View</button>';
+      h+='<button class="btn2" style="padding:4px 10px;font-size:11px" onclick="downloadFile(\''+doc.id+'\',\''+esc(doc.title||'document')+'\')">Download</button>';
+      h+='</div>';
+    });
+  }
+  // Activity timeline
+  h+='<h2 style="margin-top:32px">Activity</h2>';
+  const items=[];
+  docs.forEach(doc=>{items.push({date:doc.created_at,icon:'📄',text:'<strong>'+esc(doc.document_type)+'</strong> uploaded: '+esc(doc.title)+' ('+esc(doc.period_label)+')'});});
+  (d.decisions||[]).forEach(dec=>{items.push({date:dec.created_at,icon:'⚡',text:'<strong>'+esc(dec.action).toUpperCase()+'</strong> — '+esc(dec.rationale)});});
+  (d.notes||[]).forEach(n=>{items.push({date:n.created_at,icon:'📝',text:'<strong>'+(esc(n.title)||'Note')+'</strong> — '+esc(n.content?.substring(0,200))});});
   items.sort((a,b)=>b.date?.localeCompare(a.date||'')||0);
-  if(!items.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No activity yet.</div>';
+  if(!items.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No activity yet.</div>';
   items.forEach(it=>{h+='<div class="tl-item"><div class="tl-date">'+esc(it.date?.split('T')[0]||'')+'</div><div class="tl-icon">'+it.icon+'</div><div class="tl-body">'+it.text+'</div></div>';});
   return h;
+}
+
+function viewFile(docId,title){
+  window.open('/api/v1/documents/'+docId+'/file','_blank');
+}
+function downloadFile(docId,title){
+  const a=document.createElement('a');a.href='/api/v1/documents/'+docId+'/file';a.download=title;a.click();
 }
 
 function renderCkDecisions(ticker,d){
