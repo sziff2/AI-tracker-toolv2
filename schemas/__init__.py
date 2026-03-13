@@ -219,9 +219,11 @@ class GuidanceItem(BaseModel):
 
 class ThesisComparison(BaseModel):
     thesis_direction: str       # strengthened | weakened | unchanged
+    confidence: float = 0.85
     supporting_signals: list[str] = Field(default_factory=list)
     weakening_signals: list[str] = Field(default_factory=list)
     new_risks: list[str] = Field(default_factory=list)
+    risks_receding: list[str] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     summary: str
 

@@ -48,18 +48,35 @@ async def detect_surprises(
     Compare actuals vs guidance to find surprises.
     Updates the EventAssessment.surprise_level for the document.
     """
-    # Gather guidance from prior period
-    from services.thesis_comparator import _previous_period
-    prior = _previous_period(period_label)
+    # Gather guidance from prior period — try multiple candidates
+    from services.thesis_comparator import _comparable_periods
+    candidates = _comparable_periods(period_label)
 
-    guidance_q = await db.execute(
-        select(ExtractedMetric).where(
-            ExtractedMetric.company_id == company_id,
-            ExtractedMetric.period_label == prior,
-            ExtractedMetric.segment == "guidance",
+    guidance_metrics = []
+    for prior in candidates:
+        guidance_q = await db.execute(
+            select(ExtractedMetric).where(
+                ExtractedMetric.company_id == company_id,
+                ExtractedMetric.period_label == prior,
+                ExtractedMetric.segment == "guidance",
+            )
         )
-    )
-    guidance_metrics = list(guidance_q.scalars().all())
+        guidance_metrics = list(guidance_q.scalars().all())
+        if guidance_metrics:
+            break
+
+    if not guidance_metrics and candidates:
+        # Fall back to any metrics from prior period as expectations
+        for prior in candidates:
+            guidance_q = await db.execute(
+                select(ExtractedMetric).where(
+                    ExtractedMetric.company_id == company_id,
+                    ExtractedMetric.period_label == prior,
+                ).limit(20)
+            )
+            guidance_metrics = list(guidance_q.scalars().all())
+            if guidance_metrics:
+                break
 
     actuals_q = await db.execute(
         select(ExtractedMetric).where(
