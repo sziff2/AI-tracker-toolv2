@@ -430,25 +430,18 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
         doc_ids = [d.id for d in docs.scalars().all()]
 
         if doc_ids:
-            # Get metric and assessment IDs for review queue cleanup
             metrics = await db.execute(select(ExtractedMetric.id).where(ExtractedMetric.document_id.in_(doc_ids)))
             metric_ids = [m[0] for m in metrics.all()]
-
             assessments = await db.execute(select(EventAssessment.id).where(EventAssessment.document_id.in_(doc_ids)))
             assessment_ids = [a[0] for a in assessments.all()]
-
-            # Delete review queue items (could reference metrics, assessments, or outputs)
             all_entity_ids = doc_ids + metric_ids + assessment_ids
             if all_entity_ids:
                 await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(all_entity_ids)))
-
-            # Delete in dependency order
             await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
             await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
             await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
             await db.execute(delete(Document).where(Document.company_id == company.id))
 
-        # Also clean up research outputs and their review items
         outputs = await db.execute(select(ResearchOutput.id).where(ResearchOutput.company_id == company.id))
         output_ids = [o[0] for o in outputs.all()]
         if output_ids:
@@ -457,6 +450,64 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
 
         await db.commit()
         return {"status": "deleted", "documents_removed": len(doc_ids)}
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Delete failed: {str(e)}")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Delete a specific period (documents, metrics, outputs for that period)
+# ─────────────────────────────────────────────────────────────────
+@router.delete("/companies/{ticker}/periods/{period_label}")
+async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    try:
+        # Find documents for this period
+        docs = await db.execute(
+            select(Document).where(Document.company_id == company.id, Document.period_label == period_label)
+        )
+        doc_ids = [d.id for d in docs.scalars().all()]
+
+        if doc_ids:
+            metrics = await db.execute(select(ExtractedMetric.id).where(ExtractedMetric.document_id.in_(doc_ids)))
+            metric_ids = [m[0] for m in metrics.all()]
+            assessments = await db.execute(select(EventAssessment.id).where(EventAssessment.document_id.in_(doc_ids)))
+            assessment_ids = [a[0] for a in assessments.all()]
+            all_entity_ids = doc_ids + metric_ids + assessment_ids
+            if all_entity_ids:
+                await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(all_entity_ids)))
+            await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
+            await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
+            await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
+            await db.execute(delete(Document).where(Document.id.in_(doc_ids)))
+
+        # Also delete metrics not linked to documents for this period
+        await db.execute(delete(ExtractedMetric).where(
+            ExtractedMetric.company_id == company.id, ExtractedMetric.period_label == period_label
+        ))
+
+        # Delete research outputs for this period
+        outputs = await db.execute(
+            select(ResearchOutput.id).where(ResearchOutput.company_id == company.id, ResearchOutput.period_label == period_label)
+        )
+        output_ids = [o[0] for o in outputs.all()]
+        if output_ids:
+            await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(output_ids)))
+            await db.execute(delete(ResearchOutput).where(ResearchOutput.id.in_(output_ids)))
+
+        # Delete KPI scores for this period
+        from apps.api.models import KPIScore
+        await db.execute(delete(KPIScore).where(
+            KPIScore.company_id == company.id, KPIScore.period_label == period_label
+        ))
+
+        await db.commit()
+        return {"status": "deleted", "period": period_label, "documents_removed": len(doc_ids)}
 
     except Exception as e:
         await db.rollback()

@@ -278,13 +278,15 @@ function renderCkResults(ticker,d){
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
+    // Period header with delete button
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div>';
     // Documents used for this period
     const pdocs=dbp[p]||[];
     if(pdocs.length){
       h+='<h2>Documents Used</h2>';
       pdocs.forEach(doc=>{
         const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
-        h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button></div>';
+        h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';
       });
     }
     // Analysis output
@@ -307,6 +309,14 @@ function showResPeriod(p,btn){
   document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
   const target=E('res-'+p);if(target)target.style.display='block';
   E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+}
+async function deletePeriod(ticker,period){
+  if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){alert('Delete failed: '+e.message);}
+}
+async function deleteDoc(docId,ticker){
+  if(!confirm('Remove this document?'))return;
+  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});loadCockpit();}catch(e){alert('Failed: '+e.message);}
 }
 
 // ── Decisions tab ────────────────────────────────────────────
