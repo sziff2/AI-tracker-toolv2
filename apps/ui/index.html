@@ -256,15 +256,19 @@ function renderCkThesis(d){
 
 // ── KPIs tab ─────────────────────────────────────────────────
 function renderCkKPIs(ticker,d){
-  const tr=d.kpi_tracker;if(!tr||!tr.kpis.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No KPIs tracked yet.</div>';
-  const periods=tr.periods||[],kpis=tr.kpis||[],overall=tr.overall_scores||{};let h='';
+  const tr=d.kpi_tracker||{};const periods=tr.periods||[],kpis=tr.kpis||[],overall=tr.overall_scores||{};let h='';
+  // Always show add form at top
+  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><input id="nkn" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="nku" placeholder="Unit (e.g. %)" style="max-width:120px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
+  if(!kpis.length){
+    h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
+    return h;
+  }
   h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>#</th><th>KPI</th>';periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});h+='<th></th></tr></thead><tbody>';
   h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
   kpis.forEach((k,idx)=>{h+='<tr><td style="color:var(--text4);font-size:12px">'+(idx+1)+'</td><td class="kn">'+esc(k.kpi_name)+(k.unit?' <span style="color:var(--text4);font-size:11px">('+esc(k.unit)+')</span>':'')+'</td>';
     periods.forEach(p=>{const v=k.periods[p]||{};const val=v.value!=null?v.value:null;h+='<td class="kv">'+(val!=null?esc(String(val)):'—')+'<div style="display:flex;justify-content:center;gap:2px;margin-top:4px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(v.score===i?' on':'')+'" data-kpi="'+k.id+'" data-period="'+p+'" onclick="setScore(\''+ticker+'\',\''+k.id+'\',\''+p+'\','+i+')">'+i+'</button>';h+='</div></td>';});
     h+='<td><button class="kdel" onclick="delKPI(\''+ticker+'\',\''+k.id+'\')">✕</button></td></tr>';});
   h+='</tbody></table></div>';
-  h+='<div class="form-row"><input id="nkn" placeholder="Add KPI name"><input id="nku" placeholder="Unit" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add</button></div>';
   return h;
 }
 
