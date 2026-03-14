@@ -261,3 +261,49 @@ class AnalystNote(Base, TimestampMixin):
     author = Column(Text)
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Prompt Variants — versioned prompts for A/B testing
+# ─────────────────────────────────────────────────────────────────
+class PromptVariant(Base, TimestampMixin):
+    __tablename__ = "prompt_variants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    prompt_type = Column(Text, nullable=False)        # extraction | synthesis | thesis_comparison | surprise | ir_questions | briefing
+    variant_name = Column(Text, nullable=False)       # e.g. "v1_default", "v2_concise", "v3_llm_refined"
+    prompt_text = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=False)         # the current default for this type
+    is_candidate = Column(Boolean, default=True)       # eligible for A/B testing
+    win_count = Column(Integer, default=0)
+    loss_count = Column(Integer, default=0)
+    total_runs = Column(Integer, default=0)
+    avg_rating = Column(Numeric, default=0)
+    parent_variant_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=True)
+    generation = Column(Integer, default=1)            # tracks refinement generations
+    notes = Column(Text)                               # why this variant was created
+
+
+# ─────────────────────────────────────────────────────────────────
+# A/B Experiments — records of side-by-side comparisons
+# ─────────────────────────────────────────────────────────────────
+class ABExperiment(Base, TimestampMixin):
+    __tablename__ = "ab_experiments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    prompt_type = Column(Text, nullable=False)
+    period_label = Column(Text)
+    variant_a_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=False)
+    variant_b_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=False)
+    output_a = Column(Text)                            # JSON output from variant A
+    output_b = Column(Text)                            # JSON output from variant B
+    winner = Column(Text)                              # "a" | "b" | "tie" | null (pending)
+    rating_a = Column(Integer)                         # 1-5 analyst rating
+    rating_b = Column(Integer)                         # 1-5 analyst rating
+    analyst_feedback = Column(Text)                    # freeform feedback on why
+    status = Column(Text, default="pending")           # pending | completed
+
+    variant_a = relationship("PromptVariant", foreign_keys=[variant_a_id])
+    variant_b = relationship("PromptVariant", foreign_keys=[variant_b_id])
+    company = relationship("Company")

@@ -106,6 +106,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div class="hdr-nav">
     <button class="nb on" id="nav-new" onclick="showPage('new')">New Analysis</button>
     <button class="nb" id="nav-cockpit" onclick="showPage('cockpit')">Company Cockpit</button>
+    <button class="nb" id="nav-lab" onclick="showPage('lab')">Prompt Lab</button>
   </div>
 </div>
 <div class="wrap">
@@ -153,6 +154,17 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
+<!-- ═══ PROMPT LAB ═══ -->
+<div id="page-lab" style="display:none">
+  <h1>Prompt Lab</h1>
+  <p class="sub">A/B test prompt variants, compare outputs side-by-side, and let the system improve itself.</p>
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button class="btn" onclick="seedVariants()">Seed Default Variants</button>
+    <button class="btn2" onclick="loadLab()">Refresh</button>
+  </div>
+  <div id="lab-content"></div>
+</div>
+
 </div>
 <script>
 let UF=[],CC=[];const HFI=document.getElementById('hfi');
@@ -160,7 +172,7 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();}
+function showPage(p){['new','cockpit','lab'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -409,7 +421,48 @@ async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value
 function renderBatchHTML(d){const{company,period,synthesis,surprises,ir_questions}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));}if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));return h;}
 function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extraction_error}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status?.length){const errs=pipeline_status.filter(s=>s.status==='error');if(errs.length)h+=card('blue','Pipeline Issues',errs.map(e=>esc(e.step)+': '+esc(e.detail)).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing?.what_happened){h+=card('','What Happened',esc(briefing.what_happened));h+=card('gold','Bottom Line',esc(briefing.bottom_line));}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
 
+// ═══ PROMPT LAB ═════════════════════════════════════════════
+async function seedVariants(){try{const r=await fetch('/api/v1/experiments/seed',{method:'POST'});const d=await r.json();alert('Seeded: '+(d.seeded.length?d.seeded.join(', '):'All already exist'));loadLab();}catch(e){alert('Failed: '+e.message);}}
+
+async function loadLab(){
+  const c=E('lab-content');if(!c)return;c.innerHTML='<div class="ld">Loading…</div>';
+  try{const [varR,expR,statsR]=await Promise.all([fetch('/api/v1/experiments/variants'),fetch('/api/v1/experiments'),fetch('/api/v1/experiments/stats')]);renderLab(await varR.json(),await expR.json(),await statsR.json());}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+function renderLab(variants,experiments,stats){
+  const c=E('lab-content');let h='';
+  h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Variants</div><div class="ck-stat-val">'+variants.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Experiments</div><div class="ck-stat-val">'+experiments.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Auto-promote at</div><div class="ck-stat-val">'+stats.auto_promote_threshold+' wins</div></div></div>';
+  const byType={};variants.forEach(v=>{if(!byType[v.prompt_type])byType[v.prompt_type]=[];byType[v.prompt_type].push(v);});
+  Object.keys(byType).sort().forEach(type=>{
+    h+='<h2>'+esc(type)+'</h2>';
+    byType[type].forEach(v=>{const wr=v.win_rate;const wrCls=wr>=60?'up':wr<=40&&v.total_runs>2?'down':'neutral';
+      h+='<div class="cd" style="border-left-color:'+(v.is_active?'var(--gold)':'var(--border)')+'"><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+(v.is_active?'var(--gold)':'var(--text)')+'">'+esc(v.variant_name)+'</span>'+(v.is_active?' <span style="font-size:10px;color:var(--gold);background:var(--bg3);padding:2px 8px;border-radius:4px">ACTIVE</span>':'')+' <span style="font-size:11px;color:var(--text4)">gen '+v.generation+'</span></div><div style="display:flex;gap:12px;font-family:var(--sans);font-size:12px"><span style="color:var(--green)">W:'+v.win_count+'</span><span style="color:var(--red)">L:'+v.loss_count+'</span><span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span><span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>'+(v.is_active?'':'<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>')+'</div></div><div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>'+(v.notes?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>':'')+'</div>';
+    });
+    h+='<div style="display:flex;gap:8px;margin:8px 0 24px"><button class="btn2" onclick="refineType(\''+type+'\')">✨ LLM Refine</button><button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button></div>';
+  });
+  h+='<h2 style="margin-top:32px">Run A/B Experiment</h2>';
+  h+='<div class="form-row"><select class="fi" id="lab-type" style="max-width:200px">';Object.keys(byType).sort().forEach(t=>{h+='<option value="'+t+'">'+t+'</option>';});h+='</select><input class="fi" id="lab-ticker" placeholder="Ticker" style="max-width:140px"><input class="fi" id="lab-period" placeholder="Period" style="max-width:120px"></div>';
+  h+='<div style="margin-top:8px"><div class="fl">Test Input</div><textarea class="fi" id="lab-input" style="min-height:100px" placeholder="Paste document text…"></textarea></div>';
+  h+='<button class="btn" style="margin-top:12px" onclick="runExperiment()">Run Experiment</button><div id="lab-result" style="margin-top:16px"></div>';
+  if(experiments.length){h+='<h2 style="margin-top:32px">Recent Experiments</h2>';experiments.slice(0,10).forEach(exp=>{const wClr=exp.winner==='a'?'var(--gold)':exp.winner==='b'?'var(--green)':'var(--text4)';h+='<div class="dl-item"><div style="display:flex;justify-content:space-between"><span style="font-family:var(--sans);font-size:12px;color:var(--text3)">'+esc(exp.prompt_type)+(exp.period_label?' · '+esc(exp.period_label):'')+'</span><span style="font-family:var(--sans);font-size:12px;color:'+wClr+'">Winner: '+(exp.winner||'pending')+'</span></div>'+(exp.feedback?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(exp.feedback)+'</div>':'')+'</div>';});}
+  c.innerHTML=h;
+}
+
+async function activateVariant(id){if(!confirm('Promote as active default?'))return;try{await fetch('/api/v1/experiments/variants/'+id+'/activate',{method:'POST'});loadLab();}catch(e){alert(e.message);}}
+async function refineType(type){if(!confirm('LLM refine '+type+'? Needs 3+ judged experiments.'))return;try{const r=await fetch('/api/v1/experiments/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Created '+d.new_variant_name+' (gen '+d.generation+')');loadLab();}catch(e){alert(e.message);}}
+function newVariant(type){const name=prompt('Variant name:');if(!name)return;const text=prompt('Full prompt text (must contain {text}):');if(!text)return;fetch('/api/v1/experiments/variants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,variant_name:name,prompt_text:text})}).then(()=>loadLab()).catch(e=>alert(e.message));}
+
+async function runExperiment(){
+  const type=E('lab-type').value,ticker=E('lab-ticker').value.trim(),period=E('lab-period').value.trim(),input=E('lab-input').value.trim();
+  if(!input){alert('Paste test input.');return;}const res=E('lab-result');res.innerHTML='<div class="ld">Running both variants…</div>';
+  try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();
+    let h='<div class="g2" style="margin-top:0"><div class="cd" style="border-left-color:var(--gold)"><div class="cd-t">A: '+esc(d.variant_a.name)+' (active)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_a,null,2))+'</div></div><div class="cd" style="border-left-color:var(--green)"><div class="cd-t">B: '+esc(d.variant_b.name)+' (challenger)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_b,null,2))+'</div></div></div>';
+    h+='<div style="margin-top:16px;padding:16px;background:var(--bg2);border-radius:10px"><div class="fl">Judge</div><div class="form-row"><select id="lab-winner"><option value="">Pick winner…</option><option value="a">A wins</option><option value="b">B wins</option><option value="tie">Tie</option></select><input id="lab-ra" type="number" min="1" max="5" placeholder="Rate A 1-5" style="max-width:100px"><input id="lab-rb" type="number" min="1" max="5" placeholder="Rate B 1-5" style="max-width:100px"></div><div class="form-row" style="margin-top:6px"><input id="lab-fb" placeholder="Why is the winner better?"><button onclick="judgeExp(\''+d.experiment_id+'\')">Submit</button></div></div>';
+    res.innerHTML=h;
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+async function judgeExp(id){const w=E('lab-winner').value;if(!w){alert('Pick a winner.');return;}try{const r=await fetch('/api/v1/experiments/'+id+'/judge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({winner:w,rating_a:E('lab-ra').value?parseInt(E('lab-ra').value):null,rating_b:E('lab-rb').value?parseInt(E('lab-rb').value):null,feedback:E('lab-fb').value.trim()||null})});if(!r.ok)throw new Error('Failed');const d=await r.json();alert('Recorded.'+(d.auto_promoted?' '+d.message:''));loadLab();}catch(e){alert(e.message);}}
+
 loadDD();
-</script>
 </body>
 </html>

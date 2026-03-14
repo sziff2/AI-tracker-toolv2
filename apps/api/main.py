@@ -20,6 +20,7 @@ from apps.api.routes import (
     review_router,
     kpi_tracker_router,
     cockpit_router,
+    experiments_router,
 )
 from configs.settings import settings
 
@@ -60,6 +61,7 @@ app.include_router(outputs_router, prefix=PREFIX)
 app.include_router(review_router, prefix=PREFIX)
 app.include_router(kpi_tracker_router, prefix=PREFIX)
 app.include_router(cockpit_router, prefix=PREFIX)
+app.include_router(experiments_router, prefix=PREFIX)
 
 
 @app.get("/health")
