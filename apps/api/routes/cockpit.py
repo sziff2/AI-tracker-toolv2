@@ -381,3 +381,313 @@ async def list_notes(ticker: str, db: AsyncSession = Depends(get_db)):
         "content": d.content, "author": d.author,
         "created_at": d.created_at.isoformat() if d.created_at else None,
     } for d in q.scalars().all()]
+
+# ─────────────────────────────────────────────────────────────────
+# Document Chat — ask questions grounded in period-specific data
+# ─────────────────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    question: str
+    period_label: str
+    include_thesis: bool = True
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources_used: list[str]
+    period: str
+
+
+@router.post("/companies/{ticker}/chat")
+async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Ask a question about a specific quarter's documents.
+    The LLM receives ONLY data from the requested period — no cross-contamination.
+    """
+    from apps.api.models import DocumentSection
+    from services.llm_client import call_llm
+
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    cid = company.id
+    period = body.period_label
+
+    # ── Gather context for this period ONLY ──────────────────
+
+    # 1. Document text (from stored sections — no filesystem dependency)
+    docs_q = await db.execute(
+        select(Document).where(Document.company_id == cid, Document.period_label == period)
+    )
+    docs = docs_q.scalars().all()
+
+    doc_texts = []
+    sources_used = []
+    for doc in docs:
+        sections_q = await db.execute(
+            select(DocumentSection.text_content)
+            .where(DocumentSection.document_id == doc.id)
+            .order_by(DocumentSection.page_number)
+        )
+        pages = [row[0] for row in sections_q.all() if row[0]]
+        if pages:
+            doc_text = "\n".join(pages)
+            # Truncate very long documents to keep prompt manageable
+            if len(doc_text) > 15000:
+                doc_text = doc_text[:15000] + "\n[... truncated]"
+            doc_texts.append(f"=== {doc.title or doc.document_type} ({doc.document_type}) ===\n{doc_text}")
+            sources_used.append(doc.title or doc.document_type)
+
+    # 2. Extracted metrics for this period
+    metrics_q = await db.execute(
+        select(ExtractedMetric).where(
+            ExtractedMetric.company_id == cid,
+            ExtractedMetric.period_label == period,
+        ).order_by(ExtractedMetric.confidence.desc()).limit(40)
+    )
+    metrics = metrics_q.scalars().all()
+    metrics_text = "\n".join(
+        f"- {m.metric_name}: {m.metric_value} {m.unit or ''}" if m.metric_value
+        else f"- {m.metric_name}: {m.metric_text}"
+        for m in metrics
+    ) if metrics else "No extracted metrics for this period."
+
+    # 3. Analysis output for this period (if available)
+    output_q = await db.execute(
+        select(ResearchOutput).where(
+            ResearchOutput.company_id == cid,
+            ResearchOutput.period_label == period,
+            ResearchOutput.output_type.in_(["full_analysis", "batch_synthesis"]),
+        ).order_by(ResearchOutput.created_at.desc()).limit(1)
+    )
+    analysis_output = output_q.scalar_one_or_none()
+    analysis_text = ""
+    if analysis_output and analysis_output.content_json:
+        try:
+            data = json.loads(analysis_output.content_json)
+            briefing = data.get("synthesis") or data.get("briefing")
+            if isinstance(briefing, dict):
+                parts = []
+                for key in ["headline", "what_happened", "management_message", "thesis_impact", "bottom_line", "what_changed", "thesis_status"]:
+                    if briefing.get(key):
+                        parts.append(f"{key.replace('_', ' ').title()}: {briefing[key]}")
+                analysis_text = "\n".join(parts)
+        except Exception:
+            pass
+
+    # 4. Thesis context (optional)
+    thesis_text = ""
+    if body.include_thesis:
+        thesis_q = await db.execute(
+            select(ThesisVersion).where(
+                ThesisVersion.company_id == cid, ThesisVersion.active == True
+            ).order_by(ThesisVersion.thesis_date.desc()).limit(1)
+        )
+        thesis = thesis_q.scalar_one_or_none()
+        if thesis:
+            thesis_text = f"Investment Thesis: {thesis.core_thesis}"
+            if thesis.key_risks:
+                thesis_text += f"\nKey Risks: {thesis.key_risks}"
+
+    # ── Build prompt ─────────────────────────────────────────
+    if not doc_texts and not metrics_text:
+        return {"answer": "No documents or data found for this period. Upload documents first.", "sources_used": [], "period": period}
+
+    all_docs = "\n\n".join(doc_texts) if doc_texts else "No raw document text available."
+
+    prompt = f"""You are an investment research assistant for {company.name} ({company.ticker}).
+You are answering questions about the {period} period ONLY.
+Use ONLY the data provided below. Do not use external knowledge about the company.
+If the answer is not in the provided data, say so clearly.
+
+{thesis_text}
+
+=== EXTRACTED METRICS ({period}) ===
+{metrics_text}
+
+=== ANALYSIS SUMMARY ({period}) ===
+{analysis_text if analysis_text else "No analysis summary available."}
+
+=== SOURCE DOCUMENTS ({period}) ===
+{all_docs}
+
+=== QUESTION ===
+{body.question}
+
+Answer the question directly and specifically. Reference the source documents where relevant.
+If quoting numbers, cite which document they came from."""
+
+    try:
+        answer = call_llm(prompt, max_tokens=4096)
+        return {"answer": answer, "sources_used": sources_used, "period": period}
+    except Exception as e:
+        raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Global Chat — ask questions across ALL periods for a company
+# ─────────────────────────────────────────────────────────────────
+class GlobalChatRequest(BaseModel):
+    question: str
+    include_thesis: bool = True
+
+
+@router.post("/companies/{ticker}/chat-all")
+async def chat_all_periods(ticker: str, body: GlobalChatRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Ask a question across ALL periods for a company.
+    Receives thesis, all analysis summaries, key metrics per period,
+    decisions, and notes — a full company picture.
+    """
+    from services.llm_client import call_llm
+
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    cid = company.id
+
+    # 1. Thesis
+    thesis_text = ""
+    if body.include_thesis:
+        thesis_q = await db.execute(
+            select(ThesisVersion).where(ThesisVersion.company_id == cid, ThesisVersion.active == True)
+            .order_by(ThesisVersion.thesis_date.desc()).limit(1)
+        )
+        thesis = thesis_q.scalar_one_or_none()
+        if thesis:
+            thesis_text = f"Investment Thesis: {thesis.core_thesis}"
+            if thesis.key_risks:
+                thesis_text += f"\nKey Risks: {thesis.key_risks}"
+            if thesis.valuation_framework:
+                thesis_text += f"\nValuation: {thesis.valuation_framework}"
+
+    # 2. All analysis summaries (compressed — bottom line per period)
+    outputs_q = await db.execute(
+        select(ResearchOutput).where(
+            ResearchOutput.company_id == cid,
+            ResearchOutput.output_type.in_(["full_analysis", "batch_synthesis"]),
+        ).order_by(ResearchOutput.period_label.desc())
+    )
+    all_outputs = outputs_q.scalars().all()
+
+    period_summaries = []
+    periods_searched = []
+    for o in all_outputs:
+        if not o.content_json:
+            continue
+        periods_searched.append(o.period_label)
+        try:
+            data = json.loads(o.content_json)
+            briefing = data.get("synthesis") or data.get("briefing")
+            if isinstance(briefing, dict):
+                parts = [f"=== {o.period_label} ==="]
+                for key in ["headline", "what_happened", "management_message", "thesis_impact", "bottom_line", "what_changed", "thesis_status"]:
+                    if briefing.get(key):
+                        parts.append(f"{key.replace('_', ' ').title()}: {briefing[key]}")
+                # Add surprises
+                surprises = data.get("surprises", [])
+                if surprises:
+                    parts.append("Surprises: " + "; ".join(
+                        f"{s.get('metric_or_topic','')}: {s.get('description','')}"
+                        for s in surprises[:5]
+                    ))
+                period_summaries.append("\n".join(parts))
+        except Exception:
+            pass
+
+    # 3. Key metrics across periods (compressed)
+    metrics_q = await db.execute(
+        select(ExtractedMetric).where(ExtractedMetric.company_id == cid)
+        .order_by(ExtractedMetric.period_label.desc(), ExtractedMetric.confidence.desc())
+        .limit(60)
+    )
+    all_metrics = metrics_q.scalars().all()
+    metrics_by_period = {}
+    for m in all_metrics:
+        p = m.period_label or "unknown"
+        if p not in metrics_by_period:
+            metrics_by_period[p] = []
+        if len(metrics_by_period[p]) < 15:
+            val = f"{m.metric_value} {m.unit}" if m.metric_value else m.metric_text
+            metrics_by_period[p].append(f"- {m.metric_name}: {val}")
+
+    metrics_text = ""
+    for p in sorted(metrics_by_period.keys(), reverse=True):
+        metrics_text += f"\n=== Metrics {p} ===\n" + "\n".join(metrics_by_period[p])
+
+    # 4. Decisions and notes
+    decisions_q = await db.execute(
+        select(DecisionLog).where(DecisionLog.company_id == cid)
+        .order_by(DecisionLog.created_at.desc()).limit(10)
+    )
+    decisions_text = "\n".join(
+        f"- {d.action.upper()} (conviction {d.conviction}/5): {d.rationale}"
+        for d in decisions_q.scalars().all()
+    ) or "No decisions logged."
+
+    notes_q = await db.execute(
+        select(AnalystNote).where(AnalystNote.company_id == cid)
+        .order_by(AnalystNote.created_at.desc()).limit(5)
+    )
+    notes_text = "\n".join(
+        f"- {n.title or n.note_type}: {n.content[:200]}"
+        for n in notes_q.scalars().all()
+    ) or "No notes."
+
+    # 5. Thesis assessments over time
+    assessments_q = await db.execute(
+        select(EventAssessment, Document.period_label)
+        .join(Document, EventAssessment.document_id == Document.id)
+        .where(EventAssessment.company_id == cid)
+        .order_by(EventAssessment.created_at.desc()).limit(10)
+    )
+    assessments_text = "\n".join(
+        f"- {row[1]}: thesis {row[0].thesis_direction} ({row[0].surprise_level} surprise)"
+        for row in assessments_q.all()
+    ) or "No assessments."
+
+    # 6. Source documents list
+    docs_q = await db.execute(
+        select(Document).where(Document.company_id == cid)
+        .order_by(Document.created_at.desc()).limit(20)
+    )
+    sources_used = [d.title or d.document_type for d in docs_q.scalars().all()]
+
+    if not period_summaries and not metrics_text:
+        return {"answer": "No data found for this company. Upload documents first.", "sources_used": [], "periods_searched": []}
+
+    prompt = f"""You are a senior investment research assistant for {company.name} ({company.ticker}).
+You have access to ALL research data across ALL periods. Answer questions using this full picture.
+If the question is about trends, compare across periods. If about a specific topic, find the most relevant data.
+Use ONLY the data provided below. Do not use external knowledge.
+
+{thesis_text}
+
+=== THESIS ASSESSMENT HISTORY ===
+{assessments_text}
+
+=== ANALYSIS SUMMARIES BY PERIOD ===
+{chr(10).join(period_summaries) if period_summaries else "No analysis summaries available."}
+
+=== KEY METRICS BY PERIOD ===
+{metrics_text if metrics_text else "No metrics available."}
+
+=== DECISIONS ===
+{decisions_text}
+
+=== ANALYST NOTES ===
+{notes_text}
+
+=== QUESTION ===
+{body.question}
+
+Answer directly and specifically. Reference which period data comes from. Highlight trends across periods where relevant."""
+
+    try:
+        answer = call_llm(prompt, max_tokens=4096)
+        return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched}
+    except Exception as e:
+        raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
