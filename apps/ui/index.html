@@ -163,6 +163,12 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="btn2" onclick="loadLab()">Refresh</button>
   </div>
   <div id="lab-content"></div>
+
+  <h2 style="margin-top:40px">ESG PAI Data Import</h2>
+  <p class="sub" style="margin-bottom:12px">Paste your PAI table data (tab-separated) to bulk-populate ESG fields across all holdings.</p>
+  <textarea class="fi" id="pai-import-text" style="min-height:120px;font-family:var(--mono,monospace);font-size:11px" placeholder="Paste tab-separated data here. Columns: Company, PAI:1, PAI:2, PAI:3, SBTi, PAI:4, PAI:5, PAI:6, PAI:7, PAI:8, PAI:9, PAI:10, PAI:11, PAI:12, PAI:13, PAI:14"></textarea>
+  <button class="btn" style="margin-top:12px" onclick="importPAI()">Import PAI Data</button>
+  <div id="pai-import-result" style="margin-top:12px"></div>
 </div>
 
 </div>
@@ -543,6 +549,48 @@ async function runExperiment(){
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 async function judgeExp(id){const w=E('lab-winner').value;if(!w){alert('Pick a winner.');return;}try{const r=await fetch('/api/v1/experiments/'+id+'/judge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({winner:w,rating_a:E('lab-ra').value?parseInt(E('lab-ra').value):null,rating_b:E('lab-rb').value?parseInt(E('lab-rb').value):null,feedback:E('lab-fb').value.trim()||null})});if(!r.ok)throw new Error('Failed');const d=await r.json();alert('Recorded.'+(d.auto_promoted?' '+d.message:''));loadLab();}catch(e){alert(e.message);}}
+
+async function importPAI(){
+  const text=E('pai-import-text').value.trim();
+  if(!text){alert('Paste PAI data first.');return;}
+  const res=E('pai-import-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());
+    const rows=[];
+    for(const line of lines){
+      const cols=line.split('\t');
+      if(cols.length<3)continue;
+      const name=cols[0]?.trim();
+      if(!name||name.toLowerCase()==='2024'||name.toLowerCase().includes('pai:'))continue;
+      // Skip the date column (46034 etc) — detect if col[1] is a 5-digit number
+      let offset=0;
+      if(cols[1]&&/^\d{5}$/.test(cols[1].trim()))offset=1;
+      rows.push({
+        company_name:name,
+        pai1_scope1:cols[1+offset]||'',pai2_scope1to3:cols[2+offset]||'',
+        pai3:cols[3+offset]||'',sbti:cols[4+offset]||'',
+        pai4:cols[5+offset]||'',pai5:cols[6+offset]||'',
+        pai6:cols[7+offset]||'',pai7:cols[8+offset]||'',
+        pai8:cols[9+offset]||'',pai9:cols[10+offset]||'',
+        pai10_ungc:cols[11+offset]||'',pai11_ungc_process:cols[12+offset]||'',
+        pai12:cols[13+offset]||'',pai13_board_diversity:cols[14+offset]||'',
+        pai14_weapons:cols[15+offset]||'',
+      });
+    }
+    if(!rows.length){res.innerHTML='<div class="err">No valid rows found. Check format.</div>';return;}
+    const r=await fetch('/api/v1/esg/import-pai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:rows})});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
+    const d=await r.json();
+    let h='<div class="ok">Imported '+d.imported+' companies, '+d.not_found+' not found.</div>';
+    h+='<div style="margin-top:8px">';
+    d.results.forEach(r=>{
+      const clr=r.status==='updated'?'var(--green)':r.status==='not_found'?'var(--red)':'var(--text4)';
+      h+='<div style="font-family:var(--sans);font-size:12px;color:'+clr+';padding:2px 0">'+esc(r.company)+(r.ticker?' ('+esc(r.ticker)+')':'')+' — '+esc(r.status)+(r.fields_set?' ('+r.fields_set+' fields)':'')+'</div>';
+    });
+    h+='</div>';
+    res.innerHTML=h;
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
 
 loadDD();
 </script>

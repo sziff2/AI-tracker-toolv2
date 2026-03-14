@@ -268,3 +268,137 @@ async def portfolio_pai_report(db: AsyncSession = Depends(get_db)):
 @router.post("/companies/{ticker}/esg/chat")
 async def chat_esg(ticker: str, body: ESGAskRequest, db: AsyncSession = Depends(get_db)):
     return await ask_esg(ticker, body, db)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Bulk PAI import — populate ESG data from spreadsheet data
+# ─────────────────────────────────────────────────────────────────
+class PAIImportRow(BaseModel):
+    company_name: str
+    pai1_scope1: Optional[str] = None           # PAI:1 (Scope 1)
+    pai2_scope1to3: Optional[str] = None        # PAI:2 (Scope 1 to 3)
+    pai3: Optional[str] = None                  # PAI:3 (GHG intensity)
+    sbti: Optional[str] = None                  # SBTi Yes/No
+    pai4: Optional[str] = None                  # PAI:4 (fossil fuel)
+    pai5: Optional[str] = None                  # PAI:5 (non-renewable energy)
+    pai6: Optional[str] = None                  # PAI:6 (energy intensity)
+    pai7: Optional[str] = None                  # PAI:7
+    pai8: Optional[str] = None                  # PAI:8
+    pai9: Optional[str] = None                  # PAI:9
+    pai10_ungc: Optional[str] = None            # PAI:10 (UNGC violations)
+    pai11_ungc_process: Optional[str] = None    # PAI:11 (UNGC processes)
+    pai12: Optional[str] = None                 # PAI:12
+    pai13_board_diversity: Optional[str] = None # PAI:13 (Board diversity)
+    pai14_weapons: Optional[str] = None         # PAI:14 (Controversial weapons)
+
+
+class PAIImportRequest(BaseModel):
+    rows: list[PAIImportRow]
+
+
+# Mapping from company names to tickers (fuzzy match helper)
+_NAME_TICKER_MAP = {
+    "chubb": "CB", "nov": "NOV", "lloyds": "LLOY LN", "arrow": "ARW",
+    "samsung": "005930 KS", "sanofi": "SAN FP", "fresenius": "FRE GY",
+    "exor": "EXO IM", "henkel": "HEN GY", "heineken": "HEIA",
+    "handelsbanken": "SHBA SS", "southwest": "LUV", "disney": "DIS",
+    "eni": "ENI IM", "ckh": "1 HK", "ckhutch": "1 HK",
+    "tesco": "TSCO LN", "easyjet": "EZJ LN", "whitbread": "WTB LN",
+    "arcelor": "MT NA", "lear": "LEA", "kyocera": "6971 JP",
+    "bunzl": "BNZL", "swatch": "UHR SW", "fairfax": "FFH CN",
+    "merck": "MRK GY", "pason": "PSI CN",
+}
+
+
+@router.post("/esg/import-pai")
+async def import_pai_data(body: PAIImportRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Bulk import PAI data from spreadsheet. Matches company names to existing
+    companies in the database and populates their ESG fields.
+    """
+    results = []
+
+    for row in body.rows:
+        name_lower = row.company_name.strip().lower()
+
+        # Try to find company by name match or ticker map
+        company = None
+
+        # First try exact ticker from map
+        mapped_ticker = _NAME_TICKER_MAP.get(name_lower)
+        if mapped_ticker:
+            q = await db.execute(select(Company).where(Company.ticker == mapped_ticker))
+            company = q.scalar_one_or_none()
+
+        # Then try name contains
+        if not company:
+            q = await db.execute(
+                select(Company).where(Company.name.ilike(f"%{name_lower}%"))
+            )
+            company = q.scalar_one_or_none()
+
+        # Then try ticker contains
+        if not company:
+            q = await db.execute(
+                select(Company).where(Company.ticker.ilike(f"%{name_lower}%"))
+            )
+            company = q.scalar_one_or_none()
+
+        if not company:
+            results.append({"company": row.company_name, "status": "not_found"})
+            continue
+
+        # Map PAI columns to ESG field keys
+        esg_updates = {}
+
+        def _set(key, val):
+            if val and val.strip() and val.strip().upper() != "NA":
+                esg_updates[key] = val.strip()
+
+        _set("ghgScope1", row.pai1_scope1)
+        _set("ghgTotal", row.pai2_scope1to3)
+        _set("ghgIntensity", row.pai3)
+        _set("sbti", row.sbti)
+        _set("fossilFuelPct", row.pai4)
+        _set("nonRenewablePct", row.pai5)
+        # pai6 = energy intensity (no direct field, store as ghgIntensity if not set)
+        # pai7-9 = biodiversity, water, hazardous waste
+        _set("biodiversity", row.pai7)
+        _set("waterEmissions", row.pai8)
+        _set("hazardousWaste", row.pai9)
+        _set("ungcViolations", row.pai10_ungc)
+        _set("ungcProcesses", row.pai11_ungc_process)
+        _set("genderPayGap", row.pai12)
+        _set("boardDiversity", row.pai13_board_diversity)
+        _set("controversialWeapons", row.pai14_weapons)
+
+        if not esg_updates:
+            results.append({"company": row.company_name, "ticker": company.ticker, "status": "no_data"})
+            continue
+
+        # Upsert ESG data
+        esg_q = await db.execute(select(ESGData).where(ESGData.company_id == company.id))
+        esg_row = esg_q.scalar_one_or_none()
+
+        if esg_row:
+            existing = json.loads(esg_row.data) if isinstance(esg_row.data, str) else (esg_row.data or {})
+            existing.update(esg_updates)
+            esg_row.data = json.dumps(existing)
+        else:
+            esg_row = ESGData(
+                id=uuid.uuid4(), company_id=company.id,
+                data=json.dumps(esg_updates),
+            )
+            db.add(esg_row)
+
+        results.append({
+            "company": row.company_name, "ticker": company.ticker,
+            "status": "updated", "fields_set": len(esg_updates),
+        })
+
+    await db.commit()
+    return {
+        "imported": len([r for r in results if r["status"] == "updated"]),
+        "not_found": len([r for r in results if r["status"] == "not_found"]),
+        "results": results,
+    }
