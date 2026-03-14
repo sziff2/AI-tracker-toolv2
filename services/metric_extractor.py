@@ -19,6 +19,7 @@ from prompts import (
     KPI_EXTRACTOR, GUIDANCE_EXTRACTOR, COMBINED_EXTRACTOR,
     EARNINGS_RELEASE_EXTRACTOR, TRANSCRIPT_EXTRACTOR,
     BROKER_NOTE_EXTRACTOR, PRESENTATION_EXTRACTOR,
+    ESG_ENVIRONMENTAL_EXTRACTOR, ESG_SOCIAL_EXTRACTOR, ESG_GOVERNANCE_EXTRACTOR,
 )
 from schemas import ExtractedKPI, GuidanceItem
 from services.llm_client import call_llm_json, call_llm_json_async, call_llm_json_parallel
@@ -36,6 +37,9 @@ DOCTYPE_PROMPTS = {
     "broker_note": BROKER_NOTE_EXTRACTOR,
     "presentation": PRESENTATION_EXTRACTOR,
 }
+
+# ESG doc types run three extractors in parallel
+ESG_DOC_TYPES = {"proxy_statement", "annual_report_esg", "sustainability_report"}
 
 # ─────────────────────────────────────────────────────────────────
 # Smart chunking — skip low-value content
@@ -319,3 +323,106 @@ async def extract_guidance(db: AsyncSession, document: Document, text: str) -> l
     # If called after extract_combined, guidance is already persisted
     # Just return empty — the combined extraction handles it
     return []
+
+
+# ─────────────────────────────────────────────────────────────────
+# ESG-specific extraction — runs E, S, G extractors in parallel
+# ─────────────────────────────────────────────────────────────────
+
+async def extract_esg(db: AsyncSession, document: Document, text: str) -> dict:
+    """
+    Run three ESG extractors in parallel (Environmental, Social, Governance).
+    Returns raw items grouped by category + auto-populates ESG data table.
+    """
+    import asyncio
+
+    chunks = smart_chunk(text, max_tokens=12000)
+    full_text = "\n\n".join(chunks[:3])  # First 3 chunks for ESG (proxy docs are long)
+
+    # Run all three in parallel
+    env_prompt = ESG_ENVIRONMENTAL_EXTRACTOR.format(text=full_text)
+    soc_prompt = ESG_SOCIAL_EXTRACTOR.format(text=full_text)
+    gov_prompt = ESG_GOVERNANCE_EXTRACTOR.format(text=full_text)
+
+    results = await asyncio.gather(
+        call_llm_json_async(env_prompt, max_tokens=4096),
+        call_llm_json_async(soc_prompt, max_tokens=4096),
+        call_llm_json_async(gov_prompt, max_tokens=8192),  # Governance gets more tokens
+        return_exceptions=True,
+    )
+
+    env_items = results[0] if isinstance(results[0], list) else []
+    soc_items = results[1] if isinstance(results[1], list) else []
+    gov_items = results[2] if isinstance(results[2], list) else []
+
+    all_items = env_items + soc_items + gov_items
+
+    # Persist as ExtractedMetric rows
+    metrics = []
+    for item in all_items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("metric_name", "")
+        if not name:
+            continue
+        cat = item.get("category", "esg")
+        subcat = item.get("subcategory", "")
+        m = ExtractedMetric(
+            id=uuid.uuid4(),
+            company_id=document.company_id,
+            document_id=document.id,
+            period_label=document.period_label,
+            metric_name=f"ESG:{cat}:{name}",
+            metric_value=item.get("metric_value"),
+            metric_text=item.get("metric_text"),
+            unit=item.get("unit"),
+            segment=f"{cat}/{subcat}",
+            source_snippet=item.get("source_snippet", "")[:500],
+            confidence=item.get("confidence", 0.7),
+        )
+        db.add(m)
+        metrics.append(m)
+
+    # Auto-populate ESG data table
+    esg_updates = {}
+    for item in all_items:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("esg_field_key")
+        val = item.get("metric_text") or str(item.get("metric_value", ""))
+        if key and val:
+            esg_updates[key] = val
+
+    if esg_updates:
+        try:
+            from apps.api.models import ESGData
+            import json as _json
+            esg_q = await db.execute(
+                __import__("sqlalchemy").select(ESGData).where(ESGData.company_id == document.company_id)
+            )
+            esg_row = esg_q.scalar_one_or_none()
+            if esg_row:
+                existing = _json.loads(esg_row.data) if isinstance(esg_row.data, str) else (esg_row.data or {})
+                existing.update(esg_updates)
+                esg_row.data = _json.dumps(existing)
+            else:
+                esg_row = ESGData(
+                    id=uuid.uuid4(), company_id=document.company_id,
+                    data=_json.dumps(esg_updates),
+                )
+                db.add(esg_row)
+        except Exception as e:
+            logger.warning("ESG auto-populate failed: %s", e)
+
+    await db.commit()
+    logger.info("ESG extraction: %d env, %d soc, %d gov items. Auto-populated %d fields.",
+                len(env_items), len(soc_items), len(gov_items), len(esg_updates))
+
+    return {
+        "metrics": metrics,
+        "raw_items": all_items,
+        "environmental": env_items,
+        "social": soc_items,
+        "governance": gov_items,
+        "esg_fields_populated": esg_updates,
+    }

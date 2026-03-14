@@ -15,13 +15,18 @@ Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "document_type": "earnings_release" | "transcript" | "presentation" | "10-Q" | "10-K" | "annual_report" | "investor_letter" | "broker_note" | "other",
+  "document_type": "earnings_release" | "transcript" | "presentation" | "10-Q" | "10-K" | "annual_report" | "investor_letter" | "broker_note" | "proxy_statement" | "annual_report_esg" | "sustainability_report" | "other",
   "company_ticker": "<ticker or null>",
   "period_label": "<e.g. 2026_Q1 or null>",
   "title": "<best guess title>",
   "language": "<ISO 639-1 code>",
   "confidence": <0.0-1.0>
 }}
+
+Classification guidance:
+- proxy_statement: DEF 14A, proxy circulars, AGM notices, compensation discussion & analysis
+- annual_report_esg: Annual reports being analysed for ESG content (sustainability sections, governance)
+- sustainability_report: Standalone ESG/CSR/sustainability reports, TCFD reports, CDP responses
 
 --- DOCUMENT TEXT (first 2000 chars) ---
 {text}
@@ -419,5 +424,221 @@ Schema:
   "risks_updated": "<what is new in the risk picture>",
   "action_items": "<specific follow-ups: calls to make, data to check, models to update>",
   "bottom_line": "<2-3 sentence conclusion - would you add, hold, or trim?>"
+}}
+"""
+
+# ═══════════════════════════════════════════════════════════════════
+# ESG-SPECIFIC EXTRACTION PROMPTS
+# For proxy statements, annual reports, and sustainability reports
+# ═══════════════════════════════════════════════════════════════════
+
+ESG_ENVIRONMENTAL_EXTRACTOR = """\
+You are an ESG environmental data extraction agent analysing a corporate document.
+Extract ALL environmental metrics, commitments, and disclosures.
+
+Focus areas:
+- GHG emissions: Scope 1, 2, 3 (absolute and intensity), total carbon footprint
+- Energy: renewable vs non-renewable consumption, energy intensity
+- Climate targets: SBTi status, net-zero commitments, interim targets, base year, progress
+- NACE sector exposures: revenue % from high-impact climate sectors (A through L)
+- Biodiversity: operations near sensitive areas, land use, deforestation policies
+- Water: consumption, discharge, pollution incidents, water stress exposure
+- Waste: hazardous waste generated, recycling rates, circular economy initiatives
+- Physical & transition risk: exposure assessment, TCFD alignment, scenario analysis
+
+RULES:
+- Extract ONLY explicitly stated data. Do NOT infer or estimate.
+- Include the exact source snippet for every item.
+- Note the reporting year/period for each metric.
+- Flag whether data is audited/assured or self-reported.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "environmental",
+  "subcategory": "emissions" | "energy" | "climate_targets" | "biodiversity" | "water" | "waste" | "climate_risk",
+  "metric_name": "<specific metric name>",
+  "metric_value": <number or null>,
+  "metric_text": "<raw text if not numeric>",
+  "unit": "<tCO2e | MWh | % | ML | tonnes | null>",
+  "reporting_year": "<year or period>",
+  "yoy_change": "<change vs prior year if stated>",
+  "assured": true | false | null,
+  "esg_field_key": "<matching frontend field key: ghgScope1, ghgScope2, ghgScope3, ghgTotal, carbonFootprint, ghgIntensity, fossilFuelPct, nonRenewablePct, biodiversity, waterEmissions, hazardousWaste, sbti, netZeroTarget, or null>",
+  "source_snippet": "<verbatim from document>",
+  "page_number": <int or null>,
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+ESG_SOCIAL_EXTRACTOR = """\
+You are an ESG social data extraction agent analysing a corporate document.
+Extract ALL social metrics, policies, and disclosures.
+
+Focus areas:
+- UNGC compliance: violations of UN Global Compact principles, processes to monitor
+- Labour: employee turnover, lost-time injury rate (LTIR), fatalities, safety record
+- Diversity: gender pay gap, workforce diversity metrics, board gender diversity
+- Human rights: policies, due diligence processes, supply chain audits, modern slavery
+- Unionisation: collective bargaining coverage, union membership rates
+- Community: social investment, community impact, charitable giving
+- Supply chain: supplier code of conduct, audit results, tier-1 supplier ESG assessment
+- Data privacy: breaches, GDPR compliance, information security certifications
+
+RULES:
+- Extract ONLY explicitly stated data. Do NOT infer.
+- Include exact source snippets.
+- Note the reporting year/period.
+- Distinguish between company-wide and segment-level metrics.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "social",
+  "subcategory": "ungc" | "labour" | "diversity" | "human_rights" | "supply_chain" | "community" | "data_privacy",
+  "metric_name": "<specific metric>",
+  "metric_value": <number or null>,
+  "metric_text": "<raw text>",
+  "unit": "<% | ratio | count | null>",
+  "reporting_year": "<year or period>",
+  "yoy_change": "<change if stated>",
+  "esg_field_key": "<matching key: ungcViolations, ungcProcesses, genderPayGap, ltir, employeeTurnover, unionisation, humanRightsPolicy, supplyChainAudit, or null>",
+  "source_snippet": "<verbatim>",
+  "page_number": <int or null>,
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+ESG_GOVERNANCE_EXTRACTOR = """\
+You are an ESG governance extraction agent analysing a corporate document
+(proxy statement, annual report, or governance report).
+Extract ALL governance data with particular focus on management quality signals.
+
+CRITICAL FOCUS AREAS:
+
+1. MANAGEMENT COMPENSATION
+   - CEO total compensation (salary + bonus + equity + other), 3-year trend
+   - CEO pay ratio (vs median employee)
+   - Compensation structure: % fixed vs variable, short-term vs long-term incentives
+   - Performance metrics used for variable pay (what are they rewarding?)
+   - Clawback provisions, minimum shareholding requirements
+   - Pay-for-performance alignment: did pay track returns or diverge?
+   - Peer group composition for benchmarking (who are they comparing to?)
+
+2. HISTORIC CAPITAL ALLOCATION
+   - Dividends: payout ratio, DPS growth track record, buyback history
+   - M&A: major acquisitions with stated rationale, post-deal returns if disclosed
+   - Capex: maintenance vs growth split, capex/depreciation ratio
+   - Leverage: stated leverage targets, actual net debt/EBITDA trajectory
+   - ROIC vs WACC: if disclosed, what has been the track record?
+   - Any stated capital allocation framework or priorities
+
+3. BOARD COMPOSITION & INDEPENDENCE
+   - Board size, independent directors count and %, lead independent director
+   - Board diversity: gender, ethnic, nationality, skills matrix
+   - Director tenure: average and individual, overboarded directors (>4 boards)
+   - Board refreshment: new appointments, retirements, planned succession
+   - CEO/Chair separation or combination with rationale
+   - Board committees: audit, compensation, nomination, ESG/sustainability
+   - Key board member backgrounds (especially audit committee financial expertise)
+
+4. OTHER GOVERNANCE FACTORS
+   - Audit quality: auditor name, tenure, non-audit fees as % of total
+   - Anti-corruption: policies, training coverage, incidents
+   - Whistleblower mechanisms: existence, independence, usage stats
+   - Related party transactions
+   - Shareholder rights: voting structure (one share one vote?), poison pills
+   - Controversy: regulatory actions, lawsuits, restatements
+
+RULES:
+- Extract ONLY what is explicitly stated. Do NOT infer.
+- For compensation, always try to extract the ACTUAL NUMBERS.
+- For capital allocation, extract multi-year data where available.
+- Include exact source snippets for every item.
+- Be opinionated about governance quality signals (flag concerns).
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "governance",
+  "subcategory": "compensation" | "capital_allocation" | "board" | "audit" | "shareholder_rights" | "anti_corruption" | "other",
+  "metric_name": "<specific item>",
+  "metric_value": <number or null>,
+  "metric_text": "<raw text>",
+  "unit": "<USD_M | EUR_M | % | x | ratio | null>",
+  "reporting_year": "<year>",
+  "yoy_change": "<change if stated>",
+  "governance_signal": "positive" | "negative" | "neutral" | null,
+  "signal_rationale": "<why this is a positive/negative governance signal>",
+  "esg_field_key": "<matching key: boardDiversity, controversialWeapons, ceoPayRatio, independentDirectors, auditQuality, antiCorruption, whistleblower, dataPrivacy, or null>",
+  "source_snippet": "<verbatim>",
+  "page_number": <int or null>,
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+# ═══════════════════════════════════════════════════════════════════
+# ESG SYNTHESIS — combines E, S, G extractions into one assessment
+# ═══════════════════════════════════════════════════════════════════
+
+ESG_SYNTHESIS = """\
+You are a senior ESG analyst at a value-focused fund manager.
+You have extracted environmental, social, and governance data from corporate documents.
+Synthesise into an investment-grade ESG assessment.
+
+COMPANY: {company} ({ticker})
+
+=== ENVIRONMENTAL DATA ===
+{environmental}
+
+=== SOCIAL DATA ===
+{social}
+
+=== GOVERNANCE DATA ===
+{governance}
+
+=== EXISTING THESIS ===
+{thesis}
+
+INSTRUCTIONS:
+1. Assess materiality — which ESG factors actually matter for this company's investment case?
+2. Identify red flags — governance issues that signal management misalignment
+3. Evaluate capital allocation discipline — is management creating or destroying value?
+4. Assess compensation alignment — does pay structure incentivise long-term value creation?
+5. Rate board quality — independence, expertise, refreshment, oversight
+6. Be direct and opinionated — this is for internal use
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "overall_assessment": "<2-3 paragraph investment-grade ESG summary>",
+  "environmental_rating": "strong" | "adequate" | "weak" | "insufficient_data",
+  "social_rating": "strong" | "adequate" | "weak" | "insufficient_data",
+  "governance_rating": "strong" | "adequate" | "weak" | "insufficient_data",
+  "governance_deep_dive": {{
+    "compensation_alignment": "<assessment of pay-for-performance>",
+    "capital_allocation_quality": "<assessment of historic allocation decisions>",
+    "board_quality": "<assessment of independence, expertise, oversight>"
+  }},
+  "red_flags": ["<specific material concern>"],
+  "positive_signals": ["<specific positive ESG factor>"],
+  "missing_data": ["<important ESG data not found in documents>"],
+  "suggested_esg_fields": {{
+    "<frontend field key>": "<value to populate>"
+  }},
+  "thesis_relevance": "<how ESG factors affect the investment thesis>"
 }}
 """

@@ -281,14 +281,30 @@ async def run_batch_pipeline(
 
                 # Extract
                 try:
-                    from services.metric_extractor import extract_by_document_type
+                    from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
                     text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
                     pages = json.loads(text_path.read_text())
                     full_text = "\n\n".join(p["text"] for p in pages)
 
-                    extraction = await extract_by_document_type(db, doc, full_text)
-                    items = extraction.get("raw_items", [])
-                    doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                    # Route ESG doc types to ESG-specific extraction
+                    if dtype in ESG_DOC_TYPES:
+                        extraction = await extract_esg(db, doc, full_text)
+                        items = extraction.get("raw_items", [])
+                        doc_result["steps"].append({"step": "extract_esg", "status": "ok",
+                            "env": len(extraction.get("environmental", [])),
+                            "soc": len(extraction.get("social", [])),
+                            "gov": len(extraction.get("governance", [])),
+                            "fields_populated": len(extraction.get("esg_fields_populated", {}))})
+                        output["esg_extraction"] = {
+                            "environmental": extraction.get("environmental", [])[:10],
+                            "social": extraction.get("social", [])[:10],
+                            "governance": extraction.get("governance", [])[:15],
+                            "fields_populated": extraction.get("esg_fields_populated", {}),
+                        }
+                    else:
+                        extraction = await extract_by_document_type(db, doc, full_text)
+                        items = extraction.get("raw_items", [])
+                        doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
 
                     items_summary = json.dumps(items[:30], indent=2, default=str)
                     if dtype in ("earnings_release", "10-Q", "10-K", "annual_report"):
@@ -299,6 +315,8 @@ async def run_batch_pipeline(
                         broker_data.append(items_summary)
                     elif dtype == "presentation":
                         presentation_data.append(items_summary)
+                    elif dtype in ESG_DOC_TYPES:
+                        pass  # ESG data goes to ESG tab, not synthesis
                     else:
                         earnings_data.append(items_summary)
 

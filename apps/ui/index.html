@@ -188,9 +188,9 @@ async function generateThesis(){const t=getTicker();if(!t){alert('Select a compa
 
 // ── Files ────────────────────────────────────────────────────
 function addFile(){HFI.click();}
-HFI.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note')||n.includes('research'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|annual|[qh][1-4]/))dt='earnings_release';UF.push({file:f,docType:dt});}this.value='';renderFL();});
+HFI.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('def 14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg report')||n.includes('csr')||n.includes('tcfd')||n.includes('cdp'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note')||n.includes('research'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';UF.push({file:f,docType:dt});}this.value='';renderFL();});
 function rmF(i){UF.splice(i,1);renderFL();}function chT(i,v){UF[i].docType=v;}
-function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'};let h='';UF.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+esc(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="chT('+i+',this.value)">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="rmF('+i+')">&times;</button></div>';});c.innerHTML=h;}
+function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',annual_report_esg:'Annual Report (ESG)',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report_esg:'🌍',sustainability_report:'♻️',other:'📄'};let h='';UF.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+esc(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="chT('+i+',this.value)">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="rmF('+i+')">&times;</button></div>';});c.innerHTML=h;}
 
 // ── Submit ───────────────────────────────────────────────────
 function showErr(m){E('error').innerHTML=m;E('error').style.display='block';}
@@ -230,14 +230,15 @@ function renderCockpit(ticker,d){
   // Global chat bar
   h+='<div style="display:flex;gap:8px;margin-bottom:20px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(co.name)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
   h+='<div id="ck-chat-history" style="margin-bottom:20px"></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','kpis','results','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+function ckTab(t,btn){['thesis','kpis','results','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}}
 
 // ── Thesis tab (with history) ────────────────────────────────
 function renderCkThesis(d){
@@ -420,6 +421,86 @@ async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value
 // ── Renderers for new analysis results ──────────────────────
 function renderBatchHTML(d){const{company,period,synthesis,surprises,ir_questions}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));}if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));return h;}
 function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extraction_error}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status?.length){const errs=pipeline_status.filter(s=>s.status==='error');if(errs.length)h+=card('blue','Pipeline Issues',errs.map(e=>esc(e.step)+': '+esc(e.detail)).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing?.what_happened){h+=card('','What Happened',esc(briefing.what_happened));h+=card('gold','Bottom Line',esc(briefing.bottom_line));}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
+
+// ═══ ESG MODULE ═════════════════════════════════════════════
+let esgCache={};
+async function loadESG(ticker){
+  const c=E('ck-esg');if(!c)return;
+  c.innerHTML='<div class="ld">Loading ESG…</div>';
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/esg');if(!r.ok)throw new Error('Failed');const d=await r.json();esgCache=d.data||{};renderESG(ticker,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+function renderESG(ticker,d){
+  const c=E('ck-esg');const data=d.data||{};const pct=d.completeness||0;const defs=d.field_definitions||{};
+  let h='';
+  // Header strip
+  const pctClr=pct>60?'var(--green)':pct>30?'var(--amber)':'var(--red)';
+  h+='<div class="ck-strip">';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Completeness</div><div class="ck-stat-val" style="color:'+pctClr+'">'+pct+'%</div><div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px"><div style="height:100%;width:'+pct+'%;background:'+pctClr+';border-radius:2px;transition:width .4s"></div></div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">MSCI Rating</div><div class="ck-stat-val" style="color:'+(['AAA','AA','A'].includes(data.msciRating)?'var(--green)':['BB','B','CCC'].includes(data.msciRating)?'var(--red)':'var(--text)')+'">'+esc(data.msciRating||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">SBTi</div><div class="ck-stat-val" style="color:'+(['Yes','Approved'].includes(data.sbti)?'var(--green)':'var(--text4)')+'">'+esc(data.sbti||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">UNGC Violations</div><div class="ck-stat-val" style="color:'+(data.ungcViolations==='Y'?'var(--red)':'var(--green)')+'">'+esc(data.ungcViolations||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Trajectory</div><div class="ck-stat-val" style="color:'+(data.esgTrend==='Improving'?'var(--green)':data.esgTrend==='Deteriorating'?'var(--red)':'var(--text)')+'">'+esc(data.esgTrend||'—')+'</div></div>';
+  h+='</div>';
+  // Section tabs
+  h+='<div class="ptabs" id="esg-stabs">';
+  const secs=[{k:'env',l:'🌍 Environmental'},{k:'soc',l:'🤝 Social'},{k:'gov',l:'🏛 Governance'},{k:'ratings',l:'⭐ Ratings'}];
+  secs.forEach((s,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showEsgSec(\''+s.k+'\',this)">'+s.l+'</button>';});
+  h+='</div>';
+  // Section contents
+  secs.forEach((sec,si)=>{
+    const fields=defs[sec.k]?.fields||[];
+    h+='<div id="esg-sec-'+sec.k+'" style="'+(si>0?'display:none':'')+'"><div class="cd">';
+    // Build field groups based on the PAI structure
+    fields.forEach(key=>{
+      const val=data[key]||'';
+      const label=key.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()).replace(/Ghg/g,'GHG').replace(/Ungc/g,'UNGC').replace(/Nace/g,'NACE ').replace(/Sbti/g,'SBTi').replace(/Msci/g,'MSCI').replace(/Cdp/g,'CDP').replace(/Iss/g,'ISS').replace(/Djsi/g,'DJSI').replace(/Ftse/g,'FTSE').replace(/Pct/g,'(%)').replace(/Ceo/g,'CEO');
+      // Determine input type
+      const selects={biodiversity:['','Yes','No','NA'],ungcViolations:['','Y','N','Under Investigation'],ungcProcesses:['','Y','N'],controversialWeapons:['','Y','N'],humanRightsPolicy:['','Yes','No','In Progress'],supplyChainAudit:['','Yes','No','Partial'],antiCorruption:['','Yes','No','In Progress'],whistleblower:['','Yes','No'],msciRating:['','AAA','AA','A','BBB','BB','B','CCC'],cdpScore:['','A','A-','B','B-','C','C-','D','D-','F'],ftse4good:['','Yes','No'],djsi:['','Yes','No','DJSI World','DJSI Europe'],sbti:['','Yes','No','Committed','Approved'],esgTrend:['','Improving','Stable','Deteriorating','Under Review']};
+      const isTextarea=['redFlags','esgNotes'].includes(key);
+      h+='<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1a1c25"><div style="flex:1;font-family:var(--sans);font-size:12px;color:var(--text3)">'+esc(label)+'</div>';
+      if(selects[key]){
+        h+='<select class="fi" style="max-width:200px;font-size:12px;padding:6px 10px" onchange="updateEsgField(\''+ticker+'\',\''+key+'\',this.value)">';
+        selects[key].forEach(o=>{h+='<option value="'+esc(o)+'"'+(val===o?' selected':'')+'>'+esc(o||'— Select —')+'</option>';});
+        h+='</select>';
+      } else if(isTextarea){
+        h+='<textarea class="fi" style="max-width:400px;font-size:12px;padding:6px 10px;min-height:50px" onchange="updateEsgField(\''+ticker+'\',\''+key+'\',this.value)">'+esc(val)+'</textarea>';
+      } else {
+        h+='<input class="fi" style="max-width:200px;font-size:12px;padding:6px 10px;font-family:var(--mono,monospace)" value="'+esc(val)+'" placeholder="—" onchange="updateEsgField(\''+ticker+'\',\''+key+'\',this.value)">';
+      }
+      h+='</div>';
+    });
+    h+='</div></div>';
+  });
+  // ESG Chat
+  h+='<h2 style="margin-top:24px">ESG Research Assistant</h2>';
+  h+='<div style="display:flex;gap:8px"><input class="fi" id="esg-chat-input" placeholder="e.g. What are the material ESG risks? How does board diversity compare to SFDR?" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askESG(\''+ticker+'\')"><button class="btn" style="padding:10px 20px" onclick="askESG(\''+ticker+'\')">Ask</button></div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+  ['Summarise ESG risk profile','Key PAI metrics vs SFDR','Main governance concerns','Transition risk assessment','What ESG data is missing?'].forEach(q=>{h+='<button class="ptab" style="font-size:10px;padding:3px 10px" onclick="E(\'esg-chat-input\').value=\''+esc(q)+'\';askESG(\''+ticker+'\')">'+esc(q)+'</button>';});
+  h+='</div><div id="esg-chat-history" style="margin-top:12px"></div>';
+  c.innerHTML=h;
+}
+
+function showEsgSec(k,btn){['env','soc','gov','ratings'].forEach(s=>{const el=E('esg-sec-'+s);if(el)el.style.display=s===k?'block':'none';});E('esg-stabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+
+async function updateEsgField(ticker,key,val){
+  esgCache[key]=val;
+  try{await fetch('/api/v1/companies/'+enc(ticker)+'/esg',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,value:val})});}catch(e){}
+}
+
+async function askESG(ticker){
+  const input=E('esg-chat-input'),q=input.value.trim();if(!q)return;
+  const hist=E('esg-chat-history');
+  hist.innerHTML='<div style="margin-bottom:12px;padding:12px 16px;background:var(--bg3);border-radius:10px;border-left:3px solid var(--gold);font-family:var(--sans);font-size:13px;color:var(--text)"><strong style="color:var(--gold)">Q:</strong> '+esc(q)+'</div><div class="ld" style="margin:12px 0">Analysing ESG data…</div>'+hist.innerHTML;
+  input.value='';input.disabled=true;
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/esg/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});if(!r.ok)throw new Error('Failed');const d=await r.json();
+    const items=hist.children;for(let i=0;i<items.length;i++){if(items[i].classList.contains('ld')){items[i].remove();break;}}
+    const div=document.createElement('div');div.style.cssText='margin-bottom:20px;padding:16px;background:var(--bg2);border-radius:10px;border-left:3px solid var(--green);font-family:var(--sans);font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-wrap';
+    div.innerHTML='<strong style="color:var(--green)">ESG Assistant:</strong> '+esc(d.answer);
+    if(hist.children.length>0)hist.insertBefore(div,hist.children[1]);else hist.appendChild(div);
+  }catch(e){const items=hist.children;for(let i=0;i<items.length;i++){if(items[i].classList.contains('ld')){items[i].innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';break;}}}
+  input.disabled=false;input.focus();
+}
 
 // ═══ PROMPT LAB ═════════════════════════════════════════════
 async function seedVariants(){try{const r=await fetch('/api/v1/experiments/seed',{method:'POST'});const d=await r.json();alert('Seeded: '+(d.seeded.length?d.seeded.join(', '):'All already exist'));loadLab();}catch(e){alert('Failed: '+e.message);}}
