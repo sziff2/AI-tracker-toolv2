@@ -333,19 +333,6 @@ class ESGData(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# ESG Data — SFDR PAI metrics, ratings, and internal assessment
-# ─────────────────────────────────────────────────────────────────
-class ESGData(Base, TimestampMixin):
-    __tablename__ = "esg_data"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
-    data_json = Column(Text, default="{}")  # all ESG key-value pairs as JSON
-
-    company = relationship("Company")
-
-
-# ─────────────────────────────────────────────────────────────────
 # ESG Data — one row per company, JSON blob for all PAI/ESG fields
 # ─────────────────────────────────────────────────────────────────
 class ESGData(Base, TimestampMixin):
