@@ -104,8 +104,8 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div class="hdr-logo">R</div>
   <div><div class="hdr-t">Research CoWork Agent</div><div class="hdr-s">Investment Research Intelligence</div></div>
   <div class="hdr-nav">
-    <button class="nb on" id="nav-new" onclick="showPage('new')">New Analysis</button>
     <button class="nb" id="nav-cockpit" onclick="showPage('cockpit')">Company Cockpit</button>
+    <button class="nb on" id="nav-new" onclick="showPage('new')">New Analysis</button>
     <button class="nb" id="nav-lab" onclick="showPage('lab')">Prompt Lab</button>
   </div>
 </div>
@@ -163,12 +163,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="btn2" onclick="loadLab()">Refresh</button>
   </div>
   <div id="lab-content"></div>
-
-  <h2 style="margin-top:40px">ESG PAI Data Import</h2>
-  <p class="sub" style="margin-bottom:12px">Paste your PAI table data (tab-separated) to bulk-populate ESG fields across all holdings.</p>
-  <textarea class="fi" id="pai-import-text" style="min-height:120px;font-family:var(--mono,monospace);font-size:11px" placeholder="Paste tab-separated data here. Columns: Company, PAI:1, PAI:2, PAI:3, SBTi, PAI:4, PAI:5, PAI:6, PAI:7, PAI:8, PAI:9, PAI:10, PAI:11, PAI:12, PAI:13, PAI:14"></textarea>
-  <button class="btn" style="margin-top:12px" onclick="importPAI()">Import PAI Data</button>
-  <div id="pai-import-result" style="margin-top:12px"></div>
 </div>
 
 </div>
@@ -484,6 +478,12 @@ function renderESG(ticker,d){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
   ['Summarise ESG risk profile','Key PAI metrics vs SFDR','Main governance concerns','Transition risk assessment','What ESG data is missing?'].forEach(q=>{h+='<button class="ptab" style="font-size:10px;padding:3px 10px" onclick="E(\'esg-chat-input\').value=\''+esc(q)+'\';askESG(\''+ticker+'\')">'+esc(q)+'</button>';});
   h+='</div><div id="esg-chat-history" style="margin-top:12px"></div>';
+  // PAI Bulk Import
+  h+='<h2 style="margin-top:32px">PAI Data Import</h2>';
+  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:8px">Paste tab-separated PAI data from Excel to bulk-populate ESG fields across all holdings.</div>';
+  h+='<textarea class="fi" id="pai-import-text" style="min-height:100px;font-family:var(--mono,monospace);font-size:11px" placeholder="Paste rows: Company  PAI:1  PAI:2  PAI:3  SBTi  PAI:4 … PAI:14"></textarea>';
+  h+='<button class="btn" style="margin-top:8px" onclick="importPAI()">Import PAI Data</button>';
+  h+='<div id="pai-import-result" style="margin-top:8px"></div>';
   c.innerHTML=h;
 }
 
