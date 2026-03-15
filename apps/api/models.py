@@ -318,16 +318,16 @@ class ABExperiment(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# ESG Data — PAI metrics, ratings, and internal assessments
+# ESG Data — one row per company, JSON blob for all PAI/ESG fields
 # ─────────────────────────────────────────────────────────────────
 class ESGData(Base, TimestampMixin):
     __tablename__ = "esg_data"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    data_json = Column(Text, nullable=False, default="{}")   # all ESG fields as JSON
-    completeness_pct = Column(Integer, default=0)
-    last_updated_by = Column(Text)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
+    data = Column(Text, default="{}")              # JSON blob of all ESG fields
+    ai_summary = Column(Text, nullable=True)
+    ai_summary_date = Column(DateTime(timezone=True), nullable=True)
 
     company = relationship("Company")
 
