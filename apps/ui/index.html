@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,600;1,6..72,400&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0f1117;--bg2:#15171e;--bg3:#1a1c25;--border:#2a2d37;--gold:#c9a960;--gold2:#a88932;--text:#e2e4e9;--text2:#c4c6ce;--text3:#7a7d88;--text4:#5a5d68;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--blue:#3b82f6;--sans:'DM Sans',sans-serif;--serif:'Newsreader',Georgia,serif;--sidebar-w:228px}
+:root{--bg:#06101E;--bg2:#0A1929;--bg3:#0E2035;--border:#1A3050;--gold:#C4A45A;--gold2:#9A7B30;--goldDim:rgba(196,164,90,.15);--text:#D4DAE3;--text2:#A8B2BF;--text3:#6B7A8D;--text4:#4A5A6D;--green:#22C55E;--greenDim:rgba(34,197,94,.12);--red:#EF4444;--redDim:rgba(239,68,68,.12);--amber:#F59E0B;--blue:#3B82F6;--sans:'DM Sans',sans-serif;--serif:'Newsreader',Georgia,serif;--mono:'DM Sans',monospace;--sidebar-w:228px}
 body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--serif);display:flex}
 /* Sidebar */
 .side{width:var(--sidebar-w);background:linear-gradient(180deg,#0A1E38 0%,#071628 100%);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:200}
@@ -20,27 +20,27 @@ body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--s
 .nav-lbl{font-size:9px;color:var(--text4);letter-spacing:.2em;text-transform:uppercase;padding:0 12px 8px}
 .nav-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text3);background:transparent;border:1px solid transparent;transition:all .15s;margin-bottom:2px}
 .nav-it:hover{color:var(--text2);background:rgba(255,255,255,.03)}
-.nav-it.on{color:var(--gold);background:rgba(196,164,90,.10);border-color:rgba(196,164,90,.20)}
+.nav-it.on{color:var(--gold);background:var(--goldDim);border-color:rgba(196,164,90,.20)}
 .nav-ico{width:16px;text-align:center;font-size:14px;flex-shrink:0}
 .nav-co{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--text3);transition:all .15s;margin-bottom:1px}
 .nav-co:hover{color:var(--text2);background:rgba(255,255,255,.03)}
-.nav-co.on{color:var(--gold);background:rgba(196,164,90,.10)}
-.nav-co .tk{font-family:'DM Sans',monospace;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
+.nav-co.on{color:var(--gold);background:var(--goldDim)}
+.nav-co .tk{font-family:var(--mono);font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
 /* Main content */
 .main{margin-left:var(--sidebar-w);flex:1;min-height:100vh}
 .wrap{max-width:1100px;margin:0 auto;padding:32px 24px 80px}
-h1{font-size:30px;font-weight:300;color:#f0f1f4;margin-bottom:6px}
+h1{font-size:30px;font-weight:300;color:#E8ECF1;margin-bottom:6px;font-family:var(--serif)}
 h2{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin:28px 0 12px}
-.sub{font-family:var(--sans);font-size:14px;color:#6b6e7a;margin-bottom:32px;line-height:1.5}
+.sub{font-family:var(--sans);font-size:14px;color:var(--text4);margin-bottom:32px;line-height:1.5}
 .fl{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
 .fi{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none;transition:border-color .2s}
 .fi:focus{border-color:var(--gold)}
 textarea.fi{resize:vertical;min-height:70px;line-height:1.5}
-select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7d88' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236B7A8D' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .btn{padding:12px 24px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:var(--bg);border:none;border-radius:10px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
-.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 20px rgba(201,169,96,.3)}
+.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 20px rgba(196,164,90,.3)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn-full{width:100%;margin-top:24px}
 .btn2{padding:8px 16px;background:transparent;border:1px solid var(--border);border-radius:8px;font-family:var(--sans);font-size:12px;color:var(--text3);cursor:pointer;transition:all .2s}
@@ -48,49 +48,49 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .btn-sm{padding:5px 12px;background:var(--gold);color:var(--bg);border:none;border-radius:6px;font-family:var(--sans);font-size:11px;font-weight:600;cursor:pointer}
 .ld{text-align:center;margin-top:32px;font-family:var(--sans);font-size:14px;color:var(--gold);animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.err{margin-top:16px;padding:12px 16px;background:#1c1215;border:1px solid #3d1f23;border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--red)}
-.ok{margin-top:16px;padding:12px 16px;background:#121c15;border:1px solid #1f3d23;border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--green)}
-.cd{background:var(--bg2);border-radius:12px;padding:24px;margin-bottom:12px;border-left:3px solid transparent}
+.err{margin-top:16px;padding:12px 16px;background:var(--redDim);border:1px solid rgba(239,68,68,.25);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--red)}
+.ok{margin-top:16px;padding:12px 16px;background:var(--greenDim);border:1px solid rgba(34,197,94,.25);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--green)}
+.cd{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:12px;border-left:3px solid transparent}
 .cd.gold{border-left-color:var(--gold);background:var(--bg3)}
-.cd.blue{border-left-color:var(--blue);background:#12141a}
+.cd.blue{border-left-color:var(--blue);background:rgba(59,130,246,.06)}
 .cd-t{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
 .cd.gold .cd-t{color:var(--gold)}
 .cd-c{font-size:14.5px;line-height:1.75;color:var(--text2);white-space:pre-wrap}
-.cd.gold .cd-c{font-size:15px;color:#f0f1f4}
+.cd.gold .cd-c{font-size:15px;color:#E8ECF1}
 .gl{width:60px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);margin:10px 0 28px}
 .fr{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
 .fr .fn{font-family:var(--sans);font-size:13px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fr .fs{font-family:var(--sans);font-size:11px;color:var(--text4)}
-.fr select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 26px 5px 10px;color:var(--gold);font-family:var(--sans);font-size:12px;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23c9a960' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.fr select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:5px 26px 5px 10px;color:var(--gold);font-family:var(--sans);font-size:12px;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23C4A45A' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
 .fr .x{background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px}.fr .x:hover{color:var(--red)}
 .af{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:transparent;border:2px dashed var(--border);border-radius:10px;color:var(--text3);font-family:var(--sans);font-size:13px;cursor:pointer;transition:all .2s;margin-top:8px}
 .af:hover{border-color:var(--gold);color:var(--gold);background:var(--bg2)}
 .col{cursor:pointer;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;font-family:var(--sans);font-size:13px;color:var(--text3);transition:all .2s}
 .col:hover{border-color:var(--gold);color:var(--gold)}
-.col-c{display:none;padding:16px;background:#12141a;border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
+.col-c{display:none;padding:16px;background:var(--bg3);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
 .col-c.open{display:block}
-.tabs{display:flex;gap:4px;background:var(--bg2);border-radius:10px;padding:4px;margin-bottom:20px}
+.tabs{display:flex;gap:4px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:20px}
 .tab{flex:1;padding:10px;text-align:center;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text3);border-radius:8px;cursor:pointer;border:none;background:none;transition:all .2s}
-.tab.on{background:#1e2028;color:var(--gold)}.tab:hover:not(.on){color:var(--text)}
+.tab.on{background:var(--bg3);color:var(--gold)}.tab:hover:not(.on){color:var(--text)}
 .ptabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px}
 .ptab{padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-family:var(--sans);font-size:12px;color:var(--text3);cursor:pointer;background:none;transition:all .2s}
-.ptab.on{border-color:var(--gold);color:var(--gold);background:var(--bg3)}
+.ptab.on{border-color:var(--gold);color:var(--gold);background:var(--goldDim)}
 .ptab:hover:not(.on){border-color:var(--text3)}
 .kt{width:100%;border-collapse:separate;border-spacing:0;font-family:var(--sans);font-size:13px}
 .kt th{text-align:left;padding:10px 12px;color:var(--text3);font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:1}
-.kt td{padding:8px 12px;border-bottom:1px solid #1a1c25;color:var(--text2)}
+.kt td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text2)}
 .kt tr:hover td{background:var(--bg2)}
 .kt .kn{color:var(--gold);font-weight:500;white-space:nowrap}
 .kt .kv{text-align:center;min-width:80px}
 .sb{width:26px;height:26px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text3);font-family:var(--sans);font-size:11px;cursor:pointer;transition:all .15s;margin:0 1px}
 .sb:hover{border-color:var(--gold);color:var(--gold)}
 .sb.on{background:var(--gold);color:var(--bg);border-color:var(--gold);font-weight:700}
-.ck-strip{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px}
-.ck-stat{background:var(--bg2);border-radius:10px;padding:14px 20px;flex:1;min-width:120px}
+.ck-strip{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.ck-stat{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:120px}
 .ck-stat-label{font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text4);margin-bottom:4px}
 .ck-stat-val{font-family:var(--sans);font-size:18px;font-weight:700;color:var(--text)}
 .ck-stat-val.up{color:var(--green)}.ck-stat-val.down{color:var(--red)}.ck-stat-val.neutral{color:var(--amber)}
-.tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #1a1c25;font-family:var(--sans);font-size:13px}
+.tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-family:var(--sans);font-size:13px}
 .tl-date{color:var(--text4);font-size:11px;min-width:80px}.tl-icon{font-size:16px;min-width:24px;text-align:center}.tl-body{flex:1;color:var(--text2)}.tl-body strong{color:var(--text);font-weight:500}
 .dl-item{padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
 .dl-action{font-family:var(--sans);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
@@ -106,10 +106,10 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .form-row input:focus,.form-row textarea:focus{border-color:var(--gold)}
 .form-row button{padding:8px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--gold);font-family:var(--sans);font-size:13px;cursor:pointer;white-space:nowrap}
 .form-row button:hover{background:var(--gold);color:var(--bg)}
-.kdel{background:none;border:none;color:#3a3d48;cursor:pointer;font-size:14px}.kdel:hover{color:var(--red)}
+.kdel{background:none;border:none;color:var(--text4);cursor:pointer;font-size:14px}.kdel:hover{color:var(--red)}
 .th-hist{padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-family:var(--sans);font-size:12px;color:var(--text2);display:flex;justify-content:space-between;align-items:center}
 .th-hist .badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.5px}
-.th-hist .badge.up{background:#12261a;color:var(--green)}.th-hist .badge.down{background:#261215;color:var(--red)}.th-hist .badge.neutral{background:#26221a;color:var(--amber)}
+.th-hist .badge.up{background:var(--greenDim);color:var(--green)}.th-hist .badge.down{background:var(--redDim);color:var(--red)}.th-hist .badge.neutral{background:rgba(245,158,11,.12);color:var(--amber)}
 </style>
 </head>
 <body>
@@ -126,7 +126,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
   <div class="nav-sec">
     <div class="nav-lbl">Workspace</div>
-    <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Company Cockpit</div>
+    <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
     <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
@@ -267,7 +267,7 @@ function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings R
 // ── Submit ───────────────────────────────────────────────────
 function showErr(m){E('error').innerHTML=m;E('error').style.display='block';}
 function showOk(m){E('status').textContent=m;E('status').style.display='block';}
-function showDupErr(t){E('error').innerHTML='Documents already uploaded. <button class="btn-sm" onclick="clearRetry(\''+esc(t)+'\')">Clear & retry</button> <button class="btn2" style="margin-left:4px;padding:5px 12px;font-size:11px" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View cockpit</button>';E('error').style.display='block';}
+function showDupErr(t){E('error').innerHTML='Documents already uploaded. <button class="btn-sm" onclick="clearRetry(\''+esc(t)+'\')">Clear & retry</button> <button class="btn2" style="margin-left:4px;padding:5px 12px;font-size:11px" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View research</button>';E('error').style.display='block';}
 async function clearRetry(t){E('error').style.display='none';showOk('Clearing…');try{await fetch('/api/v1/companies/'+enc(t)+'/documents',{method:'DELETE'});E('status').style.display='none';submitForm();}catch(e){showErr(e.message);}}
 async function ensureCo(t){const n=E('co-name').value.trim(),s=E('sector').value.trim(),co=E('country')?.value?.trim()||'';try{const r=await fetch('/api/v1/companies/'+enc(t));if(r.ok)return true;}catch(e){}if(!n){showErr('Company not found. Enter a name.');return false;}try{const r=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');await loadDD();}catch(e){showErr(e.message);return false;}return true;}
 async function saveThesis(t){const c=E('th-core').value.trim();if(!c)return;try{await fetch('/api/v1/companies/'+enc(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:c,key_risks:E('th-risks').value.trim()||null,valuation_framework:E('th-val').value.trim()||null})});}catch(e){}}
@@ -284,7 +284,7 @@ async function submitForm(){
   if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}ld.style.display='block';
   const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
     ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:8px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
-    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Cockpit</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
   }catch(e){}},3000);
 }
@@ -312,18 +312,70 @@ function renderCockpit(ticker,d){
 }
 function ckTab(t,btn){['thesis','kpis','results','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}}
 
-// ── Thesis tab (with history) ────────────────────────────────
+// ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
-  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file.');
+  const ticker=E('ck-company').value;
+  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
   const t=d.thesis;let h='';
-  h+=card('gold','Core Thesis',esc(t.core_thesis||''));
-  if(t.variant_perception)h+=card('','Variant Perception',esc(t.variant_perception));
-  if(t.key_risks)h+=card('','Key Risks',esc(t.key_risks));
-  if(t.debate_points)h+=card('','Key Debates',esc(t.debate_points));
-  if(t.capital_allocation_view)h+=card('','Capital Allocation',esc(t.capital_allocation_view));
-  if(t.valuation_framework)h+=card('','Valuation Framework',esc(t.valuation_framework));
+  const a=d.thesis_assessment||{};
+  const dir=a.thesis_direction||'—';const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
+
+  // IC Summary strip
+  h+='<div class="cd gold" style="padding:20px 24px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">IC Summary</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;display:flex;gap:16px">';
+  if(a.thesis_direction)h+='<span>Thesis: <span style="color:'+dirCls+';font-weight:600">'+esc(dir)+'</span></span>';
+  if(a.confidence)h+='<span style="color:var(--text4)">Confidence: '+a.confidence+'</span>';
+  h+='</div></div>';
+  // IC fields row
+  h+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">';
+  // Recommendation
+  h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Recommendation</div>';
+  h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'recommendation\',this.value)">';
+  ['','Buy','Hold','Trim','Exit','Under Review'].forEach(o=>{h+='<option value="'+o+'"'+(t.recommendation===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
+  h+='</select></div>';
+  // Variant Perception
+  h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Variant Perception</div>';
+  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.variant_perception||'')+'" placeholder="What do we see that consensus doesn\'t" onchange="saveThesisField(\''+ticker+'\',\'variant_perception\',this.value)"></div>';
+  // Key Risk
+  h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Key Risk</div>';
+  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.key_risks||'')+'" placeholder="Primary bear case risk" onchange="saveThesisField(\''+ticker+'\',\'key_risks\',this.value)"></div>';
+  // Catalyst
+  h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Catalyst</div>';
+  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.catalyst||'')+'" placeholder="e.g. Q3 results, Spin-off" onchange="saveThesisField(\''+ticker+'\',\'catalyst\',this.value)"></div>';
+  // Conviction
+  h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Conviction</div>';
+  h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'conviction\',this.value)">';
+  ['','High','Medium','Low'].forEach(o=>{h+='<option value="'+o+'"'+(t.conviction===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
+  h+='</select></div>';
+  h+='</div></div>';
+
+  // Three-column structured thesis section
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
+  // What Would Make Us Wrong
+  h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
+  // Disconfirming Evidence
+  h+='<div class="cd" style="border-left-color:var(--amber);margin:0"><div class="cd-t" style="color:var(--amber)">Disconfirming Evidence</div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
+  // Positive / Negative Surprises
+  h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Positive / Negative Surprises</div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
+  h+='</div>';
+
+  // Investment Thesis (editable)
+  h+='<div class="g2" style="margin-top:12px">';
+  h+='<div class="cd" style="margin:0"><div class="cd-t">Investment Thesis</div>';
+  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
+  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">✎ Editable — changes versioned on save</div></div>';
+  // Valuation Framework
+  h+='<div class="cd" style="margin:0"><div class="cd-t">Valuation Framework</div>';
+  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
+  h+='</div>';
+
   // Latest assessment
-  if(d.thesis_assessment){const a=d.thesis_assessment;h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
+  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
   // Assessment history
   if(d.all_assessments?.length>1){
     h+='<h2 style="margin-top:24px">Assessment History</h2>';
@@ -340,6 +392,10 @@ function renderCkThesis(d){
     });
   }
   return h;
+}
+
+async function saveThesisField(ticker,field,value){
+  try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────

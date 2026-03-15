@@ -117,6 +117,14 @@ class ThesisVersion(Base, TimestampMixin):
     capital_allocation_view = Column(Text)
     valuation_framework = Column(Text)
     active = Column(Boolean, default=True)
+    # IC Summary fields
+    recommendation = Column(Text)             # buy | hold | trim | exit | under_review
+    catalyst = Column(Text)
+    conviction = Column(Text)                 # high | medium | low
+    what_would_make_us_wrong = Column(Text)
+    disconfirming_evidence = Column(Text)
+    positive_surprises = Column(Text)
+    negative_surprises = Column(Text)
 
     company = relationship("Company", back_populates="thesis_versions")
 
@@ -306,6 +314,34 @@ class ABExperiment(Base, TimestampMixin):
 
     variant_a = relationship("PromptVariant", foreign_keys=[variant_a_id])
     variant_b = relationship("PromptVariant", foreign_keys=[variant_b_id])
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# ESG Data — PAI metrics, ratings, and internal assessments
+# ─────────────────────────────────────────────────────────────────
+class ESGData(Base, TimestampMixin):
+    __tablename__ = "esg_data"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    data_json = Column(Text, nullable=False, default="{}")   # all ESG fields as JSON
+    completeness_pct = Column(Integer, default=0)
+    last_updated_by = Column(Text)
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# ESG Data — SFDR PAI metrics, ratings, and internal assessment
+# ─────────────────────────────────────────────────────────────────
+class ESGData(Base, TimestampMixin):
+    __tablename__ = "esg_data"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
+    data_json = Column(Text, default="{}")  # all ESG key-value pairs as JSON
+
     company = relationship("Company")
 
 

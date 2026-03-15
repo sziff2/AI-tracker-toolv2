@@ -72,6 +72,13 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
             "debate_points": thesis.debate_points,
             "capital_allocation_view": thesis.capital_allocation_view,
             "valuation_framework": thesis.valuation_framework,
+            "recommendation": thesis.recommendation,
+            "catalyst": thesis.catalyst,
+            "conviction": thesis.conviction,
+            "what_would_make_us_wrong": thesis.what_would_make_us_wrong,
+            "disconfirming_evidence": thesis.disconfirming_evidence,
+            "positive_surprises": thesis.positive_surprises,
+            "negative_surprises": thesis.negative_surprises,
         }
 
     # ── Latest thesis assessment ──────────────────────────────
@@ -381,6 +388,41 @@ async def list_notes(ticker: str, db: AsyncSession = Depends(get_db)):
         "content": d.content, "author": d.author,
         "created_at": d.created_at.isoformat() if d.created_at else None,
     } for d in q.scalars().all()]
+
+# ─────────────────────────────────────────────────────────────────
+# Update thesis fields inline (IC Summary, etc.)
+# ─────────────────────────────────────────────────────────────────
+class ThesisFieldUpdate(BaseModel):
+    field: str
+    value: str
+
+
+@router.patch("/companies/{ticker}/thesis")
+async def update_thesis_field(ticker: str, body: ThesisFieldUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    thesis_q = await db.execute(
+        select(ThesisVersion).where(ThesisVersion.company_id == company.id, ThesisVersion.active == True)
+        .order_by(ThesisVersion.thesis_date.desc()).limit(1)
+    )
+    thesis = thesis_q.scalar_one_or_none()
+    if not thesis:
+        raise HTTPException(404, "No active thesis found")
+
+    allowed = ["core_thesis", "variant_perception", "key_risks", "debate_points",
+               "capital_allocation_view", "valuation_framework", "recommendation",
+               "catalyst", "conviction", "what_would_make_us_wrong",
+               "disconfirming_evidence", "positive_surprises", "negative_surprises"]
+    if body.field not in allowed:
+        raise HTTPException(400, f"Field '{body.field}' not allowed")
+
+    setattr(thesis, body.field, body.value)
+    await db.commit()
+    return {"status": "saved", "field": body.field}
+
 
 # ─────────────────────────────────────────────────────────────────
 # Document Chat — ask questions grounded in period-specific data

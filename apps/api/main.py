@@ -34,6 +34,9 @@ async def lifespan(app: FastAPI):
         sa_text = __import__("sqlalchemy").text
         await conn.execute(sa_text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_content BYTEA"))
         await conn.execute(sa_text("ALTER TABLE research_outputs ADD COLUMN IF NOT EXISTS content_json TEXT"))
+        # IC Summary fields on thesis_versions
+        for col in ["recommendation", "catalyst", "conviction", "what_would_make_us_wrong", "disconfirming_evidence", "positive_surprises", "negative_surprises"]:
+            await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
     yield
     await async_engine.dispose()
 
