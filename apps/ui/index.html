@@ -7,14 +7,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,600;1,6..72,400&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0f1117;--bg2:#15171e;--bg3:#1a1c25;--border:#2a2d37;--gold:#c9a960;--gold2:#a88932;--text:#e2e4e9;--text2:#c4c6ce;--text3:#7a7d88;--text4:#5a5d68;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--blue:#3b82f6;--sans:'DM Sans',sans-serif;--serif:'Newsreader',Georgia,serif}
-body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--serif)}
-.hdr{border-bottom:1px solid var(--border);padding:16px 32px;display:flex;align-items:center;gap:12px;position:sticky;top:0;background:var(--bg);z-index:100}
-.hdr-logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--bg);font-family:var(--sans)}
-.hdr-t{font-family:var(--sans);font-weight:600;font-size:15px}.hdr-s{font-family:var(--sans);font-size:11px;color:var(--text4);letter-spacing:.5px}
-.hdr-nav{margin-left:auto;display:flex;gap:6px}
-.nb{background:none;border:1px solid var(--border);border-radius:8px;padding:7px 16px;font-family:var(--sans);font-size:13px;color:var(--text3);cursor:pointer;transition:all .2s}
-.nb:hover,.nb.on{border-color:var(--gold);color:var(--gold)}
+:root{--bg:#0f1117;--bg2:#15171e;--bg3:#1a1c25;--border:#2a2d37;--gold:#c9a960;--gold2:#a88932;--text:#e2e4e9;--text2:#c4c6ce;--text3:#7a7d88;--text4:#5a5d68;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--blue:#3b82f6;--sans:'DM Sans',sans-serif;--serif:'Newsreader',Georgia,serif;--sidebar-w:228px}
+body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--serif);display:flex}
+/* Sidebar */
+.side{width:var(--sidebar-w);background:linear-gradient(180deg,#0A1E38 0%,#071628 100%);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:200}
+.side-logo{padding:28px 24px 20px;border-bottom:1px solid var(--border)}
+.side-logo-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.side-monogram{width:42px;height:42px;border-radius:6px;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#06101E;font-family:var(--serif);box-shadow:0 2px 12px rgba(168,137,50,.4)}
+.side-brand{font-family:var(--serif);font-size:15px;font-weight:600;color:var(--text);line-height:1.2}
+.side-sub{font-size:9px;color:var(--text4);letter-spacing:.18em;text-transform:uppercase}
+.nav-sec{padding:16px 12px 8px}
+.nav-lbl{font-size:9px;color:var(--text4);letter-spacing:.2em;text-transform:uppercase;padding:0 12px 8px}
+.nav-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text3);background:transparent;border:1px solid transparent;transition:all .15s;margin-bottom:2px}
+.nav-it:hover{color:var(--text2);background:rgba(255,255,255,.03)}
+.nav-it.on{color:var(--gold);background:rgba(196,164,90,.10);border-color:rgba(196,164,90,.20)}
+.nav-ico{width:16px;text-align:center;font-size:14px;flex-shrink:0}
+.nav-co{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--text3);transition:all .15s;margin-bottom:1px}
+.nav-co:hover{color:var(--text2);background:rgba(255,255,255,.03)}
+.nav-co.on{color:var(--gold);background:rgba(196,164,90,.10)}
+.nav-co .tk{font-family:'DM Sans',monospace;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
+/* Main content */
+.main{margin-left:var(--sidebar-w);flex:1;min-height:100vh}
 .wrap{max-width:1100px;margin:0 auto;padding:32px 24px 80px}
 h1{font-size:30px;font-weight:300;color:#f0f1f4;margin-bottom:6px}
 h2{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);margin:28px 0 12px}
@@ -100,20 +113,37 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </style>
 </head>
 <body>
-<div class="hdr">
-  <div class="hdr-logo">R</div>
-  <div><div class="hdr-t">Research CoWork Agent</div><div class="hdr-s">Investment Research Intelligence</div></div>
-  <div class="hdr-nav">
-    <button class="nb" id="nav-cockpit" onclick="showPage('cockpit')">Company Cockpit</button>
-    <button class="nb on" id="nav-new" onclick="showPage('new')">New Analysis</button>
-    <button class="nb" id="nav-lab" onclick="showPage('lab')">Prompt Lab</button>
-    <button class="nb" id="nav-data" onclick="showPage('data')">Data Hub</button>
+
+<!-- ═══ SIDEBAR ═══ -->
+<div class="side" id="sidebar">
+  <div class="side-logo">
+    <div class="side-logo-row">
+      <div class="side-monogram">OP</div>
+      <div><div class="side-brand">Oldfield</div><div class="side-brand">Partners</div></div>
+    </div>
+    <div class="side-sub">Research Platform</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Workspace</div>
+    <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Company Cockpit</div>
+    <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
+    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
+    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Companies</div>
+    <div id="side-companies"></div>
   </div>
 </div>
+
+<!-- ═══ MAIN CONTENT ═══ -->
+<div class="main">
 <div class="wrap">
 
 <!-- ═══ NEW ANALYSIS ═══ -->
-<div id="page-new">
+<div id="page-new" style="display:none">
   <div id="form-section">
     <h1>Upload documents</h1>
     <p class="sub">Add your earnings release, transcript, broker notes, and presentations. Each is analysed with a tailored prompt, then synthesised into one opinionated briefing.</p>
@@ -150,14 +180,14 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </div>
 
 <!-- ═══ COCKPIT ═══ -->
-<div id="page-cockpit" style="display:none">
+<div id="page-cockpit">
   <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="loadCockpit()"><option value="">— Select company —</option></select></div></div>
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
 <!-- ═══ PROMPT LAB ═══ -->
 <div id="page-lab" style="display:none">
-  <h1>Prompt Lab</h1>
+  <h1>Prompt Lab <span style="font-size:16px;color:var(--gold)">β</span></h1>
   <p class="sub">A/B test prompt variants, compare outputs side-by-side, and let the system improve itself.</p>
   <div style="display:flex;gap:8px;margin-bottom:20px">
     <button class="btn" onclick="seedVariants()">Seed Default Variants</button>
@@ -204,13 +234,14 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </div>
 
 </div>
+</div>
 <script>
 let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
+function showPage(p){['new','cockpit','lab','data'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -219,9 +250,12 @@ function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
-  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});}
+  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});
+  // Populate sidebar companies
+  const sc=E('side-companies');if(sc){let h='';CC.forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.ticker.split(' ')[0])+'</span></div>';});sc.innerHTML=h;}}
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
+function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
 async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
 // ── Files ────────────────────────────────────────────────────
