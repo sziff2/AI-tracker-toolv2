@@ -138,6 +138,21 @@ async def extract_by_document_type(
 
     logger.info("Extracted %d items from %s document %s (parallel)", len(all_items), doc_type, document.id)
 
+    # ── Validation pipeline ──────────────────────────────────
+    try:
+        from services.metric_validator import validate_extraction
+        validation = await validate_extraction(
+            items=all_items,
+            source_text=text,
+            run_cross_check=True,
+            confidence_threshold=0.6,
+        )
+        all_items = validation["validated"]
+        logger.info("Type-specific validation: %d passed, %d rejected",
+                    validation["stats"]["passed"], validation["stats"]["rejected"])
+    except Exception as e:
+        logger.warning("Validation failed, using unvalidated: %s", str(e)[:100])
+
     # Persist based on type
     if doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
         await _persist_earnings_metrics(db, document, all_items)
@@ -179,6 +194,23 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
     # Split into metrics and guidance
     metrics_raw = [i for i in all_items if i.get("type") == "metric" or "metric_value" in i]
     guidance_raw = [i for i in all_items if i.get("type") == "guidance" or "guidance_type" in i]
+
+    # ── Validation pipeline ──────────────────────────────────
+    try:
+        from services.metric_validator import validate_extraction
+        validation = await validate_extraction(
+            items=metrics_raw,
+            source_text=text,
+            run_cross_check=True,
+            confidence_threshold=0.6,
+        )
+        metrics_raw = validation["validated"]
+        validation_stats = validation["stats"]
+        logger.info("Validation: %d passed, %d rejected, %d flagged",
+                    validation_stats["passed"], validation_stats["rejected"], validation_stats["flagged"])
+    except Exception as e:
+        logger.warning("Validation failed, using unvalidated metrics: %s", str(e)[:100])
+        validation_stats = None
 
     # Persist metrics
     metrics = []
