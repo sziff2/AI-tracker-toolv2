@@ -129,6 +129,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
     <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
+    <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
   </div>
 
@@ -230,7 +231,37 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div id="dh-kpi-result" style="margin-top:8px"></div>
     </div>
 
+    <!-- Pricing -->
+    <div class="cd" style="margin-bottom:20px">
+      <div class="cd-t">💰 Pricing</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Bulk update prices. Columns: Ticker, Price, Currency (optional, default USD).</div>
+      <div class="af" onclick="E('dh-prices-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <input type="file" id="dh-prices-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'prices')">
+      <div id="dh-prices-result" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Portfolio Holdings -->
+    <div class="cd" style="margin-bottom:20px">
+      <div class="cd-t">💼 Portfolio Holdings</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Import holdings for a portfolio. Select portfolio first, then upload. Columns: Ticker, Weight %, Cost Basis (optional).</div>
+      <div style="margin-bottom:8px"><select class="fi" id="dh-port-select" style="max-width:250px"><option value="">— Select portfolio —</option></select></div>
+      <div class="af" onclick="if(!E('dh-port-select').value){alert('Select a portfolio first.');return;}E('dh-holdings-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <input type="file" id="dh-holdings-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'holdings')">
+      <div id="dh-holdings-result" style="margin-top:8px"></div>
+    </div>
+
   </div>
+</div>
+
+<!-- ═══ PORTFOLIO ═══ -->
+<div id="page-portfolio" style="display:none">
+  <h1>Portfolio</h1>
+  <p class="sub">Multi-portfolio management with pricing, valuation scenarios, and analytics.</p>
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <select class="fi" id="port-select" style="max-width:250px" onchange="loadPortfolioDetail()"><option value="">— Select portfolio —</option></select>
+    <button class="btn2" onclick="createPortfolio()">+ New Portfolio</button>
+  </div>
+  <div id="port-content"></div>
 </div>
 
 </div>
@@ -241,7 +272,7 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
+function showPage(p){['new','cockpit','lab','data','portfolio'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -741,6 +772,8 @@ function handleDHFile(input,type){
     if(type==='pai')importPAIFromHub(text);
     else if(type==='companies')importCompanies(text);
     else if(type==='kpis')importKPIs(text);
+    else if(type==='prices')importPrices(text);
+    else if(type==='holdings')importHoldings(text);
   };
   reader.readAsText(file);
   input.value='';
@@ -826,6 +859,142 @@ async function importKPIs(text){
     details.forEach(d=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(d.status.includes('added')?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(d.company)+' — '+esc(d.status)+'</div>';});
     res.innerHTML=h+'</div>';
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function importPrices(text){
+  const res=E('dh-prices-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());const rows=[];
+    for(const line of lines){const cols=parseCSVLine(line);if(cols.length<2)continue;const ticker=cols[0],price=cols[1];if(!ticker||!price||ticker.toLowerCase()==='ticker')continue;const p=parseFloat(price);if(isNaN(p))continue;rows.push({ticker:ticker.toUpperCase(),price:p,currency:cols[2]||'USD'});}
+    if(!rows.length){res.innerHTML='<div class="err">No valid rows.</div>';return;}
+    const r=await fetch('/api/v1/prices/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rows)});if(!r.ok)throw new Error('Failed');const d=await r.json();
+    let h='<div class="ok">Updated '+d.updated+' prices</div><div style="margin-top:8px">';d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status==='updated'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.ticker)+' — '+esc(r.status)+'</div>';});res.innerHTML=h+'</div>';
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function importHoldings(text){
+  const portId=E('dh-port-select').value;if(!portId){E('dh-holdings-result').innerHTML='<div class="err">Select a portfolio first.</div>';return;}
+  const res=E('dh-holdings-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());const holdings=[];
+    for(const line of lines){const cols=parseCSVLine(line);if(cols.length<2)continue;const ticker=cols[0];if(!ticker||ticker.toLowerCase()==='ticker')continue;holdings.push({ticker:ticker.toUpperCase(),weight:parseFloat(cols[1])||0,cost_basis:cols[2]?parseFloat(cols[2]):null,status:'active'});}
+    if(!holdings.length){res.innerHTML='<div class="err">No valid rows.</div>';return;}
+    const r=await fetch('/api/v1/portfolios/'+portId+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});if(!r.ok)throw new Error('Failed');const d=await r.json();
+    let h='<div class="ok">Imported '+d.imported+' holdings</div><div style="margin-top:8px">';d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status!=='company_not_found'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.ticker)+' — '+esc(r.status)+'</div>';});res.innerHTML=h+'</div>';
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+// ═══ PORTFOLIO ═════════════════════════════════════════════
+async function loadPortfolios(){
+  try{const r=await fetch('/api/v1/portfolios');if(!r.ok)return;const ports=await r.json();
+    ['port-select','dh-port-select'].forEach(id=>{const sel=E(id);if(!sel)return;const cur=sel.value;sel.innerHTML='<option value="">— Select portfolio —</option>';ports.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' ('+p.holdings_count+' holdings, '+p.total_weight.toFixed(1)+'%)';sel.appendChild(o);});sel.value=cur;});
+    if(E('port-select')&&E('port-select').value)loadPortfolioDetail();
+  }catch(e){}
+}
+
+async function createPortfolio(){
+  const name=prompt('Portfolio name (e.g. OverGlob):');if(!name)return;
+  try{const r=await fetch('/api/v1/portfolios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});if(r.ok){const d=await r.json();await loadPortfolios();E('port-select').value=d.id;loadPortfolioDetail();}}catch(e){alert(e.message);}
+}
+
+async function loadPortfolioDetail(){
+  const id=E('port-select').value,c=E('port-content');if(!id){c.innerHTML='';return;}
+  c.innerHTML='<div class="ld">Loading…</div>';
+  try{const r=await fetch('/api/v1/portfolios/'+id);if(!r.ok)throw new Error('Failed');const d=await r.json();renderPortfolio(id,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+function renderPortfolio(portId,d){
+  const c=E('port-content');let h='';
+  h+='<h1>'+esc(d.name)+'</h1><div class="gl"></div>';
+  // Summary strip
+  h+='<div class="ck-strip">';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Invested</div><div class="ck-stat-val">'+d.total_weight.toFixed(1)+'%</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Cash</div><div class="ck-stat-val" style="color:var(--amber)">'+d.cash.toFixed(1)+'%</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Holdings</div><div class="ck-stat-val">'+d.holdings.length+'</div></div>';
+  // Compute weighted metrics
+  let wExpRet=0,wDown=0,n=0;
+  d.holdings.forEach(ho=>{if(ho.expected_return!=null){wExpRet+=ho.weight*ho.expected_return/100;n++;}if(ho.downside!=null)wDown+=ho.weight*ho.downside/100;});
+  const expClr=wExpRet>0?'var(--green)':wExpRet<0?'var(--red)':'var(--text)';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Wtd Exp. Return</div><div class="ck-stat-val" style="color:'+expClr+'">'+wExpRet.toFixed(1)+'%</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Wtd Downside</div><div class="ck-stat-val" style="color:var(--red)">'+wDown.toFixed(1)+'%</div></div>';
+  // Top sector/country
+  const secs={},ctys={};d.holdings.forEach(ho=>{const s=ho.sector||'Other',cy=ho.country||'Other';secs[s]=(secs[s]||0)+ho.weight;ctys[cy]=(ctys[cy]||0)+ho.weight;});
+  const topSec=Object.entries(secs).sort((a,b)=>b[1]-a[1])[0];
+  const topCty=Object.entries(ctys).sort((a,b)=>b[1]-a[1])[0];
+  if(topSec)h+='<div class="ck-stat"><div class="ck-stat-label">Top Sector</div><div class="ck-stat-val" style="font-size:14px">'+esc(topSec[0])+'<br><span style="font-size:11px;color:var(--text3)">'+topSec[1].toFixed(1)+'%</span></div></div>';
+  if(topCty)h+='<div class="ck-stat"><div class="ck-stat-label">Top Country</div><div class="ck-stat-val" style="font-size:14px">'+esc(topCty[0])+'<br><span style="font-size:11px;color:var(--text3)">'+topCty[1].toFixed(1)+'%</span></div></div>';
+  h+='</div>';
+
+  // Holdings table
+  h+='<h2>Holdings</h2>';
+  h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>Ticker</th><th>Name</th><th>Sector</th><th>Weight</th><th>Price</th><th>Cost</th><th style="color:var(--red)">Bear</th><th>Base</th><th style="color:var(--green)">Bull</th><th>Exp. Ret.</th><th>U/D</th><th></th></tr></thead><tbody>';
+  const sorted=[...d.holdings].sort((a,b)=>b.weight-a.weight);
+  sorted.forEach(ho=>{
+    const bear=ho.scenarios?.bear;const base=ho.scenarios?.base;const bull=ho.scenarios?.bull;
+    const expClr=ho.expected_return>0?'var(--green)':ho.expected_return<0?'var(--red)':'var(--text)';
+    const ud=ho.upside&&ho.downside&&ho.downside!==0?Math.abs(ho.upside/ho.downside).toFixed(1)+'x':'—';
+    const udClr=parseFloat(ud)>1.5?'var(--green)':parseFloat(ud)<1?'var(--red)':'var(--text)';
+    const pnl=ho.current_price&&ho.cost_basis?((ho.current_price/ho.cost_basis-1)*100).toFixed(1)+'%':'';
+    const pnlClr=parseFloat(pnl)>0?'var(--green)':parseFloat(pnl)<0?'var(--red)':'var(--text3)';
+    h+='<tr>';
+    h+='<td class="kn" style="cursor:pointer" onclick="sideSelectCo(\''+esc(ho.ticker)+'\')">'+esc(ho.ticker.split(' ')[0])+'</td>';
+    h+='<td style="font-size:12px">'+esc(ho.name)+'</td>';
+    h+='<td style="font-size:11px;color:var(--text3)">'+esc(ho.sector||'')+'</td>';
+    h+='<td style="font-weight:600">'+ho.weight.toFixed(1)+'%</td>';
+    h+='<td>'+(ho.current_price!=null?ho.current_price.toFixed(2):'—')+'</td>';
+    h+='<td style="color:var(--text3)">'+(ho.cost_basis!=null?ho.cost_basis.toFixed(2):'—')+(pnl?' <span style="color:'+pnlClr+';font-size:10px">'+pnl+'</span>':'')+'</td>';
+    h+='<td style="color:var(--red)">'+(bear?.target_price!=null?bear.target_price.toFixed(2):'—')+(ho.downside!=null?' <span style="font-size:10px">'+ho.downside.toFixed(0)+'%</span>':'')+'</td>';
+    h+='<td>'+(base?.target_price!=null?base.target_price.toFixed(2):'—')+'</td>';
+    h+='<td style="color:var(--green)">'+(bull?.target_price!=null?bull.target_price.toFixed(2):'—')+(ho.upside!=null?' <span style="font-size:10px">+'+ho.upside.toFixed(0)+'%</span>':'')+'</td>';
+    h+='<td style="color:'+expClr+';font-weight:600">'+(ho.expected_return!=null?ho.expected_return.toFixed(1)+'%':'—')+'</td>';
+    h+='<td style="color:'+udClr+'">'+ud+'</td>';
+    h+='<td><button class="kdel" onclick="removeHolding(\''+portId+'\',\''+ho.id+'\')">✕</button></td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+
+  // Add holding form
+  h+='<h2 style="margin-top:24px">Add Holding</h2>';
+  h+='<div class="form-row"><input id="ph-ticker" placeholder="Ticker (e.g. BNZL)"><input id="ph-weight" type="number" step="0.1" placeholder="Weight %" style="max-width:100px"><input id="ph-cost" type="number" step="0.01" placeholder="Cost basis" style="max-width:130px"><button onclick="addHolding(\''+portId+'\')">+ Add</button></div>';
+
+  // Price & scenario editor
+  h+='<h2 style="margin-top:28px">Set Price & Scenarios</h2>';
+  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:8px">Enter a ticker then set its current price and bear/base/bull targets with probabilities.</div>';
+  h+='<div class="form-row"><input id="vs-ticker" placeholder="Ticker" style="max-width:130px"><input id="vs-price" type="number" step="0.01" placeholder="Current price" style="max-width:130px"><button onclick="setPrice(\''+portId+'\')">Set Price</button></div>';
+  h+='<div class="g3" style="margin-top:12px">';
+  h+='<div class="cd" style="border-left-color:var(--red);padding:16px"><div class="cd-t" style="color:var(--red)">Bear Case</div><input class="fi" id="vs-bear" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bp" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
+  h+='<div class="cd" style="border-left-color:var(--text3);padding:16px"><div class="cd-t">Base Case</div><input class="fi" id="vs-base" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bap" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
+  h+='<div class="cd" style="border-left-color:var(--green);padding:16px"><div class="cd-t" style="color:var(--green)">Bull Case</div><input class="fi" id="vs-bull" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bup" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
+  h+='</div>';
+  h+='<button class="btn" style="margin-top:12px" onclick="setScenarios(\''+portId+'\')">Save Scenarios</button>';
+
+  c.innerHTML=h;
+}
+
+async function addHolding(portId){
+  const t=E('ph-ticker').value.trim(),w=E('ph-weight').value,cb=E('ph-cost').value;
+  if(!t){alert('Enter ticker.');return;}
+  try{await fetch('/api/v1/portfolios/'+portId+'/holdings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t.toUpperCase(),weight:parseFloat(w)||0,cost_basis:cb?parseFloat(cb):null})});loadPortfolioDetail();}catch(e){alert(e.message);}
+}
+async function removeHolding(portId,hId){
+  if(!confirm('Remove this holding?'))return;
+  try{await fetch('/api/v1/portfolios/'+portId+'/holdings/'+hId,{method:'DELETE'});loadPortfolioDetail();}catch(e){}
+}
+async function setPrice(portId){
+  const t=E('vs-ticker').value.trim(),p=E('vs-price').value;
+  if(!t||!p){alert('Enter ticker and price.');return;}
+  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/price',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:parseFloat(p)})});alert('Price set for '+t.toUpperCase());loadPortfolioDetail();}catch(e){alert(e.message);}
+}
+async function setScenarios(portId){
+  const t=E('vs-ticker').value.trim();if(!t){alert('Enter ticker first.');return;}
+  const scenarios=[];
+  const bear=E('vs-bear').value,base=E('vs-base').value,bull=E('vs-bull').value;
+  const bp=E('vs-bp').value,bap=E('vs-bap').value,bup=E('vs-bup').value;
+  if(bear)scenarios.push({scenario_type:'bear',target_price:parseFloat(bear),probability:bp?parseFloat(bp):20});
+  if(base)scenarios.push({scenario_type:'base',target_price:parseFloat(base),probability:bap?parseFloat(bap):50});
+  if(bull)scenarios.push({scenario_type:'bull',target_price:parseFloat(bull),probability:bup?parseFloat(bup):30});
+  if(!scenarios.length){alert('Enter at least one target price.');return;}
+  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios})});alert('Scenarios saved for '+t.toUpperCase());loadPortfolioDetail();}catch(e){alert(e.message);}
 }
 
 loadDD();

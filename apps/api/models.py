@@ -330,3 +330,79 @@ class ESGData(Base, TimestampMixin):
     last_updated_by = Column(Text)
 
     company = relationship("Company")
+<<<<<<< HEAD
+=======
+
+
+# ─────────────────────────────────────────────────────────────────
+# Portfolios — multi-portfolio support
+# ─────────────────────────────────────────────────────────────────
+class Portfolio(Base, TimestampMixin):
+    __tablename__ = "portfolios"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    name = Column(Text, nullable=False)                # e.g. "OverGlob", "OverGac"
+    description = Column(Text)
+    benchmark = Column(Text)                           # e.g. "MSCI World"
+    currency = Column(Text, default="USD")
+    is_active = Column(Boolean, default=True)
+
+    holdings = relationship("PortfolioHolding", back_populates="portfolio", lazy="selectin")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Portfolio Holdings — links companies to portfolios with weights
+# ─────────────────────────────────────────────────────────────────
+class PortfolioHolding(Base, TimestampMixin):
+    __tablename__ = "portfolio_holdings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    portfolio_id = Column(UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    weight = Column(Numeric, default=0)                # current weight %
+    cost_basis = Column(Numeric)                       # average cost
+    shares = Column(Numeric)
+    date_added = Column(DateTime(timezone=True))
+    status = Column(Text, default="active")            # active | watchlist | exited
+
+    portfolio = relationship("Portfolio", back_populates="holdings")
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Price History — track current and historical prices
+# ─────────────────────────────────────────────────────────────────
+class PriceRecord(Base, TimestampMixin):
+    __tablename__ = "price_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    price = Column(Numeric, nullable=False)
+    currency = Column(Text, default="USD")
+    price_date = Column(DateTime(timezone=True))
+    source = Column(Text, default="manual")            # manual | api | import
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Valuation Scenarios — bear / base / bull cases per company
+# ─────────────────────────────────────────────────────────────────
+class ValuationScenario(Base, TimestampMixin):
+    __tablename__ = "valuation_scenarios"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    scenario_type = Column(Text, nullable=False)       # bear | base | bull
+    probability = Column(Numeric)                      # 0-100%
+    target_price = Column(Numeric)
+    currency = Column(Text, default="USD")
+    methodology = Column(Text)                         # EV/EBITDA | P/E | DCF | SOTP | P/TBV | FCF yield
+    methodology_detail = Column(Text)                  # e.g. "7x 2026E EBITDA"
+    key_assumptions = Column(Text)                     # JSON or freetext
+    time_horizon = Column(Text, default="12m")         # 12m | 18m | 3y
+    last_reviewed = Column(DateTime(timezone=True))
+    author = Column(Text)
+
+    company = relationship("Company")
+>>>>>>> 1256f18 (Portfolio module: multi-portfolio, pricing, bear/base/bull scenarios, analytics)
