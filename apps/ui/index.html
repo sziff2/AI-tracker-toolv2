@@ -107,6 +107,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="nb" id="nav-cockpit" onclick="showPage('cockpit')">Company Cockpit</button>
     <button class="nb on" id="nav-new" onclick="showPage('new')">New Analysis</button>
     <button class="nb" id="nav-lab" onclick="showPage('lab')">Prompt Lab</button>
+    <button class="nb" id="nav-data" onclick="showPage('data')">Data Hub</button>
   </div>
 </div>
 <div class="wrap">
@@ -165,6 +166,43 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="lab-content"></div>
 </div>
 
+<!-- ═══ DATA HUB ═══ -->
+<div id="page-data" style="display:none">
+  <h1>Data Hub</h1>
+  <p class="sub">Central upload point for all data types. Upload CSV files to bulk-populate data across the platform.</p>
+
+  <div id="data-hub-sections">
+
+    <!-- ESG PAI Import -->
+    <div class="cd gold" style="margin-bottom:20px">
+      <div class="cd-t">🌍 ESG PAI Data</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Upload PAI indicators across all portfolio holdings. Columns: Company, PAI:1 (Scope 1), PAI:2 (Scope 1-3), PAI:3, SBTi, PAI:4–9, PAI:10 (UNGC), PAI:11 (UNGC process), PAI:12, PAI:13 (Board diversity), PAI:14 (Weapons).</div>
+      <div class="af" onclick="E('dh-pai-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <input type="file" id="dh-pai-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'pai')">
+      <div id="dh-pai-result" style="margin-top:8px"></div>
+    </div>
+
+    <!-- Company Master -->
+    <div class="cd blue" style="margin-bottom:20px">
+      <div class="cd-t">🏢 Company Master</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Bulk create or update companies. Columns: Ticker, Name, Sector, Country, Coverage Status (active/watchlist/dropped).</div>
+      <div class="af" onclick="E('dh-companies-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <input type="file" id="dh-companies-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'companies')">
+      <div id="dh-companies-result" style="margin-top:8px"></div>
+    </div>
+
+    <!-- KPI Definitions -->
+    <div class="cd" style="margin-bottom:20px">
+      <div class="cd-t">📊 KPI Definitions</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Bulk setup tracked KPIs for companies. Columns: Ticker, KPI Name, Unit.</div>
+      <div class="af" onclick="E('dh-kpi-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <input type="file" id="dh-kpi-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'kpis')">
+      <div id="dh-kpi-result" style="margin-top:8px"></div>
+    </div>
+
+  </div>
+</div>
+
 </div>
 <script>
 let UF=[],CC=[];const HFI=document.getElementById('hfi');
@@ -172,7 +210,7 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
+function showPage(p){['new','cockpit','lab','data'].forEach(x=>{E('page-'+x).style.display=x===p?'block':'none';E('nav-'+x).classList.toggle('on',x===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -478,11 +516,11 @@ function renderESG(ticker,d){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
   ['Summarise ESG risk profile','Key PAI metrics vs SFDR','Main governance concerns','Transition risk assessment','What ESG data is missing?'].forEach(q=>{h+='<button class="ptab" style="font-size:10px;padding:3px 10px" onclick="E(\'esg-chat-input\').value=\''+esc(q)+'\';askESG(\''+ticker+'\')">'+esc(q)+'</button>';});
   h+='</div><div id="esg-chat-history" style="margin-top:12px"></div>';
-  // PAI Bulk Import
+  // PAI Bulk Import via CSV
   h+='<h2 style="margin-top:32px">PAI Data Import</h2>';
-  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:8px">Paste tab-separated PAI data from Excel to bulk-populate ESG fields across all holdings.</div>';
-  h+='<textarea class="fi" id="pai-import-text" style="min-height:100px;font-family:var(--mono,monospace);font-size:11px" placeholder="Paste rows: Company  PAI:1  PAI:2  PAI:3  SBTi  PAI:4 … PAI:14"></textarea>';
-  h+='<button class="btn" style="margin-top:8px" onclick="importPAI()">Import PAI Data</button>';
+  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:8px">Upload a CSV file to bulk-populate ESG fields across all holdings. Columns: Company, PAI:1 (Scope 1), PAI:2 (Scope 1-3), PAI:3, SBTi, PAI:4–9, PAI:10 (UNGC), PAI:11 (UNGC process), PAI:12, PAI:13 (Board diversity), PAI:14 (Weapons).</div>';
+  h+='<div class="af" onclick="E(\'pai-csv-input\').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV file</div>';
+  h+='<input type="file" id="pai-csv-input" accept=".csv,.tsv,.txt" style="display:none" onchange="handlePAIFile(this)">';
   h+='<div id="pai-import-result" style="margin-top:8px"></div>';
   c.innerHTML=h;
 }
@@ -550,34 +588,45 @@ async function runExperiment(){
 }
 async function judgeExp(id){const w=E('lab-winner').value;if(!w){alert('Pick a winner.');return;}try{const r=await fetch('/api/v1/experiments/'+id+'/judge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({winner:w,rating_a:E('lab-ra').value?parseInt(E('lab-ra').value):null,rating_b:E('lab-rb').value?parseInt(E('lab-rb').value):null,feedback:E('lab-fb').value.trim()||null})});if(!r.ok)throw new Error('Failed');const d=await r.json();alert('Recorded.'+(d.auto_promoted?' '+d.message:''));loadLab();}catch(e){alert(e.message);}}
 
-async function importPAI(){
-  const text=E('pai-import-text').value.trim();
-  if(!text){alert('Paste PAI data first.');return;}
+function handlePAIFile(input){
+  const file=input.files[0];if(!file)return;
+  const res=E('pai-import-result');res.innerHTML='<div class="ld">Reading file…</div>';
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const text=e.target.result;
+    importPAIText(text);
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+async function importPAIText(text){
   const res=E('pai-import-result');res.innerHTML='<div class="ld">Importing…</div>';
   try{
     const lines=text.split('\n').filter(l=>l.trim());
     const rows=[];
     for(const line of lines){
-      const cols=line.split('\t');
+      // Support both CSV (comma) and TSV (tab)
+      let cols;
+      if(line.includes('\t'))cols=line.split('\t');
+      else cols=line.split(',');
       if(cols.length<3)continue;
-      const name=cols[0]?.trim();
-      if(!name||name.toLowerCase()==='2024'||name.toLowerCase().includes('pai:'))continue;
-      // Skip the date column (46034 etc) — detect if col[1] is a 5-digit number
+      const name=cols[0]?.trim().replace(/^"|"$/g,'');
+      if(!name||name.toLowerCase()==='2024'||name.toLowerCase().includes('pai:')||name.toLowerCase()==='company')continue;
+      // Skip date column (46034 etc)
       let offset=0;
-      if(cols[1]&&/^\d{5}$/.test(cols[1].trim()))offset=1;
+      const c1=(cols[1]||'').trim().replace(/^"|"$/g,'');
+      if(/^\d{5}$/.test(c1))offset=1;
+      const g=i=>(cols[i+offset]||'').trim().replace(/^"|"$/g,'');
       rows.push({
         company_name:name,
-        pai1_scope1:cols[1+offset]||'',pai2_scope1to3:cols[2+offset]||'',
-        pai3:cols[3+offset]||'',sbti:cols[4+offset]||'',
-        pai4:cols[5+offset]||'',pai5:cols[6+offset]||'',
-        pai6:cols[7+offset]||'',pai7:cols[8+offset]||'',
-        pai8:cols[9+offset]||'',pai9:cols[10+offset]||'',
-        pai10_ungc:cols[11+offset]||'',pai11_ungc_process:cols[12+offset]||'',
-        pai12:cols[13+offset]||'',pai13_board_diversity:cols[14+offset]||'',
-        pai14_weapons:cols[15+offset]||'',
+        pai1_scope1:g(1),pai2_scope1to3:g(2),pai3:g(3),sbti:g(4),
+        pai4:g(5),pai5:g(6),pai6:g(7),pai7:g(8),pai8:g(9),pai9:g(10),
+        pai10_ungc:g(11),pai11_ungc_process:g(12),pai12:g(13),
+        pai13_board_diversity:g(14),pai14_weapons:g(15),
       });
     }
-    if(!rows.length){res.innerHTML='<div class="err">No valid rows found. Check format.</div>';return;}
+    if(!rows.length){res.innerHTML='<div class="err">No valid rows found. Check CSV format.</div>';return;}
     const r=await fetch('/api/v1/esg/import-pai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:rows})});
     if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
     const d=await r.json();
@@ -589,6 +638,103 @@ async function importPAI(){
     });
     h+='</div>';
     res.innerHTML=h;
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+// ═══ DATA HUB ═══════════════════════════════════════════════
+function handleDHFile(input,type){
+  const file=input.files[0];if(!file)return;
+  const res=E('dh-'+type+'-result');res.innerHTML='<div class="ld">Reading file…</div>';
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const text=e.target.result;
+    if(type==='pai')importPAIFromHub(text);
+    else if(type==='companies')importCompanies(text);
+    else if(type==='kpis')importKPIs(text);
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+function parseCSVLine(line){
+  if(line.includes('\t'))return line.split('\t').map(c=>c.trim().replace(/^"|"$/g,''));
+  return line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+}
+
+async function importPAIFromHub(text){
+  const res=E('dh-pai-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());const rows=[];
+    for(const line of lines){
+      const cols=parseCSVLine(line);if(cols.length<3)continue;
+      const name=cols[0];
+      if(!name||name.toLowerCase()==='2024'||name.toLowerCase().includes('pai:')||name.toLowerCase()==='company')continue;
+      let offset=0;if(/^\d{5}$/.test(cols[1]||''))offset=1;
+      const g=i=>(cols[i+offset]||'');
+      rows.push({company_name:name,pai1_scope1:g(1),pai2_scope1to3:g(2),pai3:g(3),sbti:g(4),pai4:g(5),pai5:g(6),pai6:g(7),pai7:g(8),pai8:g(9),pai9:g(10),pai10_ungc:g(11),pai11_ungc_process:g(12),pai12:g(13),pai13_board_diversity:g(14),pai14_weapons:g(15)});
+    }
+    if(!rows.length){res.innerHTML='<div class="err">No valid rows.</div>';return;}
+    const r=await fetch('/api/v1/esg/import-pai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
+    const d=await r.json();
+    let h='<div class="ok">Imported '+d.imported+', not found: '+d.not_found+'</div><div style="margin-top:8px">';
+    d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status==='updated'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.company)+(r.ticker?' ('+esc(r.ticker)+')':'')+' — '+esc(r.status)+'</div>';});
+    res.innerHTML=h+'</div>';
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function importCompanies(text){
+  const res=E('dh-companies-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());const rows=[];
+    for(const line of lines){
+      const cols=parseCSVLine(line);if(cols.length<2)continue;
+      const ticker=cols[0],name=cols[1];
+      if(!ticker||!name||ticker.toLowerCase()==='ticker')continue;
+      rows.push({ticker:ticker.toUpperCase(),name:name,sector:cols[2]||null,country:cols[3]||null,coverage_status:cols[4]||'active'});
+    }
+    if(!rows.length){res.innerHTML='<div class="err">No valid rows. Format: Ticker, Name, Sector, Country, Status</div>';return;}
+    let ok=0,fail=0;const details=[];
+    for(const row of rows){
+      try{
+        const check=await fetch('/api/v1/companies/'+enc(row.ticker));
+        if(check.ok){details.push({company:row.ticker,status:'exists'});ok++;continue;}
+        const r=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
+        if(r.ok){details.push({company:row.ticker,status:'created'});ok++;}
+        else{details.push({company:row.ticker,status:'failed'});fail++;}
+      }catch(e){details.push({company:row.ticker,status:'error'});fail++;}
+    }
+    let h='<div class="ok">Processed '+ok+' companies'+(fail?' ('+fail+' failed)':'')+'</div><div style="margin-top:8px">';
+    details.forEach(d=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(d.status==='created'?'var(--green)':d.status==='exists'?'var(--text4)':'var(--red)')+';padding:2px 0">'+esc(d.company)+' — '+esc(d.status)+'</div>';});
+    res.innerHTML=h+'</div>';
+    loadDD();
+  }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function importKPIs(text){
+  const res=E('dh-kpi-result');res.innerHTML='<div class="ld">Importing…</div>';
+  try{
+    const lines=text.split('\n').filter(l=>l.trim());
+    // Group KPIs by ticker
+    const byTicker={};
+    for(const line of lines){
+      const cols=parseCSVLine(line);if(cols.length<2)continue;
+      const ticker=cols[0]?.toUpperCase(),kpiName=cols[1];
+      if(!ticker||!kpiName||ticker==='TICKER')continue;
+      if(!byTicker[ticker])byTicker[ticker]=[];
+      byTicker[ticker].push({kpi_name:kpiName,unit:cols[2]||null});
+    }
+    let ok=0,fail=0;const details=[];
+    for(const [ticker,kpis] of Object.entries(byTicker)){
+      try{
+        const r=await fetch('/api/v1/companies/'+enc(ticker)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis})});
+        if(r.ok){details.push({company:ticker,status:'added '+kpis.length+' KPIs'});ok+=kpis.length;}
+        else{details.push({company:ticker,status:'failed'});fail++;}
+      }catch(e){details.push({company:ticker,status:'error'});fail++;}
+    }
+    let h='<div class="ok">Added '+ok+' KPIs across '+Object.keys(byTicker).length+' companies</div><div style="margin-top:8px">';
+    details.forEach(d=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(d.status.includes('added')?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(d.company)+' — '+esc(d.status)+'</div>';});
+    res.innerHTML=h+'</div>';
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
