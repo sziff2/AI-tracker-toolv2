@@ -330,8 +330,6 @@ class ESGData(Base, TimestampMixin):
     last_updated_by = Column(Text)
 
     company = relationship("Company")
-<<<<<<< HEAD
-=======
 
 
 # ─────────────────────────────────────────────────────────────────
