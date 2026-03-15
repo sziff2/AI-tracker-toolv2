@@ -113,15 +113,17 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     # 2. Classify
     classification = classify_document(full_text)
 
-    # 3. Persist sections
+    # 3. Persist sections (strip null bytes — PostgreSQL rejects \x00 in text)
     for p in pages:
+        clean_text = p["text"].replace("\x00", "") if p.get("text") else ""
+        p["text"] = clean_text  # also clean for JSON export
         section = DocumentSection(
             id=uuid.uuid4(),
             document_id=document.id,
             section_type="page",
             section_title=f"Page {p['page']}",
             page_number=p["page"],
-            text_content=p["text"],
+            text_content=clean_text,
         )
         db.add(section)
 
