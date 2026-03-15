@@ -405,4 +405,3 @@ class ValuationScenario(Base, TimestampMixin):
     author = Column(Text)
 
     company = relationship("Company")
->>>>>>> 1256f18 (Portfolio module: multi-portfolio, pricing, bear/base/bull scenarios, analytics)
