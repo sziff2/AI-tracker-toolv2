@@ -307,9 +307,29 @@ async def _persist_earnings_metrics(db, document, raw_items):
     for item in raw_items:
         try:
             confidence = item.get("confidence", 1.0)
+            # Period-aware labelling: use extracted period if available
+            item_period = item.get("period")
+            metric_period = document.period_label
+            metric_name = item.get("metric_name", "unknown")
+
+            if item_period and item_period.strip():
+                # Normalise: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY"
+                parts = item_period.strip().split()
+                if len(parts) == 2:
+                    if parts[0] in ("Q1","Q2","Q3","Q4","FY","HY"):
+                        normalised = f"{parts[1]}_{parts[0]}"
+                    else:
+                        normalised = f"{parts[0]}_{parts[1]}"
+                else:
+                    normalised = item_period.strip().replace(" ", "_")
+                # Prior period comparisons get their own period label
+                if item.get("is_current_period") is False:
+                    metric_period = normalised
+                    metric_name = f"[{item_period}] {metric_name}"
+
             metric = ExtractedMetric(
                 id=uuid.uuid4(), company_id=document.company_id, document_id=document.id,
-                period_label=document.period_label, metric_name=item.get("metric_name", "unknown"),
+                period_label=metric_period, metric_name=metric_name,
                 metric_value=item.get("metric_value"), metric_text=item.get("metric_text", ""),
                 unit=item.get("unit"), segment=item.get("segment"), geography=item.get("geography"),
                 source_snippet=item.get("source_snippet", ""), page_number=item.get("page_number"),
