@@ -403,3 +403,56 @@ class ValuationScenario(Base, TimestampMixin):
     author = Column(Text)
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Management Statements — forward-looking claims extracted from documents
+# ─────────────────────────────────────────────────────────────────
+class ManagementStatement(Base, TimestampMixin):
+    __tablename__ = "management_statements"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    statement_date = Column(Text)                      # e.g. "2023_Q1"
+    speaker = Column(Text)                             # CEO | CFO | COO | other
+    category = Column(Text, nullable=False)            # revenue | margins | capex | cost_reduction | strategy | market_share | balance_sheet | regulation
+    statement_text = Column(Text, nullable=False)      # the raw statement
+    target_metric = Column(Text)                       # e.g. "operating margin"
+    target_value = Column(Text)                        # e.g. "18%"
+    target_direction = Column(Text)                    # increase | decrease | maintain | achieve
+    target_timeframe = Column(Text)                    # e.g. "2 years", "next quarter", "medium term"
+    target_deadline = Column(Text)                     # e.g. "2025_Q4" or "2025_FY"
+    confidence_type = Column(Text)                     # explicit | directional | aspirational
+    source_snippet = Column(Text)                      # verbatim quote
+    status = Column(Text, default="open")              # open | delivered | mostly_delivered | missed | major_miss | superseded
+    score = Column(Integer)                            # +2 to -2
+    outcome_value = Column(Text)                       # actual result
+    outcome_date = Column(Text)                        # when assessed
+    outcome_evidence = Column(Text)                    # evidence for the score
+    assessed_by = Column(Text)                         # analyst | auto
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Management Execution Scorecard — aggregated per company per period
+# ─────────────────────────────────────────────────────────────────
+class ExecutionScorecard(Base, TimestampMixin):
+    __tablename__ = "execution_scorecards"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    period = Column(Text)                              # e.g. "2024" or "all_time"
+    overall_score = Column(Numeric)
+    guidance_bias = Column(Text)                       # optimistic | conservative | balanced
+    execution_reliability = Column(Text)               # high | medium | low
+    strategic_consistency = Column(Text)               # high | medium | low
+    category_scores = Column(Text)                     # JSON: {"revenue": 1.2, "margins": -0.4, ...}
+    total_statements = Column(Integer, default=0)
+    delivered_count = Column(Integer, default=0)
+    missed_count = Column(Integer, default=0)
+    open_count = Column(Integer, default=0)
+    ai_assessment = Column(Text)                       # LLM-generated narrative assessment
+
+    company = relationship("Company")

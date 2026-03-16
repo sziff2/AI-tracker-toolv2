@@ -642,3 +642,95 @@ Schema:
   "thesis_relevance": "<how ESG factors affect the investment thesis>"
 }}
 """
+
+# ═══════════════════════════════════════════════════════════════════
+# MANAGEMENT EXECUTION — statement extraction and assessment
+# ═══════════════════════════════════════════════════════════════════
+
+MGMT_STATEMENT_EXTRACTOR = """\
+You are a management accountability analyst. Extract ALL forward-looking statements
+from this document where management makes predictions, sets targets, or commits
+to future outcomes.
+
+Focus on statements about:
+- Revenue / growth targets or expectations
+- Margin / profitability targets
+- Capex / investment plans
+- Cost reduction programs
+- Strategic initiatives (M&A, new markets, product launches)
+- Market share goals
+- Balance sheet targets (debt reduction, leverage)
+- Regulatory or external expectations
+
+RULES:
+- Extract ONLY statements that imply a future outcome that can be verified
+- Include the EXACT quote from the document
+- Classify the confidence level: explicit (specific number), directional (up/down), aspirational (hope/aim)
+- Detect the time horizon as specifically as possible
+- Do NOT extract statements about past performance
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "speaker": "CEO" | "CFO" | "COO" | "management" | "<name>",
+  "category": "revenue" | "margins" | "capex" | "cost_reduction" | "strategy" | "market_share" | "balance_sheet" | "regulation",
+  "statement_text": "<concise summary of what was promised/predicted>",
+  "target_metric": "<specific metric being targeted>",
+  "target_value": "<specific target value, e.g. 18%, $500M, 3x>",
+  "target_direction": "increase" | "decrease" | "maintain" | "achieve",
+  "target_timeframe": "<e.g. next quarter, 2 years, medium term, by 2026>",
+  "confidence_type": "explicit" | "directional" | "aspirational",
+  "source_snippet": "<verbatim quote from document>",
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+MGMT_OUTCOME_ASSESSOR = """\
+You are a management accountability analyst assessing whether management
+delivered on their forward-looking statements.
+
+COMPANY: {company} ({ticker})
+
+=== MANAGEMENT STATEMENTS TO ASSESS ===
+{statements}
+
+=== ACTUAL RESULTS (from extracted metrics and documents) ===
+{actual_results}
+
+For EACH statement, assess the outcome using this scoring system:
+  Delivered        = +2 (target met or exceeded)
+  Mostly Delivered = +1 (within 10-20% of target)
+  Neutral          =  0 (insufficient data or ambiguous)
+  Missed           = -1 (meaningfully below target)
+  Major Miss       = -2 (significantly below target or abandoned)
+
+Also assess overall management patterns:
+- Guidance Bias: Do they consistently over-promise (optimistic) or under-promise (conservative)?
+- Execution Reliability: How often do they deliver? (high >70%, medium 40-70%, low <40%)
+- Strategic Consistency: Do they stick with strategy or frequently change direction?
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "assessments": [
+    {{
+      "statement_index": <0-based index>,
+      "status": "delivered" | "mostly_delivered" | "neutral" | "missed" | "major_miss",
+      "score": <-2 to +2>,
+      "outcome_value": "<what actually happened>",
+      "evidence": "<specific evidence for the score>"
+    }}
+  ],
+  "overall": {{
+    "guidance_bias": "optimistic" | "conservative" | "balanced",
+    "execution_reliability": "high" | "medium" | "low",
+    "strategic_consistency": "high" | "medium" | "low",
+    "narrative": "<3-4 sentence assessment of management credibility and execution quality>"
+  }}
+}}
+"""

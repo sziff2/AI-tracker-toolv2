@@ -333,15 +333,17 @@ function renderCockpit(ticker,d){
   // Global chat bar
   h+='<div style="display:flex;gap:8px;margin-bottom:20px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(co.name)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
   h+='<div id="ck-chat-history" style="margin-bottom:20px"></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'execution\',this)">Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-execution" style="display:none"><div class="ld">Loading…</div></div>';
+  h+='<div id="ck-metrics" style="display:none"><div class="ld" id="metrics-loading">Loading metrics…</div></div>';
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','kpis','results','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}}
+function ckTab(t,btn){['thesis','kpis','results','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
@@ -583,6 +585,186 @@ function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extra
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
+// ── Execution tab ────────────────────────────────────────────
+async function loadExecution(ticker){
+  const c=E('ck-execution');if(!c)return;c.innerHTML='<div class="ld">Loading execution data…</div>';
+  try{
+    const [cardR,stmtR,tsR]=await Promise.all([
+      fetch('/api/v1/companies/'+enc(ticker)+'/execution/scorecard'),
+      fetch('/api/v1/companies/'+enc(ticker)+'/execution/statements'),
+      fetch('/api/v1/companies/'+enc(ticker)+'/execution/time-series'),
+    ]);
+    const card=await cardR.json(),stmts=await stmtR.json(),ts=await tsR.json();
+    renderExecution(ticker,card,stmts,ts);
+  }catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+function renderExecution(ticker,card,stmts,ts){
+  const c=E('ck-execution');let h='';
+  // Action buttons
+  h+='<div style="display:flex;gap:8px;margin-bottom:20px"><button class="btn" onclick="extractStatements(\''+esc(ticker)+'\')">📋 Extract Statements</button><button class="btn2" onclick="assessOutcomes(\''+esc(ticker)+'\')">⚖️ Assess Outcomes</button></div>';
+
+  if(!card.has_data){
+    h+='<div class="cd" style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">📋</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3)">No execution data yet. Click "Extract Statements" to scan uploaded documents for management promises and guidance.</div></div>';
+    c.innerHTML=h;return;
+  }
+
+  // Scorecard strip
+  const scoreClr=card.overall_score>0.5?'var(--green)':card.overall_score<-0.5?'var(--red)':'var(--amber)';
+  const biasClr=card.guidance_bias==='conservative'?'var(--green)':card.guidance_bias==='optimistic'?'var(--red)':'var(--text)';
+  const relClr=card.execution_reliability==='high'?'var(--green)':card.execution_reliability==='low'?'var(--red)':'var(--amber)';
+  const conClr=card.strategic_consistency==='high'?'var(--green)':card.strategic_consistency==='low'?'var(--red)':'var(--amber)';
+  h+='<div class="ck-strip">';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Execution Score</div><div class="ck-stat-val" style="color:'+scoreClr+'">'+(card.overall_score>=0?'+':'')+card.overall_score.toFixed(1)+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Guidance Bias</div><div class="ck-stat-val" style="color:'+biasClr+';font-size:14px">'+esc(card.guidance_bias||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Reliability</div><div class="ck-stat-val" style="color:'+relClr+';font-size:14px">'+esc(card.execution_reliability||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Strategic Consistency</div><div class="ck-stat-val" style="color:'+conClr+';font-size:14px">'+esc(card.strategic_consistency||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Delivered / Missed</div><div class="ck-stat-val"><span style="color:var(--green)">'+(card.delivered||0)+'</span> / <span style="color:var(--red)">'+(card.missed||0)+'</span></div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Open</div><div class="ck-stat-val" style="color:var(--amber)">'+(card.open||0)+'</div></div>';
+  h+='</div>';
+
+  // AI assessment
+  if(card.ai_assessment){h+='<div class="cd gold"><div class="cd-t">AI Assessment</div><div class="cd-c">'+esc(card.ai_assessment)+'</div></div>';}
+
+  // Category breakdown
+  if(card.category_scores&&Object.keys(card.category_scores).length){
+    h+='<h2>Category Breakdown</h2><div class="ck-strip">';
+    Object.entries(card.category_scores).forEach(([cat,score])=>{
+      const clr=score>0.5?'var(--green)':score<-0.5?'var(--red)':'var(--amber)';
+      h+='<div class="ck-stat"><div class="ck-stat-label">'+esc(cat)+'</div><div class="ck-stat-val" style="color:'+clr+'">'+(score>=0?'+':'')+score.toFixed(1)+'</div></div>';
+    });
+    h+='</div>';
+  }
+
+  // Time series
+  if(ts.series&&ts.series.length){
+    h+='<h2>Credibility Over Time</h2><div style="display:flex;gap:8px;flex-wrap:wrap">';
+    ts.series.forEach(y=>{
+      const clr=y.score>0.5?'var(--green)':y.score<-0.5?'var(--red)':'var(--amber)';
+      h+='<div class="ck-stat" style="min-width:80px;flex:0"><div class="ck-stat-label">'+esc(y.year)+'</div><div class="ck-stat-val" style="color:'+clr+';font-size:16px">'+(y.score>=0?'+':'')+y.score.toFixed(1)+'</div><div style="font-family:var(--sans);font-size:10px;color:var(--text4)">'+y.delivery_rate+'% delivered</div></div>';
+    });
+    h+='</div>';
+  }
+
+  // Statements table
+  h+='<h2>Statements ('+(stmts.length||0)+')</h2>';
+  // Sub-tabs for status
+  const statuses=['all','open','delivered','mostly_delivered','missed','major_miss'];
+  h+='<div class="ptabs" id="exec-stabs">';
+  statuses.forEach((s,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="filterExecStmts(\''+s+'\',this)">'+esc(s==='all'?'All':s.replace('_',' '))+'</button>';});
+  h+='</div>';
+
+  h+='<div id="exec-stmts-list">';
+  h+=renderExecStatements(ticker,stmts,'all');
+  h+='</div>';
+  c.innerHTML=h;
+  window._execStmts=stmts;
+}
+
+function renderExecStatements(ticker,stmts,filter){
+  let h='';const filtered=filter==='all'?stmts:stmts.filter(s=>s.status===filter);
+  if(!filtered.length)return '<div style="padding:20px;text-align:center;color:var(--text4);font-family:var(--sans)">No statements.</div>';
+  filtered.forEach(s=>{
+    const scoreClr=s.score>0?'var(--green)':s.score<0?'var(--red)':'var(--amber)';
+    const statusClr={delivered:'var(--green)',mostly_delivered:'var(--green)',missed:'var(--red)',major_miss:'var(--red)',open:'var(--amber)',neutral:'var(--text3)'}[s.status]||'var(--text3)';
+    h+='<div class="cd" style="border-left-color:'+statusClr+';padding:16px;margin-bottom:8px">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+    h+='<div style="flex:1"><div style="font-family:var(--sans);font-size:13px;color:var(--text)">'+esc(s.statement_text)+'</div>';
+    h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(s.statement_date||'')+' · '+esc(s.speaker||'')+' · '+esc(s.category||'')+(s.target_value?' · Target: '+esc(s.target_value):'')+(s.target_timeframe?' · '+esc(s.target_timeframe):'')+'</div>';
+    if(s.source_snippet){h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);font-style:italic;margin-top:4px;max-height:40px;overflow:hidden">"'+esc(s.source_snippet.substring(0,150))+'…"</div>';}
+    h+='</div>';
+    h+='<div style="text-align:right;min-width:90px">';
+    h+='<div style="font-family:var(--sans);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:'+statusClr+'">'+esc(s.status.replace('_',' '))+'</div>';
+    if(s.score!=null){h+='<div style="font-family:var(--sans);font-size:18px;font-weight:700;color:'+scoreClr+'">'+(s.score>=0?'+':'')+s.score+'</div>';}
+    h+='</div></div>';
+    if(s.outcome_value||s.outcome_evidence){
+      h+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">';
+      if(s.outcome_value){h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text2)"><strong>Outcome:</strong> '+esc(s.outcome_value)+'</div>';}
+      if(s.outcome_evidence){h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text3);margin-top:2px"><strong>Evidence:</strong> '+esc(s.outcome_evidence)+'</div>';}
+      h+='</div>';
+    }
+    // Manual override controls for open statements
+    if(s.status==='open'){
+      h+='<div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">';
+      [{l:'Delivered',v:'delivered'},{l:'Mostly',v:'mostly_delivered'},{l:'Missed',v:'missed'},{l:'Major Miss',v:'major_miss'}].forEach(opt=>{
+        h+='<button class="ptab" style="font-size:10px;padding:3px 8px" onclick="manualScore(\''+esc(ticker)+'\',\''+s.id+'\',\''+opt.v+'\')">'+opt.l+'</button>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  return h;
+}
+
+function filterExecStmts(status,btn){
+  E('exec-stabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  const ticker=E('ck-company').value;
+  E('exec-stmts-list').innerHTML=renderExecStatements(ticker,window._execStmts||[],status);
+}
+
+async function extractStatements(ticker){
+  if(!confirm('Extract management statements from all uploaded documents for '+ticker+'? This uses LLM calls.'))return;
+  const c=E('ck-execution');c.innerHTML='<div class="ld">Extracting management statements… This may take a minute.</div>';
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/extract',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Extracted '+d.extracted+' statements from '+d.documents_processed+' documents.');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function assessOutcomes(ticker){
+  if(!confirm('Assess open statements against actual results for '+ticker+'? This uses LLM calls.'))return;
+  const c=E('ck-execution');c.innerHTML='<div class="ld">Assessing outcomes… Comparing promises vs reality.</div>';
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/assess',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Assessed '+d.assessed+' statements.');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+async function manualScore(ticker,stmtId,status){
+  const evidence=prompt('Brief evidence for this score (optional):');
+  try{await fetch('/api/v1/companies/'+enc(ticker)+'/execution/statements/'+stmtId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,outcome_evidence:evidence||null})});loadExecution(ticker);}catch(e){alert(e.message);}
+}
+
+// ── Metrics tab ──────────────────────────────────────────────
+async function loadMetrics(ticker){
+  const c=E('ck-metrics');if(!c)return;
+  c.innerHTML='<div class="ld">Loading metrics…</div>';
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metrics');if(!r.ok)throw new Error('Failed');const d=await r.json();renderMetrics(ticker,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+
+function renderMetrics(ticker,d){
+  const c=E('ck-metrics');let h='';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><span style="font-family:var(--sans);font-size:14px;color:var(--text)">'+d.total_metrics+' metrics</span> <span style="font-family:var(--sans);font-size:12px;color:var(--text4)">across '+d.periods.length+' periods</span></div></div>';
+  if(!d.periods.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No metrics extracted yet.</div>';return;}
+  // Period sub-tabs
+  h+='<div class="ptabs" id="met-ptabs">';
+  d.periods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showMetPeriod(\''+esc(p)+'\',this)">'+esc(p)+' ('+d.by_period[p].length+')</button>';});
+  h+='</div>';
+  // Metrics tables per period
+  d.periods.forEach((p,i)=>{
+    const metrics=d.by_period[p];
+    h+='<div id="met-'+esc(p)+'" style="'+(i>0?'display:none':'')+'">';
+    h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>Metric</th><th>Value</th><th>Unit</th><th>Segment</th><th>Confidence</th><th>Source</th></tr></thead><tbody>';
+    metrics.forEach(m=>{
+      const conf=m.confidence!=null?m.confidence:0;
+      const confClr=conf>=0.8?'var(--green)':conf>=0.6?'var(--amber)':'var(--red)';
+      const confBar='<div style="display:flex;align-items:center;gap:6px"><div style="width:40px;height:4px;background:var(--border);border-radius:2px"><div style="height:100%;width:'+(conf*100)+'%;background:'+confClr+';border-radius:2px"></div></div><span style="font-size:10px;color:'+confClr+'">'+conf.toFixed(2)+'</span></div>';
+      const val=m.metric_value!=null?m.metric_value:(m.metric_text?'<span style="color:var(--text3);font-size:11px">'+esc(m.metric_text.substring(0,60))+'</span>':'—');
+      const flagged=m.needs_review?'<span style="color:var(--amber);font-size:10px" title="Needs review"> ⚠</span>':'';
+      h+='<tr>';
+      h+='<td class="kn">'+esc(m.metric_name)+flagged+'</td>';
+      h+='<td style="font-family:var(--mono,monospace);font-weight:600">'+val+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(m.unit||'')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text4)">'+esc(m.segment||'')+(m.geography?' · '+esc(m.geography):'')+'</td>';
+      h+='<td>'+confBar+'</td>';
+      h+='<td style="font-size:10px;color:var(--text4);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(m.source_snippet||'')+'">'+esc(m.source_snippet||'—')+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div></div>';
+  });
+  c.innerHTML=h;
+}
+
+function showMetPeriod(p,btn){
+  document.querySelectorAll('[id^="met-"]').forEach(el=>{if(el.id!=='met-ptabs')el.style.display='none';});
+  const target=E('met-'+p);if(target)target.style.display='block';
+  E('met-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+}
+
 async function loadESG(ticker){
   const c=E('ck-esg');if(!c)return;
   c.innerHTML='<div class="ld">Loading ESG…</div>';
