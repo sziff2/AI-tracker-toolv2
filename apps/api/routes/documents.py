@@ -545,7 +545,7 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     doc_ids = [d.id for d in docs]
     doc_types = [d.document_type or "other" for d in docs]
 
-    # Clear existing metrics, assessments, outputs for this period
+    # Clear existing metrics, assessments, outputs, sections for this period
     try:
         metrics = await db.execute(select(ExtractedMetric.id).where(ExtractedMetric.document_id.in_(doc_ids)))
         metric_ids = [m[0] for m in metrics.all()]
@@ -556,6 +556,8 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
             await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(all_entity_ids)))
         await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
         await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
+        # Clear document sections so parser can recreate them
+        await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
         # Also clear unlinked metrics for this period
         await db.execute(delete(ExtractedMetric).where(
             ExtractedMetric.company_id == company.id, ExtractedMetric.period_label == period_label
@@ -575,7 +577,9 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
         await db.execute(delete(KPIScore).where(
             KPIScore.company_id == company.id, KPIScore.period_label == period_label
         ))
+        await db.commit()
     except Exception as e:
+        await db.rollback()
         logger.warning("Cleanup before reprocess failed: %s", str(e)[:200])
 
     # Create new processing job
