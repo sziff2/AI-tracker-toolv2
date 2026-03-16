@@ -733,3 +733,49 @@ Answer directly and specifically. Reference which period data comes from. Highli
         return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
+
+
+# ─────────────────────────────────────────────────────────────────
+# All extracted metrics for a company — browsable, filterable
+# ─────────────────────────────────────────────────────────────────
+@router.get("/companies/{ticker}/metrics")
+async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
+    from apps.api.models import ExtractedMetric
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    q = select(ExtractedMetric).where(ExtractedMetric.company_id == company.id)
+    if period:
+        q = q.where(ExtractedMetric.period_label == period)
+    q = q.order_by(ExtractedMetric.period_label.desc(), ExtractedMetric.confidence.desc())
+
+    result = await db.execute(q)
+    metrics = result.scalars().all()
+
+    # Group by period
+    by_period = {}
+    for m in metrics:
+        p = m.period_label or "unknown"
+        if p not in by_period:
+            by_period[p] = []
+        by_period[p].append({
+            "id": str(m.id),
+            "metric_name": m.metric_name,
+            "metric_value": float(m.metric_value) if m.metric_value else None,
+            "metric_text": m.metric_text,
+            "unit": m.unit,
+            "segment": m.segment,
+            "geography": m.geography,
+            "source_snippet": m.source_snippet[:200] if m.source_snippet else None,
+            "confidence": float(m.confidence) if m.confidence else None,
+            "needs_review": m.needs_review,
+        })
+
+    return {
+        "ticker": ticker,
+        "total_metrics": len(metrics),
+        "periods": list(by_period.keys()),
+        "by_period": by_period,
+    }
