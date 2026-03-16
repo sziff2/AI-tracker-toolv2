@@ -512,3 +512,93 @@ async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depen
     except Exception as e:
         await db.rollback()
         raise HTTPException(500, f"Delete failed: {str(e)}")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Re-run analysis on existing documents (no re-upload needed)
+# ─────────────────────────────────────────────────────────────────
+@router.post("/companies/{ticker}/periods/{period_label}/reprocess")
+async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
+    """
+    Clear existing metrics/outputs for a period and re-run the full analysis
+    pipeline on the already-stored documents. No need to re-upload files.
+    """
+    from apps.api.models import ProcessingJob
+    from services.background_processor import run_batch_pipeline, start_background_job
+
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    # Find existing documents for this period
+    docs_q = await db.execute(
+        select(Document).where(
+            Document.company_id == company.id,
+            Document.period_label == period_label,
+        )
+    )
+    docs = docs_q.scalars().all()
+    if not docs:
+        raise HTTPException(404, f"No documents found for {ticker} / {period_label}")
+
+    doc_ids = [d.id for d in docs]
+    doc_types = [d.document_type or "other" for d in docs]
+
+    # Clear existing metrics, assessments, outputs for this period
+    try:
+        metrics = await db.execute(select(ExtractedMetric.id).where(ExtractedMetric.document_id.in_(doc_ids)))
+        metric_ids = [m[0] for m in metrics.all()]
+        assessments = await db.execute(select(EventAssessment.id).where(EventAssessment.document_id.in_(doc_ids)))
+        assessment_ids = [a[0] for a in assessments.all()]
+        all_entity_ids = metric_ids + assessment_ids
+        if all_entity_ids:
+            await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(all_entity_ids)))
+        await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
+        await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
+        # Also clear unlinked metrics for this period
+        await db.execute(delete(ExtractedMetric).where(
+            ExtractedMetric.company_id == company.id, ExtractedMetric.period_label == period_label
+        ))
+        # Clear research outputs
+        outputs = await db.execute(
+            select(ResearchOutput.id).where(
+                ResearchOutput.company_id == company.id, ResearchOutput.period_label == period_label
+            )
+        )
+        output_ids = [o[0] for o in outputs.all()]
+        if output_ids:
+            await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(output_ids)))
+            await db.execute(delete(ResearchOutput).where(ResearchOutput.id.in_(output_ids)))
+        # Clear KPI scores
+        from apps.api.models import KPIScore
+        await db.execute(delete(KPIScore).where(
+            KPIScore.company_id == company.id, KPIScore.period_label == period_label
+        ))
+    except Exception as e:
+        logger.warning("Cleanup before reprocess failed: %s", str(e)[:200])
+
+    # Create new processing job
+    job = ProcessingJob(
+        id=uuid.uuid4(),
+        company_id=company.id,
+        period_label=period_label,
+        job_type="batch",
+        status="queued",
+        current_step="reprocessing",
+        progress_pct=0,
+    )
+    db.add(job)
+    await db.commit()
+
+    # Launch background processing with existing doc_ids
+    start_background_job(
+        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types, period_label)
+    )
+
+    return {
+        "job_id": str(job.id),
+        "documents": len(doc_ids),
+        "status": "queued",
+        "message": f"Reprocessing {len(doc_ids)} documents for {ticker} / {period_label}",
+    }

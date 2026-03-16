@@ -459,8 +459,8 @@ function renderCkResults(ticker,d){
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
-    // Period header with delete button
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div>';
+    // Period header with reprocess and delete buttons
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     // Documents used for this period
     const pdocs=dbp[p]||[];
     if(pdocs.length){
@@ -501,6 +501,17 @@ function showResPeriod(p,btn){
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
   try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){alert('Delete failed: '+e.message);}
+}
+async function reprocessPeriod(ticker,period){
+  if(!confirm('Re-run analysis for '+period+'? This will clear existing metrics and outputs, then reprocess stored documents with the latest extraction pipeline.'))return;
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    const d=await r.json();
+    alert('Reprocessing '+d.documents+' documents. Job ID: '+d.job_id);
+    // Switch to results and show polling
+    loadCockpit();
+  }catch(e){alert('Reprocess failed: '+e.message);}
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
