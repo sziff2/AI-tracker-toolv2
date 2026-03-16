@@ -316,6 +316,13 @@ PRIOR EXPECTATIONS / GUIDANCE:
 ACTUAL RESULTS:
 {actuals}
 
+CRITICAL RULES:
+1. Only flag surprises where you have BOTH the prior expectation AND the actual result
+   in the data above. Do NOT invent expectations or consensus figures.
+2. If no prior guidance or expectations data is available, return an empty array [].
+3. Compare ONLY against explicitly stated guidance, targets, or prior-period results
+   from the data provided. Never fabricate market expectations.
+
 Respond ONLY with a JSON array. No preamble, no markdown fences.
 
 Item schema:
@@ -323,7 +330,9 @@ Item schema:
   "metric_or_topic": "<what was surprising>",
   "direction": "positive" | "negative",
   "magnitude": "minor" | "major",
-  "description": "<explanation>",
+  "prior_value": "<the explicit prior expectation or guidance figure>",
+  "actual_value": "<the actual reported figure>",
+  "description": "<explanation using only data from above>",
   "source_snippet": "<evidence>"
 }}
 """
@@ -368,11 +377,17 @@ THESIS COMPARISON:
 SURPRISES:
 {surprises}
 
+CRITICAL RULES:
+1. Use ONLY numbers from the data above. Do NOT invent figures or comparisons.
+2. If consensus/expectations data is not provided, do NOT fabricate it.
+3. Every number must be traceable to the source data above.
+4. If information is missing, say so — do NOT fill gaps with assumptions.
+
 Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "what_happened": "<summary of the quarter>",
+  "what_happened": "<summary of the quarter — ONLY using numbers from the data>",
   "what_changed": "<key changes vs prior>",
   "thesis_status": "<impact on thesis>",
   "risks": "<updated risk picture>",
@@ -415,22 +430,29 @@ INVESTMENT THESIS:
 === SURPRISES DETECTED ===
 {surprises}
 
-INSTRUCTIONS:
-- Cross-reference reported numbers with management commentary. Flag discrepancies.
-- Compare management guidance vs sell-side expectations. Who is more credible?
-- Identify what management emphasised vs what they avoided discussing.
-- Assess management tone - are they genuinely confident or talking their book?
-- Note any sell-side disagreements or variant perceptions worth investigating.
-- Be direct and opinionated. This is for internal consumption, not publication.
+CRITICAL RULES — READ CAREFULLY:
+1. Use ONLY numbers that appear in the source data above. Do NOT invent, estimate,
+   or hallucinate any figures — no "expectations", "consensus", or "vs" comparisons
+   unless the comparison figure is EXPLICITLY stated in the sources above.
+2. If you do not have sell-side estimates or consensus numbers in the data, do NOT
+   make up comparison figures. Simply describe the reported results on their own.
+3. Every number you cite must be traceable to a specific source section above.
+4. If data is missing or insufficient, say so explicitly. Do NOT fill gaps with
+   assumptions or fabricated figures.
+5. Cross-reference reported numbers with management commentary. Flag discrepancies.
+6. Compare management guidance vs sell-side expectations ONLY if both are in the data.
+7. Identify what management emphasised vs what they avoided discussing.
+8. Assess management tone - are they genuinely confident or talking their book?
+9. Be direct and opinionated. This is for internal consumption, not publication.
 
 Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "headline": "<one-line summary for the portfolio manager>",
+  "headline": "<one-line summary — use ONLY numbers from the data above, NO invented comparisons>",
   "what_happened": "<synthesis of the reported quarter - numbers first, then context>",
   "management_message": "<what management wants you to believe, and how credible it is>",
-  "what_the_street_thinks": "<sell-side consensus view and where it may be wrong>",
+  "what_the_street_thinks": "<sell-side consensus view — ONLY if broker data is available, otherwise say 'No sell-side data available'>",
   "thesis_impact": "<how this changes the investment thesis - be specific and opinionated>",
   "key_debates": "<the 2-3 most important unresolved questions for the position>",
   "risks_updated": "<what is new in the risk picture>",
