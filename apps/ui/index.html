@@ -434,8 +434,10 @@ async function saveThesisField(ticker,field,value){
 // ── KPIs tab ─────────────────────────────────────────────────
 function renderCkKPIs(ticker,d){
   const tr=d.kpi_tracker||{};const periods=tr.periods||[],kpis=tr.kpis||[],overall=tr.overall_scores||{};let h='';
-  // Always show add form at top
-  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><input id="nkn" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="nku" placeholder="Unit (e.g. %)" style="max-width:120px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
+  // Add form with dropdown from extracted metrics
+  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><div style="flex:1;position:relative"><input id="nkn" list="metric-suggestions" placeholder="Add KPI — type or select from extracted metrics" autocomplete="off"><datalist id="metric-suggestions"></datalist></div><input id="nku" placeholder="Unit" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
+  // Load metric names for dropdown
+  h+='<script>loadMetricSuggestions("'+esc(ticker)+'")<\/script>';
   if(!kpis.length){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
@@ -508,10 +510,33 @@ async function reprocessPeriod(ticker,period){
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
     const d=await r.json();
-    alert('Reprocessing '+d.documents+' documents. Job ID: '+d.job_id);
-    // Switch to results and show polling
-    loadCockpit();
+    // Show progress bar in the results area
+    const resDiv=E('res-'+period);
+    if(resDiv){
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">🔄 Reprocessing '+d.documents+' documents…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+    }
+    // Poll for progress
+    pollReprocess(d.job_id,ticker,period);
   }catch(e){alert('Reprocess failed: '+e.message);}
+}
+function pollReprocess(jobId,ticker,period){
+  const poll=setInterval(async()=>{
+    try{
+      const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
+      const j=await r.json();
+      const bar=E('reprocess-bar');const step=E('reprocess-step');
+      if(bar)bar.style.width=(j.progress_pct||0)+'%';
+      if(step)step.textContent=(j.current_step||'Processing…')+' — '+(j.progress_pct||0)+'%';
+      if(j.status==='completed'){
+        clearInterval(poll);
+        if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
+        setTimeout(()=>loadCockpit(),1500);
+      }else if(j.status==='failed'){
+        clearInterval(poll);
+        if(step)step.innerHTML='<span style="color:var(--red)">✕ Failed: '+(j.error||'Unknown error').substring(0,100)+'</span>';
+      }
+    }catch(e){}
+  },3000);
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
@@ -579,6 +604,39 @@ function renderCkDecisions(ticker,d){
 }
 
 // ── Actions ──────────────────────────────────────────────────
+let _metricSuggestions=[];
+async function loadMetricSuggestions(ticker){
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metrics');
+    if(!r.ok)return;const d=await r.json();
+    // Deduplicate metric names and collect units
+    const seen={};
+    for(const period of Object.values(d.by_period||{})){
+      for(const m of period){
+        const name=m.metric_name;
+        if(!name||name.startsWith('['))continue; // skip prior-period prefixed
+        if(!seen[name])seen[name]={name:name,unit:m.unit,count:0};
+        seen[name].count++;
+      }
+    }
+    _metricSuggestions=Object.values(seen).sort((a,b)=>b.count-a.count);
+    const dl=E('metric-suggestions');if(!dl)return;
+    dl.innerHTML='';
+    _metricSuggestions.forEach(m=>{
+      const o=document.createElement('option');
+      o.value=m.name;
+      o.label=m.name+(m.unit?' ('+m.unit+')':'');
+      dl.appendChild(o);
+    });
+    // Auto-fill unit when a suggestion is selected
+    const input=E('nkn');if(input){
+      input.addEventListener('change',function(){
+        const match=_metricSuggestions.find(m=>m.name===this.value);
+        if(match&&match.unit){E('nku').value=match.unit;}
+      });
+    }
+  }catch(e){}
+}
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
 async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
 async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
