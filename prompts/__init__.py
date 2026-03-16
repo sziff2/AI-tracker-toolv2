@@ -44,11 +44,21 @@ Focus on: revenue, operating profit, net profit, EPS, dividends (reported and or
 margins and margin changes (bps), volume metrics, cash flow metrics, balance sheet
 highlights, segment breakdowns by region/division, YoY and sequential comparisons.
 
-RULES:
+CRITICAL RULES:
 - Extract ONLY explicitly stated numbers. Do NOT infer or calculate.
 - Every metric must include the exact source snippet.
 - Distinguish between reported and organic/underlying figures.
 - If a value is ambiguous, set confidence below 0.8.
+
+PERIOD HANDLING — THIS IS CRITICAL:
+- Earnings releases contain COMPARATIVE TABLES showing multiple periods side by side
+  (e.g. Q4 2025, Q4 2024, FY 2025, FY 2024 in four columns).
+- You MUST identify which period each number belongs to.
+- Extract ONLY the CURRENT reporting period figures (the most recent quarter or year).
+- For prior-period comparisons, extract them separately with the correct period label.
+- Use the "period" field to label EVERY metric with its exact period (e.g. "Q4 2025", "FY 2025", "Q4 2024").
+- If you cannot determine which period a number belongs to, set confidence below 0.5.
+- Do NOT extract the same metric multiple times for the same period.
 
 Respond ONLY with a JSON array. No preamble, no markdown fences.
 
@@ -58,6 +68,8 @@ Item schema:
   "metric_value": <number or null>,
   "metric_text": "<raw text>",
   "unit": "<EUR_M | USD_M | % | bps | x | null>",
+  "period": "<e.g. Q4 2025 | FY 2025 | Q4 2024 | FY 2024>",
+  "is_current_period": true | false,
   "segment": "<segment or null>",
   "geography": "<region or null>",
   "reported_vs_organic": "reported" | "organic" | "underlying" | "unknown",

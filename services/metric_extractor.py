@@ -217,12 +217,33 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
     for item in metrics_raw:
         try:
             confidence = item.get("confidence", 1.0)
+            # Use the extracted period label if available, otherwise fall back to document period
+            item_period = item.get("period")
+            metric_period = document.period_label
+            metric_name = item.get("metric_name", "unknown")
+            # If the item has a period and it differs from the document period, prefix the name
+            if item_period and item_period.strip():
+                # Normalise period format: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY"
+                parts = item_period.strip().split()
+                if len(parts) == 2:
+                    if parts[0] in ("Q1","Q2","Q3","Q4","FY","HY"):
+                        normalised = f"{parts[1]}_{parts[0]}"
+                    else:
+                        normalised = f"{parts[0]}_{parts[1]}"
+                else:
+                    normalised = item_period.strip().replace(" ", "_")
+                # Only store current period metrics with the document's period_label
+                # Prior period comparisons get their own period label
+                if item.get("is_current_period") is False:
+                    metric_period = normalised
+                    metric_name = f"[{item_period}] {metric_name}"
+
             metric = ExtractedMetric(
                 id=uuid.uuid4(),
                 company_id=document.company_id,
                 document_id=document.id,
-                period_label=document.period_label,
-                metric_name=item.get("metric_name", "unknown"),
+                period_label=metric_period,
+                metric_name=metric_name,
                 metric_value=item.get("metric_value"),
                 metric_text=item.get("metric_text", ""),
                 unit=item.get("unit"),
