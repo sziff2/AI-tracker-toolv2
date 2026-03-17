@@ -131,6 +131,8 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
+    <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
+    <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
   </div>
 
   <div class="nav-sec">
@@ -269,13 +271,42 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 </div>
 </div>
+
+<!-- ═══ ANALYTICS PAGE ═══ -->
+<div id="page-analytics" style="display:none">
+  <h1>Analytics &amp; Risk</h1>
+  <p class="sub">Return attribution, drawdown, correlation and risk metrics across your portfolio.</p>
+  <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+    <select class="fi" id="an-port-select" style="max-width:250px" onchange="loadAnalytics()">
+      <option value="">— Select portfolio —</option>
+    </select>
+    <button class="btn2" onclick="loadAnalytics()">↻ Refresh</button>
+  </div>
+  <div id="an-content"></div>
+</div>
+
+<!-- ═══ OPTIMISATION PAGE ═══ -->
+<div id="page-optimise" style="display:none">
+  <h1>Portfolio Optimisation</h1>
+  <p class="sub">Kelly, Mean-Variance and CVaR weight optimisation with concentration constraints.</p>
+  <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+    <select class="fi" id="op-port-select" style="max-width:250px" onchange="loadOptimise()">
+      <option value="">— Select portfolio —</option>
+    </select>
+    <button class="btn2" onclick="loadOptimise()">↻ Refresh</button>
+  </div>
+  <div id="op-content"></div>
+</div>
+
+</div>
+</div>
 <script>
 let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data','portfolio'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();}
+function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -1419,7 +1450,7 @@ async function importHoldings(text){
 // ═══ PORTFOLIO ═════════════════════════════════════════════
 async function loadPortfolios(){
   try{const r=await fetch('/api/v1/portfolios');if(!r.ok)return;const ports=await r.json();
-    ['port-select','dh-port-select'].forEach(id=>{const sel=E(id);if(!sel)return;const cur=sel.value;sel.innerHTML='<option value="">— Select portfolio —</option>';ports.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' ('+p.holdings_count+' holdings, '+p.total_weight.toFixed(1)+'%)';sel.appendChild(o);});sel.value=cur;});
+    ['port-select','dh-port-select','an-port-select','op-port-select'].forEach(id=>{const sel=E(id);if(!sel)return;const cur=sel.value;sel.innerHTML='<option value="">— Select portfolio —</option>';ports.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' ('+p.holdings_count+' holdings, '+p.total_weight.toFixed(1)+'%)';sel.appendChild(o);});sel.value=cur;});
     if(E('port-select')&&E('port-select').value)loadPortfolioDetail();
   }catch(e){}
 }
@@ -1658,6 +1689,542 @@ async function importPortfolioCSV(input){
   };
   reader.readAsText(file);
   input.value='';
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// SHARED MATHS ENGINE (ported from investment-tracker.jsx)
+// ═══════════════════════════════════════════════════════════════
+
+function scenarioVol(sc, currentPrice) {
+  if (!sc || !currentPrice || currentPrice <= 0) return 0.20;
+  const base = sc.base, bear = sc.bear;
+  if (!base?.target_price || !bear?.target_price) return 0.20;
+  const v = (base.target_price - bear.target_price) / currentPrice;
+  return isFinite(v) && v > 0 ? Math.max(v, 0.05) : 0.20;
+}
+
+function defaultCorr(a, b) {
+  if (a.ticker === b.ticker) return 1.0;
+  const ss = a.sector  === b.sector;
+  const sc = a.country === b.country;
+  if (ss && sc)  return 0.72;
+  if (ss && !sc) return 0.48;
+  if (!ss && sc) return 0.28;
+  return 0.12;
+}
+
+function portfolioVariance(holdings, corrMatrix) {
+  let v = 0;
+  holdings.forEach((a, i) => {
+    holdings.forEach((b, j) => {
+      const wa = a.w / 100, wb = b.w / 100;
+      const rho = (corrMatrix[a.ticker] && corrMatrix[a.ticker][b.ticker]) ?? 0;
+      v += wa * wb * a.vol * b.vol * rho;
+    });
+  });
+  return v;
+}
+
+function effectiveN(weights) {
+  if (!weights.length) return 0;
+  const fracs = weights.map(w => w > 1 ? w / 100 : w);
+  const hhi = fracs.reduce((s, w) => s + w * w, 0);
+  return hhi > 1e-9 ? 1 / hhi : 0;
+}
+
+function buildCorrMatrix(holdings) {
+  const m = {};
+  holdings.forEach(a => {
+    m[a.ticker] = {};
+    holdings.forEach(b => { m[a.ticker][b.ticker] = defaultCorr(a, b); });
+  });
+  return m;
+}
+
+function buildCovMatrix(vols, corrMatrix, tickers) {
+  return tickers.map((ti, i) =>
+    tickers.map((tj, j) => {
+      const rho = (corrMatrix[ti] && corrMatrix[ti][tj]) ?? (i === j ? 1 : 0.12);
+      return vols[i] * vols[j] * rho;
+    })
+  );
+}
+
+function matVec(M, v) { return M.map(row => row.reduce((s, x, j) => s + x * v[j], 0)); }
+
+function projectFeasible(w, maxW) {
+  const clipped = w.map(v => Math.max(0, Math.min(maxW, v)));
+  const s = clipped.reduce((a, v) => a + v, 0);
+  return s > 1 ? clipped.map(v => v / s) : clipped;
+}
+
+function mvOptimize(mus, cov, lambda, maxW, nIter) {
+  const n = mus.length;
+  let w = Array(n).fill(1 / n);
+  const lr = 0.01;
+  for (let iter = 0; iter < nIter; iter++) {
+    const Cw = matVec(cov, w);
+    const grad = Cw.map((cv, i) => lambda * cv - mus[i]);
+    w = projectFeasible(w.map((wi, i) => wi - lr * grad[i]), maxW);
+  }
+  return w;
+}
+
+function computeKellyFrac(sc, currentPrice, factor, maxPos) {
+  if (!sc || !currentPrice || currentPrice <= 0) return 0;
+  const base = sc.base, bear = sc.bear;
+  if (!base?.target_price || !bear?.target_price) return 0;
+  const bp = (base.probability || 75) / 100;
+  const pp = (bear.probability || 25) / 100;
+  const b = base.target_price / currentPrice - 1;
+  const a = 1 - bear.target_price / currentPrice;
+  if (a <= 0 || b <= 0) return 0;
+  const k = (bp * b - pp * a) / b;
+  return Math.min(Math.max(k * factor, 0) * 100, maxPos);
+}
+
+function portfolioMetrics(holdings, corrMatrix) {
+  const weights = holdings.map(h => h.w / 100);
+  const expRet = holdings.reduce((s, h) => s + h.w / 100 * h.expRet, 0);
+  const variance = portfolioVariance(holdings, corrMatrix);
+  const vol = Math.sqrt(Math.max(variance, 0));
+  const sharpe = vol > 0 ? expRet / vol : 0;
+  const effN = effectiveN(weights);
+  const downside = holdings.reduce((s, h) => s + h.w / 100 * (h.downside || 0), 0);
+  return { expRet, vol: vol * 100, sharpe, effN, downside };
+}
+
+function pctFmt(v, digits) {
+  if (v == null || isNaN(v)) return '—';
+  const d = digits ?? 1;
+  return (v > 0 ? '+' : '') + v.toFixed(d) + '%';
+}
+
+function colourPct(v) {
+  return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text3)';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS PAGE
+// ═══════════════════════════════════════════════════════════════
+
+async function initAnalyticsPage() {
+  await loadPortfolios();
+  const sel = E('an-port-select');
+  if (sel && !sel.value && sel.options.length > 1) {
+    sel.value = sel.options[1].value;
+  }
+  loadAnalytics();
+}
+
+async function loadAnalytics() {
+  const id = E('an-port-select').value;
+  const c = E('an-content');
+  if (!id) { c.innerHTML = '<div class="ld">Select a portfolio above.</div>'; return; }
+  c.innerHTML = '<div class="ld">Loading…</div>';
+  try {
+    const r = await fetch('/api/v1/portfolios/' + id);
+    if (!r.ok) throw new Error('Failed to load portfolio');
+    const d = await r.json();
+    renderAnalytics(d);
+  } catch(e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+}
+
+function renderAnalytics(d) {
+  const c = E('an-content');
+  const holdings = d.holdings.filter(h => h.weight > 0).map(h => {
+    const base = h.scenarios?.base, bear = h.scenarios?.bear;
+    const baseUp  = base?.methodology_detail != null ? parseFloat(base.methodology_detail) : null;
+    const bearDn  = bear?.methodology_detail != null ? parseFloat(bear.methodology_detail) : null;
+    const expRet  = baseUp != null && base?.probability != null
+      ? baseUp * base.probability / 100 + (bearDn ?? 0) * (bear?.probability ?? 0) / 100
+      : (baseUp ?? 0);
+    return {
+      ...h,
+      w: h.weight,
+      expRet,
+      upside: baseUp ?? 0,
+      downside: bearDn ?? 0,
+      vol: scenarioVol(h.scenarios, h.current_price),
+      contribution: h.weight / 100 * expRet,
+    };
+  });
+
+  if (!holdings.length) {
+    c.innerHTML = '<div class="ld">No holdings with weights in this portfolio.</div>';
+    return;
+  }
+
+  const corrMatrix = buildCorrMatrix(holdings);
+  const metrics = portfolioMetrics(holdings, corrMatrix);
+
+  // ── Attribution grouping ────────────────────────────────────
+  const sectorGroups = groupBy(holdings, 'sector');
+  const countryGroups = groupBy(holdings, 'country');
+
+  // ── Correlation table data ──────────────────────────────────
+  const tickers = holdings.map(h => h.ticker.replace(/\s+(equity|eq)$/i,'').trim());
+
+  let h = '';
+
+  // ── KPI strip ──────────────────────────────────────────────
+  h += '<div class="ck-strip">';
+  const kpis = [
+    { label: 'Wtd Exp. Return', val: metrics.expRet, fmt: v => pctFmt(v) },
+    { label: 'Port. Volatility', val: metrics.vol, fmt: v => v.toFixed(1) + '%', clr: 'var(--amber)' },
+    { label: 'Sharpe Ratio', val: metrics.sharpe, fmt: v => v.toFixed(2), clr: metrics.sharpe >= 0.5 ? 'var(--green)' : metrics.sharpe < 0 ? 'var(--red)' : 'var(--text)' },
+    { label: 'Eff. # Holdings', val: metrics.effN, fmt: v => v.toFixed(1), clr: 'var(--gold)' },
+    { label: 'Wtd Downside', val: metrics.downside, fmt: v => pctFmt(v) },
+    { label: 'Active Holdings', val: holdings.length, fmt: v => v, clr: 'var(--gold)' },
+  ];
+  kpis.forEach(k => {
+    const clr = k.clr ?? colourPct(k.val);
+    h += '<div class="ck-stat"><div class="ck-stat-label">' + k.label + '</div>';
+    h += '<div class="ck-stat-val" style="color:' + clr + '">' + k.fmt(k.val) + '</div></div>';
+  });
+  h += '</div>';
+
+  // ── Attribution section ─────────────────────────────────────
+  h += '<h2 style="margin-top:24px">Return Attribution</h2>';
+  h += '<div class="g2" style="margin-top:0">';
+  h += renderAttrTable('By Sector', sectorGroups, metrics.expRet);
+  h += renderAttrTable('By Country', countryGroups, metrics.expRet);
+  h += '</div>';
+
+  // ── Holdings risk table ─────────────────────────────────────
+  h += '<h2 style="margin-top:24px">Holdings Risk Breakdown</h2>';
+  h += '<div style="overflow-x:auto"><table class="kt"><thead><tr>';
+  h += '<th>Ticker</th><th>Name</th><th style="text-align:right">Wt%</th>';
+  h += '<th style="text-align:right;color:var(--green)">Upside%</th>';
+  h += '<th style="text-align:right;color:var(--red)">Downside%</th>';
+  h += '<th style="text-align:right">Exp.Ret%</th>';
+  h += '<th style="text-align:right">Contrib%</th>';
+  h += '<th style="text-align:right">Vol(impl)</th>';
+  h += '<th style="text-align:right">U/D</th>';
+  h += '</tr></thead><tbody>';
+  const sorted = [...holdings].sort((a, b) => b.w - a.w);
+  sorted.forEach(ho => {
+    const ud = ho.upside && ho.downside && ho.downside !== 0
+      ? Math.abs(ho.upside / ho.downside).toFixed(1) + 'x' : '—';
+    const udClr = parseFloat(ud) > 1.5 ? 'var(--green)' : parseFloat(ud) < 1 ? 'var(--red)' : 'var(--text)';
+    h += '<tr>';
+    h += '<td class="kn">' + esc(ho.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + '</td>';
+    h += '<td style="font-size:11px;color:var(--text2)">' + esc(ho.name || '') + '</td>';
+    h += '<td style="text-align:right;font-weight:600">' + ho.w.toFixed(1) + '%</td>';
+    h += '<td style="text-align:right;color:var(--green)">' + pctFmt(ho.upside) + '</td>';
+    h += '<td style="text-align:right;color:var(--red)">' + pctFmt(ho.downside) + '</td>';
+    h += '<td style="text-align:right;color:' + colourPct(ho.expRet) + '">' + pctFmt(ho.expRet) + '</td>';
+    h += '<td style="text-align:right;color:' + colourPct(ho.contribution) + '">' + pctFmt(ho.contribution, 2) + '</td>';
+    h += '<td style="text-align:right;color:var(--text3)">' + (ho.vol * 100).toFixed(0) + '%</td>';
+    h += '<td style="text-align:right;color:' + udClr + '">' + ud + '</td>';
+    h += '</tr>';
+  });
+  // Totals row
+  const totalContr = sorted.reduce((s, h) => s + h.contribution, 0);
+  h += '<tr style="background:rgba(196,164,90,0.05);font-weight:700">';
+  h += '<td class="kn" style="color:var(--gold)">Total</td><td></td>';
+  h += '<td style="text-align:right">' + d.total_weight.toFixed(1) + '%</td>';
+  h += '<td></td><td></td>';
+  h += '<td style="text-align:right;color:' + colourPct(metrics.expRet) + '">' + pctFmt(metrics.expRet) + '</td>';
+  h += '<td style="text-align:right;color:' + colourPct(totalContr) + '">' + pctFmt(totalContr, 2) + '</td>';
+  h += '<td></td><td></td></tr>';
+  h += '</tbody></table></div>';
+
+  // ── Correlation matrix ──────────────────────────────────────
+  h += '<h2 style="margin-top:24px">Pairwise Correlation Matrix</h2>';
+  h += '<div style="font-family:var(--sans);font-size:12px;color:var(--text3);margin-bottom:10px">Based on sector/country similarity heuristic. Override via the Optimisation page.</div>';
+  h += '<div style="overflow-x:auto"><table class="kt" style="font-size:11px">';
+  h += '<thead><tr><th></th>' + tickers.map(t => '<th style="text-align:center;min-width:52px">' + esc(t) + '</th>').join('') + '</tr></thead><tbody>';
+  holdings.forEach((a, i) => {
+    h += '<tr><td class="kn" style="font-size:11px">' + esc(tickers[i]) + '</td>';
+    holdings.forEach((b, j) => {
+      const rho = defaultCorr(a, b);
+      const intensity = Math.abs(rho);
+      const bg = rho >= 1 ? 'rgba(196,164,90,0.25)'
+        : rho >= 0.5  ? 'rgba(74,222,128,0.15)'
+        : rho >= 0.2  ? 'rgba(74,222,128,0.07)'
+        : 'transparent';
+      h += '<td style="text-align:center;background:' + bg + ';color:var(--text2)">' + rho.toFixed(2) + '</td>';
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+
+  c.innerHTML = h;
+}
+
+function groupBy(holdings, field) {
+  const groups = {};
+  holdings.forEach(h => {
+    const key = h[field] || 'Unknown';
+    if (!groups[key]) groups[key] = { name: key, weight: 0, contribution: 0, count: 0 };
+    groups[key].weight += h.w;
+    groups[key].contribution += h.contribution;
+    groups[key].count++;
+  });
+  return Object.values(groups).sort((a, b) => b.weight - a.weight);
+}
+
+function renderAttrTable(title, groups, portExpRet) {
+  const PALETTE = ['var(--gold)','var(--teal)','#818CF8','#FB7185','#F59E0B','#34D399','#60A5FA','#A78BFA'];
+  let h = '<div class="cd" style="padding:16px">';
+  h += '<div class="cd-t">' + esc(title) + '</div>';
+  h += '<table class="kt" style="margin-top:8px"><thead><tr>';
+  h += '<th>' + title.replace('By ','') + '</th><th style="text-align:right">Wt%</th>';
+  h += '<th style="text-align:right">Exp.Ret</th><th style="text-align:right">Contrib</th>';
+  h += '<th style="text-align:right">% of Total</th>';
+  h += '</tr></thead><tbody>';
+  groups.forEach((g, i) => {
+    const avgRet = g.weight > 0 ? g.contribution / g.weight * 100 : 0;
+    h += '<tr>';
+    h += '<td style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:2px;background:' + PALETTE[i % PALETTE.length] + ';flex-shrink:0"></div>' + esc(g.name) + ' <span style="color:var(--text3);font-size:10px">(' + g.count + ')</span></td>';
+    h += '<td style="text-align:right">' + g.weight.toFixed(1) + '%</td>';
+    h += '<td style="text-align:right;color:' + colourPct(avgRet) + '">' + pctFmt(avgRet) + '</td>';
+    h += '<td style="text-align:right;color:' + colourPct(g.contribution) + '">' + pctFmt(g.contribution, 2) + '</td>';
+    h += '<td style="text-align:right;color:var(--text3)">' + (portExpRet !== 0 ? (g.contribution / portExpRet * 100).toFixed(0) + '%' : '—') + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  return h;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OPTIMISATION PAGE
+// ═══════════════════════════════════════════════════════════════
+
+let OP_DATA = null; // cached portfolio data
+
+async function initOptimisePage() {
+  await loadPortfolios();
+  const sel = E('op-port-select');
+  if (sel && !sel.value && sel.options.length > 1) {
+    sel.value = sel.options[1].value;
+  }
+  loadOptimise();
+}
+
+async function loadOptimise() {
+  const id = E('op-port-select').value;
+  const c = E('op-content');
+  if (!id) { c.innerHTML = '<div class="ld">Select a portfolio above.</div>'; return; }
+  c.innerHTML = '<div class="ld">Loading…</div>';
+  try {
+    const r = await fetch('/api/v1/portfolios/' + id);
+    if (!r.ok) throw new Error('Failed');
+    OP_DATA = await r.json();
+    renderOptimise();
+  } catch(e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+}
+
+function renderOptimise() {
+  const c = E('op-content');
+  if (!OP_DATA) return;
+  const holdings = OP_DATA.holdings.filter(h => h.weight > 0).map(h => ({
+    ...h, w: h.weight,
+    vol: scenarioVol(h.scenarios, h.current_price),
+    expRet: (() => {
+      const base = h.scenarios?.base, bear = h.scenarios?.bear;
+      const baseUp = base?.methodology_detail != null ? parseFloat(base.methodology_detail) : null;
+      const bearDn = bear?.methodology_detail != null ? parseFloat(bear.methodology_detail) : null;
+      return baseUp != null && base?.probability != null
+        ? baseUp * base.probability / 100 + (bearDn ?? 0) * (bear?.probability ?? 0) / 100
+        : (baseUp ?? 0);
+    })(),
+  }));
+
+  if (!holdings.length) {
+    c.innerHTML = '<div class="ld">No holdings with weights in this portfolio.</div>';
+    return;
+  }
+
+  // Read controls (or use defaults)
+  const method     = (E('op-method') && E('op-method').value) || 'kelly';
+  const kellyF     = parseFloat(E('op-kelly')?.value   ?? 0.5);
+  const maxPos     = parseFloat(E('op-maxpos')?.value  ?? 10);
+  const sectorCap  = parseFloat(E('op-scap')?.value    ?? 30);
+  const countryCap = parseFloat(E('op-ccap')?.value    ?? 60);
+  const mvLambda   = parseFloat(E('op-lambda')?.value  ?? 5);
+
+  const corrMatrix = buildCorrMatrix(holdings);
+  const tickers    = holdings.map(h => h.ticker);
+  const mus        = holdings.map(h => h.expRet / 100);
+  const vols       = holdings.map(h => h.vol);
+  const cov        = buildCovMatrix(vols, corrMatrix, tickers);
+
+  // ── Run all three methods ───────────────────────────────────
+  const kellyResult  = runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap);
+  const mvResult     = runMV(holdings, mus, cov, corrMatrix, mvLambda, maxPos / 100, sectorCap, countryCap);
+  const cvarResult   = runCVaR(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap);
+
+  let h = '';
+
+  // ── Controls ────────────────────────────────────────────────
+  h += '<div class="cd" style="padding:16px;margin-bottom:20px">';
+  h += '<div class="cd-t">Optimisation Parameters</div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:12px">';
+  h += ctrlNum('op-kelly',    'Kelly Fraction',     kellyF,  0.1, 1.0,  0.05, 'renderOptimise()');
+  h += ctrlNum('op-maxpos',   'Max Position %',     maxPos,  1,   25,   1,    'renderOptimise()');
+  h += ctrlNum('op-scap',     'Sector Cap %',       sectorCap, 10, 100, 5,   'renderOptimise()');
+  h += ctrlNum('op-ccap',     'Country Cap %',      countryCap, 10, 100, 5,  'renderOptimise()');
+  h += ctrlNum('op-lambda',   'MV Risk Aversion λ', mvLambda, 1,  20,   1,   'renderOptimise()');
+  h += '</div></div>';
+
+  // ── Summary metrics strip for each method ──────────────────
+  h += '<div class="g3" style="margin-bottom:20px">';
+  h += renderOptSummaryCard('Kelly', kellyResult, holdings, corrMatrix, 'var(--gold)');
+  h += renderOptSummaryCard('Mean-Variance', mvResult, holdings, corrMatrix, 'var(--teal)');
+  h += renderOptSummaryCard('CVaR', cvarResult, holdings, corrMatrix, '#818CF8');
+  h += '</div>';
+
+  // ── Full comparison table ────────────────────────────────────
+  h += '<h2>Weight Comparison</h2>';
+  h += '<div style="overflow-x:auto"><table class="kt"><thead><tr>';
+  h += '<th>Ticker</th><th>Name</th>';
+  h += '<th style="text-align:right">Current Wt%</th>';
+  h += '<th style="text-align:right;color:var(--gold)">Kelly %</th>';
+  h += '<th style="text-align:right;color:var(--teal)">MV %</th>';
+  h += '<th style="text-align:right;color:#818CF8">CVaR %</th>';
+  h += '<th style="text-align:right">Exp.Ret%</th>';
+  h += '<th style="text-align:right">Vol(impl)</th>';
+  h += '</tr></thead><tbody>';
+
+  const allTickers = [...new Set([
+    ...Object.keys(kellyResult.weights),
+    ...Object.keys(mvResult.weights),
+    ...Object.keys(cvarResult.weights),
+    ...holdings.map(h => h.ticker)
+  ])];
+  allTickers.sort((a, b) => (kellyResult.weights[b] || 0) - (kellyResult.weights[a] || 0));
+
+  allTickers.forEach(ticker => {
+    const ho = holdings.find(h => h.ticker === ticker);
+    if (!ho) return;
+    const cur  = ho.w.toFixed(1) + '%';
+    const kw   = kellyResult.weights[ticker];
+    const mw   = mvResult.weights[ticker];
+    const cv   = cvarResult.weights[ticker];
+    const fmtW = (v, cur) => {
+      if (v == null) return '—';
+      const diff = v - parseFloat(cur);
+      const clr  = diff > 0.5 ? 'var(--green)' : diff < -0.5 ? 'var(--red)' : 'var(--text)';
+      return '<span style="color:' + clr + '">' + v.toFixed(1) + '%</span>';
+    };
+    h += '<tr>';
+    h += '<td class="kn">' + esc(ticker.replace(/\s+(equity|eq)$/i,'').trim()) + '</td>';
+    h += '<td style="font-size:11px;color:var(--text2)">' + esc(ho.name || '') + '</td>';
+    h += '<td style="text-align:right;font-weight:600">' + cur + '</td>';
+    h += '<td style="text-align:right">' + fmtW(kw, cur) + '</td>';
+    h += '<td style="text-align:right">' + fmtW(mw, cur) + '</td>';
+    h += '<td style="text-align:right">' + fmtW(cv, cur) + '</td>';
+    h += '<td style="text-align:right;color:' + colourPct(ho.expRet) + '">' + pctFmt(ho.expRet) + '</td>';
+    h += '<td style="text-align:right;color:var(--text3)">' + (ho.vol * 100).toFixed(0) + '%</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+
+  // ── Constraint breach callouts ──────────────────────────────
+  const breaches = [];
+  if (kellyResult.sectorBreaches.size) breaches.push('Kelly sector caps applied: ' + [...kellyResult.sectorBreaches].join(', '));
+  if (kellyResult.countryBreaches.size) breaches.push('Kelly country caps applied: ' + [...kellyResult.countryBreaches].join(', '));
+  if (mvResult.sectorBreaches.size) breaches.push('MV sector caps applied: ' + [...mvResult.sectorBreaches].join(', '));
+  if (breaches.length) {
+    h += '<div class="cd" style="margin-top:16px;border-left-color:var(--amber);padding:12px 16px">';
+    h += '<div style="font-size:11px;color:var(--amber);font-weight:600;margin-bottom:6px">Concentration Constraints Applied</div>';
+    breaches.forEach(b => { h += '<div style="font-size:12px;color:var(--text2);margin-bottom:3px">⚠ ' + esc(b) + '</div>'; });
+    h += '</div>';
+  }
+
+  c.innerHTML = h;
+}
+
+function ctrlNum(id, label, val, min, max, step, onchange) {
+  return '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">' + esc(label) + '</label>' +
+    '<input type="number" id="' + id + '" class="fi" style="font-size:12px" value="' + val + '" min="' + min + '" max="' + max + '" step="' + step + '" onchange="' + onchange + '"></div>';
+}
+
+function applyCaps(tickers, rawWeights, companies, sectorCap, countryCap) {
+  const w = {};
+  tickers.forEach((t, i) => { w[t] = rawWeights[i] * 100; });
+  const sectorBreaches = new Set(), countryBreaches = new Set();
+  const sectors = [...new Set(companies.map(c => c.sector))];
+  sectors.forEach(sec => {
+    const members = companies.filter(c => c.sector === sec && w[c.ticker] > 0);
+    const total = members.reduce((s, c) => s + w[c.ticker], 0);
+    if (total > sectorCap) { sectorBreaches.add(sec); const scale = sectorCap / total; members.forEach(c => { w[c.ticker] *= scale; }); }
+  });
+  const countries = [...new Set(companies.map(c => c.country))];
+  countries.forEach(cty => {
+    const members = companies.filter(c => c.country === cty && w[c.ticker] > 0);
+    const total = members.reduce((s, c) => s + w[c.ticker], 0);
+    if (total > countryCap) { countryBreaches.add(cty); const scale = countryCap / total; members.forEach(c => { w[c.ticker] *= scale; }); }
+  });
+  // Normalise
+  const sum = Object.values(w).reduce((s, v) => s + v, 0);
+  if (sum > 0) Object.keys(w).forEach(k => { w[k] = w[k] / sum * 100; });
+  return { weights: w, sectorBreaches, countryBreaches };
+}
+
+function runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap) {
+  const raw = {};
+  holdings.forEach(h => { raw[h.ticker] = computeKellyFrac(h.scenarios, h.current_price, kellyF, maxPos); });
+  const sum = Object.values(raw).reduce((s, v) => s + v, 0);
+  const rawArr = holdings.map(h => (raw[h.ticker] ?? 0) / 100);
+  const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), rawArr, holdings, sectorCap, countryCap);
+  return { weights, sectorBreaches, countryBreaches };
+}
+
+function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
+  try {
+    const w = mvOptimize(mus, cov, 5, maxW, 2000);
+    const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap);
+    return { weights, sectorBreaches, countryBreaches };
+  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
+}
+
+function runCVaR(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
+  // Simplified CVaR proxy: downside-penalised version of MV
+  // Uses downside-adjusted returns (bear-weighted) as input
+  try {
+    const adjustedMus = holdings.map(h => {
+      const bear = h.scenarios?.bear;
+      const bearDn = bear?.methodology_detail != null ? parseFloat(bear.methodology_detail) / 100 : -0.2;
+      const bearP  = (bear?.probability ?? 25) / 100;
+      return mus[holdings.indexOf(h)] + bearP * bearDn * 0.5; // penalise for downside
+    });
+    const w = mvOptimize(adjustedMus, cov, 8, maxW, 2000);
+    const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap);
+    return { weights, sectorBreaches, countryBreaches };
+  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
+}
+
+function renderOptSummaryCard(label, result, holdings, corrMatrix, colour) {
+  const wHoldings = holdings
+    .map(h => ({ ...h, w: result.weights[h.ticker] ?? 0 }))
+    .filter(h => h.w > 0.01);
+  const metrics = portfolioMetrics(wHoldings, corrMatrix);
+  const topHolding = Object.entries(result.weights).sort((a, b) => b[1] - a[1])[0];
+  let h = '<div class="cd" style="border-left-color:' + colour + ';padding:16px">';
+  h += '<div class="cd-t" style="color:' + colour + '">' + esc(label) + '</div>';
+  h += '<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  const stats = [
+    { l: 'Exp. Return', v: pctFmt(metrics.expRet), clr: colourPct(metrics.expRet) },
+    { l: 'Volatility',  v: metrics.vol.toFixed(1) + '%', clr: 'var(--amber)' },
+    { l: 'Sharpe',      v: metrics.sharpe.toFixed(2), clr: metrics.sharpe >= 0.5 ? 'var(--green)' : 'var(--text)' },
+    { l: 'Eff. N',      v: metrics.effN.toFixed(1), clr: 'var(--gold)' },
+  ];
+  stats.forEach(st => {
+    h += '<div><div style="font-size:10px;color:var(--text3);margin-bottom:2px">' + st.l + '</div>';
+    h += '<div style="font-size:15px;font-weight:700;color:' + st.clr + '">' + st.v + '</div></div>';
+  });
+  h += '</div>';
+  if (topHolding) {
+    h += '<div style="margin-top:10px;font-size:11px;color:var(--text3)">Largest: <span style="color:var(--text2)">'
+      + esc(topHolding[0].replace(/\s+(equity|eq)$/i,'').trim())
+      + ' ' + topHolding[1].toFixed(1) + '%</span></div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 loadDD();
