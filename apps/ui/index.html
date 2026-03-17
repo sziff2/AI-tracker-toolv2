@@ -260,6 +260,9 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div style="display:flex;gap:8px;margin-bottom:20px">
     <select class="fi" id="port-select" style="max-width:250px" onchange="loadPortfolioDetail()"><option value="">— Select portfolio —</option></select>
     <button class="btn2" onclick="createPortfolio()">+ New Portfolio</button>
+  <button class="btn2" id="port-export-btn" style="display:none" onclick="exportPortfolioCSV()">&#8595; Export CSV</button>
+  <button class="btn2" id="port-import-btn" style="display:none" onclick="E('port-import-file').click()">&#8593; Import CSV</button>
+  <input type="file" id="port-import-file" accept=".csv,.tsv,.txt" style="display:none" onchange="importPortfolioCSV(this)">
   </div>
   <div id="port-content"></div>
 </div>
@@ -1427,7 +1430,11 @@ async function createPortfolio(){
 }
 
 async function loadPortfolioDetail(){
-  const id=E('port-select').value,c=E('port-content');if(!id){c.innerHTML='';return;}
+  const id=E('port-select').value,c=E('port-content');
+  const expBtn=E('port-export-btn'),impBtn=E('port-import-btn');
+  if(expBtn)expBtn.style.display=id?'inline-block':'none';
+  if(impBtn)impBtn.style.display=id?'inline-block':'none';
+  if(!id){c.innerHTML='';return;}
   c.innerHTML='<div class="ld">Loading…</div>';
   try{const r=await fetch('/api/v1/portfolios/'+id);if(!r.ok)throw new Error('Failed');const d=await r.json();renderPortfolio(id,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
@@ -1524,6 +1531,99 @@ async function setScenarios(portId){
   if(bull)scenarios.push({scenario_type:'bull',target_price:parseFloat(bull),probability:bup?parseFloat(bup):30});
   if(!scenarios.length){alert('Enter at least one target price.');return;}
   try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios})});alert('Scenarios saved for '+t.toUpperCase());loadPortfolioDetail();}catch(e){alert(e.message);}
+}
+
+// ═══ PORTFOLIO CSV EXPORT / IMPORT ═══════════════════════════════════════
+async function exportPortfolioCSV(){
+  const id=E('port-select').value;if(!id)return;
+  try{
+    const r=await fetch('/api/v1/portfolios/'+id);if(!r.ok)throw new Error('Failed');
+    const d=await r.json();
+    const rows=[['Ticker','Name','Sector','Country','Weight %','Cost Basis','Current Price','Currency','Bear Target','Bear Prob %','Base Target','Base Prob %','Bull Target','Bull Prob %','Expected Return %','Upside %','Downside %','Status']];
+    d.holdings.forEach(h=>{
+      const bear=h.scenarios?.bear||{};const base=h.scenarios?.base||{};const bull=h.scenarios?.bull||{};
+      rows.push([
+        h.ticker,h.name||'',h.sector||'',h.country||'',
+        h.weight!=null?h.weight.toFixed(2):'',
+        h.cost_basis!=null?h.cost_basis:'',
+        h.current_price!=null?h.current_price:'',
+        h.currency||'',
+        bear.target_price!=null?bear.target_price:'',bear.probability!=null?bear.probability:'',
+        base.target_price!=null?base.target_price:'',base.probability!=null?base.probability:'',
+        bull.target_price!=null?bull.target_price:'',bull.probability!=null?bull.probability:'',
+        h.expected_return!=null?h.expected_return.toFixed(1):'',
+        h.upside!=null?h.upside.toFixed(1):'',
+        h.downside!=null?h.downside.toFixed(1):'',
+        h.status||'active',
+      ]);
+    });
+    const csv=rows.map(r=>r.map(cell=>{
+      const s=String(cell==null?'':cell);
+      return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;
+    }).join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=(d.name||'portfolio').replace(/\s+/g,'_')+'_holdings.csv';
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},100);
+  }catch(e){alert('Export failed: '+e.message);}
+}
+
+async function importPortfolioCSV(input){
+  const id=E('port-select').value;if(!id){alert('Select a portfolio first.');return;}
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    try{
+      const lines=e.target.result.split('\n').filter(l=>l.trim());
+      if(!lines.length){alert('Empty file.');return;}
+      const delim=lines[0].includes('\t')?'\t':',';
+      const header=lines[0].split(delim).map(c=>c.trim().replace(/^"|"$/g,'').toLowerCase());
+      const col=name=>header.indexOf(name);
+      if(col('ticker')<0){alert('CSV must have a "Ticker" column. Headers found: '+header.join(', '));return;}
+      const holdings=[],prices=[],scenarios=[];
+      for(let i=1;i<lines.length;i++){
+        const cells=lines[i].split(delim).map(c=>c.trim().replace(/^"|"$/g,''));
+        const get=name=>{const idx=col(name);return idx>=0?(cells[idx]||'').trim():''};
+        const ticker=(get('ticker')||'').toUpperCase();if(!ticker)continue;
+        const weight=get('weight %')||get('weight')||'0';
+        const costBasis=get('cost basis')||get('cost')||'';
+        const status=get('status')||'active';
+        holdings.push({ticker,weight:parseFloat(weight)||0,cost_basis:costBasis?parseFloat(costBasis):null,status});
+        const price=get('current price')||get('price')||'';
+        const currency=get('currency')||'USD';
+        if(price&&!isNaN(parseFloat(price)))prices.push({ticker,price:parseFloat(price),currency});
+        const bearTp=get('bear target');const bearPb=get('bear prob %')||get('bear prob');
+        const baseTp=get('base target');const basePb=get('base prob %')||get('base prob');
+        const bullTp=get('bull target');const bullPb=get('bull prob %')||get('bull prob');
+        const scens=[];
+        if(bearTp&&!isNaN(parseFloat(bearTp)))scens.push({scenario_type:'bear',target_price:parseFloat(bearTp),probability:bearPb?parseFloat(bearPb):20});
+        if(baseTp&&!isNaN(parseFloat(baseTp)))scens.push({scenario_type:'base',target_price:parseFloat(baseTp),probability:basePb?parseFloat(basePb):50});
+        if(bullTp&&!isNaN(parseFloat(bullTp)))scens.push({scenario_type:'bull',target_price:parseFloat(bullTp),probability:bullPb?parseFloat(bullPb):30});
+        if(scens.length)scenarios.push({ticker,scens});
+      }
+      if(!holdings.length){alert('No valid rows found.');return;}
+      const r=await fetch('/api/v1/portfolios/'+id+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Holdings import failed');}
+      const d=await r.json();
+      if(prices.length){
+        await fetch('/api/v1/prices/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(prices)}).catch(()=>{});
+      }
+      for(const {ticker,scens} of scenarios){
+        await fetch('/api/v1/companies/'+enc(ticker)+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios:scens})}).catch(()=>{});
+      }
+      const notFound=d.results.filter(r=>r.status==='company_not_found').map(r=>r.ticker);
+      let msg='Imported '+d.imported+' holdings';
+      if(prices.length)msg+=', '+prices.length+' prices';
+      if(scenarios.length)msg+=', '+scenarios.length+' scenario sets';
+      if(notFound.length)msg+='. Companies not found (create them first): '+notFound.join(', ');
+      alert(msg);
+      loadPortfolioDetail();
+    }catch(err){alert('Import failed: '+err.message);}
+  };
+  reader.readAsText(file);
+  input.value='';
 }
 
 loadDD();
