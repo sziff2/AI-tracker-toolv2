@@ -1586,21 +1586,28 @@ async function importPortfolioCSV(input){
       for(let i=1;i<lines.length;i++){
         const cells=lines[i].split(delim).map(c=>c.trim().replace(/^"|"$/g,''));
         const get=name=>{const idx=col(name);return idx>=0?(cells[idx]||'').trim():''};
-        const ticker=(get('ticker')||'').toUpperCase();if(!ticker)continue;
-        const weight=get('weight %')||get('weight')||'0';
+        // FIX (a): strip Bloomberg " Equity" / " equity" suffix from ticker
+        const rawTicker=get('ticker')||'';
+        const ticker=rawTicker.replace(/\s+equity$/i,'').trim().toUpperCase();
+        if(!ticker)continue;
+        // FIX (b): strip % from weight string
+        const rawWeight=get('weight %')||get('weight')||'0';
+        const weight=parseFloat(rawWeight.replace('%',''))||0;
         const costBasis=get('cost basis')||get('cost')||'';
         const status=get('status')||'active';
-        holdings.push({ticker,weight:parseFloat(weight)||0,cost_basis:costBasis?parseFloat(costBasis):null,status});
+        holdings.push({ticker,weight,cost_basis:costBasis?parseFloat(costBasis):null,status});
         const price=get('current price')||get('price')||'';
         const currency=get('currency')||'USD';
         if(price&&!isNaN(parseFloat(price)))prices.push({ticker,price:parseFloat(price),currency});
-        const bearTp=get('bear target');const bearPb=get('bear prob %')||get('bear prob');
-        const baseTp=get('base target');const basePb=get('base prob %')||get('base prob');
-        const bullTp=get('bull target');const bullPb=get('bull prob %')||get('bull prob');
+        // FIX (c): probabilities — if <=1 treat as decimal and multiply by 100
+        const toProb=v=>{if(!v||isNaN(parseFloat(v)))return null;const n=parseFloat(v);return n<=1?Math.round(n*100):n;};
+        const bearTp=get('bear target');const bearPb=toProb(get('bear prob %')||get('bear prob'));
+        const baseTp=get('base target');const basePb=toProb(get('base prob %')||get('base prob'));
+        const bullTp=get('bull target');const bullPb=toProb(get('bull prob %')||get('bull prob'));
         const scens=[];
-        if(bearTp&&!isNaN(parseFloat(bearTp)))scens.push({scenario_type:'bear',target_price:parseFloat(bearTp),probability:bearPb?parseFloat(bearPb):20});
-        if(baseTp&&!isNaN(parseFloat(baseTp)))scens.push({scenario_type:'base',target_price:parseFloat(baseTp),probability:basePb?parseFloat(basePb):50});
-        if(bullTp&&!isNaN(parseFloat(bullTp)))scens.push({scenario_type:'bull',target_price:parseFloat(bullTp),probability:bullPb?parseFloat(bullPb):30});
+        if(bearTp&&!isNaN(parseFloat(bearTp)))scens.push({scenario_type:'bear',target_price:parseFloat(bearTp),probability:bearPb??20});
+        if(baseTp&&!isNaN(parseFloat(baseTp)))scens.push({scenario_type:'base',target_price:parseFloat(baseTp),probability:basePb??50});
+        if(bullTp&&!isNaN(parseFloat(bullTp)))scens.push({scenario_type:'bull',target_price:parseFloat(bullTp),probability:bullPb??30});
         if(scens.length)scenarios.push({ticker,scens});
       }
       if(!holdings.length){alert('No valid rows found.');return;}
@@ -1617,7 +1624,7 @@ async function importPortfolioCSV(input){
       let msg='Imported '+d.imported+' holdings';
       if(prices.length)msg+=', '+prices.length+' prices';
       if(scenarios.length)msg+=', '+scenarios.length+' scenario sets';
-      if(notFound.length)msg+='. Companies not found (create them first): '+notFound.join(', ');
+      if(notFound.length)msg+='. Not found (add via New Analysis first): '+notFound.join(', ');
       alert(msg);
       loadPortfolioDetail();
     }catch(err){alert('Import failed: '+err.message);}
