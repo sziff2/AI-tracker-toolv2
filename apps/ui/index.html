@@ -434,10 +434,8 @@ async function saveThesisField(ticker,field,value){
 // ── KPIs tab ─────────────────────────────────────────────────
 function renderCkKPIs(ticker,d){
   const tr=d.kpi_tracker||{};const periods=tr.periods||[],kpis=tr.kpis||[],overall=tr.overall_scores||{};let h='';
-  // Add form with dropdown from extracted metrics
-  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><div style="flex:1;position:relative"><input id="nkn" list="metric-suggestions" placeholder="Add KPI — type or select from extracted metrics" autocomplete="off"><datalist id="metric-suggestions"></datalist></div><input id="nku" placeholder="Unit" style="max-width:100px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
-  // Load metric names for dropdown
-  h+='<script>loadMetricSuggestions("'+esc(ticker)+'")<\/script>';
+  // Always show add form at top
+  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><input id="nkn" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="nku" placeholder="Unit (e.g. %)" style="max-width:120px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
   if(!kpis.length){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
@@ -472,6 +470,12 @@ function renderCkResults(ticker,d){
         h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';
       });
     }
+    // Add more documents
+    h+='<div style="margin-top:12px;margin-bottom:16px">';
+    h+='<div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents</div>';
+    h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
+    h+='<div id="add-doc-list-'+esc(p)+'"></div>';
+    h+='</div>';
     // Analysis output
     const analysis=abp[p];
     if(analysis?.content){
@@ -503,6 +507,65 @@ function showResPeriod(p,btn){
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
   try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){alert('Delete failed: '+e.message);}
+}
+
+function handleAddDocs(input,ticker,period){
+  const files=Array.from(input.files);if(!files.length)return;
+  const listEl=E('add-doc-list-'+period);
+  const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
+  // Auto-detect type from filename
+  function guessType(name){
+    const n=name.toLowerCase();
+    if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))return 'proxy_statement';
+    if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';
+    if(n.includes('transcript')||n.includes('call'))return 'transcript';
+    if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';
+    if(n.includes('presentation')||n.includes('slides'))return 'presentation';
+    if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';
+    if(n.includes('annual'))return 'annual_report';
+    return 'other';
+  }
+  const staged=files.map(f=>({file:f,docType:guessType(f.name)}));
+  // Render staged files with type selectors
+  let h='';
+  staged.forEach((s,i)=>{
+    h+='<div class="fr" style="margin-top:6px"><span>📄</span><span class="fn">'+esc(s.file.name)+'</span>';
+    h+='<select id="add-doc-type-'+period+'-'+i+'">';
+    Object.entries(T).forEach(([k,v])=>{h+='<option value="'+k+'"'+(k===s.docType?' selected':'')+'>'+v+'</option>';});
+    h+='</select></div>';
+  });
+  h+='<button class="btn" style="margin-top:10px;width:100%" onclick="uploadAddDocs(\''+esc(ticker)+'\',\''+esc(period)+'\','+staged.length+')">Upload & Re-run Analysis</button>';
+  listEl.innerHTML=h;
+  // Store files for upload
+  window._addDocFiles=staged;
+  input.value='';
+}
+
+async function uploadAddDocs(ticker,period,count){
+  const staged=window._addDocFiles;if(!staged||!staged.length)return;
+  const listEl=E('add-doc-list-'+period);
+  listEl.innerHTML='<div class="ld">Uploading '+count+' documents…</div>';
+  try{
+    const fd=new FormData();
+    const types=[];
+    staged.forEach((s,i)=>{
+      fd.append('files',s.file);
+      const sel=E('add-doc-type-'+period+'-'+i);
+      types.push(sel?sel.value:s.docType);
+    });
+    fd.append('period_label',period);
+    fd.append('document_types',types.join(','));
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Upload failed');}
+    const d=await r.json();
+    window._addDocFiles=null;
+    // Show progress polling
+    const resDiv=E('res-'+period);
+    if(resDiv){
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">📄 Uploaded '+count+' documents. Processing…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+    }
+    pollReprocess(d.job_id,ticker,period);
+  }catch(e){listEl.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 async function reprocessPeriod(ticker,period){
   if(!confirm('Re-run analysis for '+period+'? This will clear existing metrics and outputs, then reprocess stored documents with the latest extraction pipeline.'))return;
@@ -604,39 +667,6 @@ function renderCkDecisions(ticker,d){
 }
 
 // ── Actions ──────────────────────────────────────────────────
-let _metricSuggestions=[];
-async function loadMetricSuggestions(ticker){
-  try{
-    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metrics');
-    if(!r.ok)return;const d=await r.json();
-    // Deduplicate metric names and collect units
-    const seen={};
-    for(const period of Object.values(d.by_period||{})){
-      for(const m of period){
-        const name=m.metric_name;
-        if(!name||name.startsWith('['))continue; // skip prior-period prefixed
-        if(!seen[name])seen[name]={name:name,unit:m.unit,count:0};
-        seen[name].count++;
-      }
-    }
-    _metricSuggestions=Object.values(seen).sort((a,b)=>b.count-a.count);
-    const dl=E('metric-suggestions');if(!dl)return;
-    dl.innerHTML='';
-    _metricSuggestions.forEach(m=>{
-      const o=document.createElement('option');
-      o.value=m.name;
-      o.label=m.name+(m.unit?' ('+m.unit+')':'');
-      dl.appendChild(o);
-    });
-    // Auto-fill unit when a suggestion is selected
-    const input=E('nkn');if(input){
-      input.addEventListener('change',function(){
-        const match=_metricSuggestions.find(m=>m.name===this.value);
-        if(match&&match.unit){E('nku').value=match.unit;}
-      });
-    }
-  }catch(e){}
-}
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
 async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
 async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
