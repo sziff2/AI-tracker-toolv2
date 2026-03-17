@@ -1539,21 +1539,26 @@ async function exportPortfolioCSV(){
   try{
     const r=await fetch('/api/v1/portfolios/'+id);if(!r.ok)throw new Error('Failed');
     const d=await r.json();
-    const rows=[['Ticker','Name','Sector','Country','Weight %','Cost Basis','Current Price','Currency','Bear Target','Bear Prob %','Base Target','Base Prob %','Bull Target','Bull Prob %','Expected Return %','Upside %','Downside %','Status']];
+    const rows=[['Ticker','Name','Sector','Country','Weight %','Cost Basis','Current Price','Currency','Base Target','Upside %','Base Prob %','Bear Target','Bear Prob %','Downside %','Buffett Formula','BF upside/downside','Geometric','Skew','Status']];
     d.holdings.forEach(h=>{
-      const bear=h.scenarios?.bear||{};const base=h.scenarios?.base||{};const bull=h.scenarios?.bull||{};
+      const base=h.scenarios?.base||{};const bear=h.scenarios?.bear||{};
+      const buffett=h.scenarios?.buffett||{};const geometric=h.scenarios?.geometric||{};
       rows.push([
         h.ticker,h.name||'',h.sector||'',h.country||'',
-        h.weight!=null?h.weight.toFixed(2):'',
+        h.weight!=null?h.weight.toFixed(2)+'%':'',
         h.cost_basis!=null?h.cost_basis:'',
         h.current_price!=null?h.current_price:'',
         h.currency||'',
-        bear.target_price!=null?bear.target_price:'',bear.probability!=null?bear.probability:'',
-        base.target_price!=null?base.target_price:'',base.probability!=null?base.probability:'',
-        bull.target_price!=null?bull.target_price:'',bull.probability!=null?bull.probability:'',
-        h.expected_return!=null?h.expected_return.toFixed(1):'',
-        h.upside!=null?h.upside.toFixed(1):'',
-        h.downside!=null?h.downside.toFixed(1):'',
+        base.target_price!=null?base.target_price:'',
+        base.methodology_detail!=null?base.methodology_detail+'%':'',
+        base.probability!=null?base.probability+'%':'',
+        bear.target_price!=null?bear.target_price:'',
+        bear.probability!=null?bear.probability+'%':'',
+        bear.methodology_detail!=null?bear.methodology_detail+'%':'',
+        buffett.target_price!=null?buffett.target_price:'',
+        buffett.methodology_detail!=null?buffett.methodology_detail+'%':'',
+        geometric.target_price!=null?geometric.target_price:'',
+        bear.key_assumptions!=null?bear.key_assumptions:'',
         h.status||'active',
       ]);
     });
@@ -1586,11 +1591,11 @@ async function importPortfolioCSV(input){
       for(let i=1;i<lines.length;i++){
         const cells=lines[i].split(delim).map(c=>c.trim().replace(/^"|"$/g,''));
         const get=name=>{const idx=col(name);return idx>=0?(cells[idx]||'').trim():''};
-        // FIX (a): strip Bloomberg " Equity" / " equity" suffix from ticker
+        // Strip Bloomberg Equity suffix, normalise ticker
         const rawTicker=get('ticker')||'';
         const ticker=rawTicker.replace(/\s+equity$/i,'').trim().toUpperCase();
         if(!ticker)continue;
-        // FIX (b): strip % from weight string
+        // Strip % from weight
         const rawWeight=get('weight %')||get('weight')||'0';
         const weight=parseFloat(rawWeight.replace('%',''))||0;
         const costBasis=get('cost basis')||get('cost')||'';
@@ -1598,19 +1603,36 @@ async function importPortfolioCSV(input){
         const hName=get('name')||'';
         const hSector=get('sector')||'';
         const hCountry=get('country')||'';
-        holdings.push({ticker,weight,cost_basis:costBasis?parseFloat(costBasis):null,status,name:hName||undefined,sector:hSector||undefined,country:hCountry||undefined});
+        // Helper: strip %, commas, dashes then parse
+        const cleanPct=v=>{if(!v)return null;const n=parseFloat(v.replace('%','').replace(/,/g,'').trim());return isNaN(n)?null:n;};
+        const cleanNum=v=>{if(!v)return null;const s=v.replace(/,/g,'').replace(/^-\s*$/,'').trim();const n=parseFloat(s);return isNaN(n)?null:n;};
+        const buffett=cleanNum(get('buffett formula'));
+        const bfUp=cleanPct(get('bf upside/downside'));
+        const geo=cleanPct(get('geometric'));
+        const skew=cleanPct(get('skew'));
+        holdings.push({ticker,weight,cost_basis:costBasis?parseFloat(costBasis.replace(/,/g,'')):null,status,
+          name:hName||undefined,sector:hSector||undefined,country:hCountry||undefined,
+          buffett_formula:buffett,bf_upside:bfUp,geometric_return:geo,skew});
         const price=get('current price')||get('price')||'';
         const currency=get('currency')||'USD';
-        if(price&&!isNaN(parseFloat(price)))prices.push({ticker,price:parseFloat(price),currency});
-        // FIX (c): probabilities — if <=1 treat as decimal and multiply by 100
-        const toProb=v=>{if(!v||isNaN(parseFloat(v)))return null;const n=parseFloat(v);return n<=1?Math.round(n*100):n;};
-        const bearTp=get('bear target');const bearPb=toProb(get('bear prob %')||get('bear prob'));
-        const baseTp=get('base target');const basePb=toProb(get('base prob %')||get('base prob'));
-        const bullTp=get('bull target');const bullPb=toProb(get('bull prob %')||get('bull prob'));
+        if(price&&!isNaN(parseFloat(price.replace(/,/g,''))))prices.push({ticker,price:parseFloat(price.replace(/,/g,'')),currency});
+        // Probabilities: handle % strings and decimals <=1
+        const toProb=v=>{if(!v)return null;const s=v.replace('%','').trim();const n=parseFloat(s);if(isNaN(n))return null;return n<=1?Math.round(n*100):n;};
+        const baseTp =cleanNum(get('base target'));const basePb=toProb(get('base prob %')||get('base prob'));
+        const baseUp =get('upside %')||get('upside');
+        const bearTp =cleanNum(get('bear target'));const bearPb=toProb(get('bear prob %')||get('bear prob'));
+        const bearDn =get('downside %')||get('downside');
+        const bfRaw  =get('buffett formula')||get('buffett');
+        const bfTp   =cleanNum(bfRaw);
+        const bfUD   =get('bf upside/downside')||get('bf u/d');
+        const geoRaw =get('geometric');
+        const geoTp  =cleanNum(geoRaw);
+        const skewVal=get('skew');
         const scens=[];
-        if(bearTp&&!isNaN(parseFloat(bearTp)))scens.push({scenario_type:'bear',target_price:parseFloat(bearTp),probability:bearPb??20});
-        if(baseTp&&!isNaN(parseFloat(baseTp)))scens.push({scenario_type:'base',target_price:parseFloat(baseTp),probability:basePb??50});
-        if(bullTp&&!isNaN(parseFloat(bullTp)))scens.push({scenario_type:'bull',target_price:parseFloat(bullTp),probability:bullPb??30});
+        if(baseTp)scens.push({scenario_type:'base',target_price:baseTp,probability:basePb??75,methodology_detail:baseUp?parseFloat(baseUp.replace('%','')):null});
+        if(bearTp)scens.push({scenario_type:'bear',target_price:bearTp,probability:bearPb??25,methodology_detail:bearDn?parseFloat(bearDn.replace('%','')):null,key_assumptions:skewVal||null});
+        if(bfTp)scens.push({scenario_type:'buffett',target_price:bfTp,probability:null,methodology_detail:bfUD?parseFloat(bfUD.replace('%','')):null});
+        if(geoTp)scens.push({scenario_type:'geometric',target_price:geoTp,probability:null,methodology_detail:null});
         if(scens.length)scenarios.push({ticker,scens});
       }
       if(!holdings.length){alert('No valid rows found.');return;}
@@ -1624,10 +1646,12 @@ async function importPortfolioCSV(input){
         await fetch('/api/v1/companies/'+enc(ticker)+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios:scens})}).catch(()=>{});
       }
       const notFound=d.results.filter(r=>r.status==='company_not_found').map(r=>r.ticker);
+      const created=d.results.filter(r=>r.status==='company_created'||r.status==='company_created_and_updated').map(r=>r.ticker);
       let msg='Imported '+d.imported+' holdings';
       if(prices.length)msg+=', '+prices.length+' prices';
       if(scenarios.length)msg+=', '+scenarios.length+' scenario sets';
-      if(notFound.length)msg+='. Not found (add via New Analysis first): '+notFound.join(', ');
+      if(created.length)msg+='. Auto-created: '+created.join(', ');
+      if(notFound.length)msg+='. Not found: '+notFound.join(', ');
       alert(msg);
       loadPortfolioDetail();
     }catch(err){alert('Import failed: '+err.message);}
