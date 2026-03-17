@@ -283,8 +283,17 @@ async def run_batch_pipeline(
                 try:
                     from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
                     text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
+                    tables_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "tables.json"
                     pages = json.loads(text_path.read_text())
                     full_text = "\n\n".join(p["text"] for p in pages)
+
+                    # Load tables for table-first extraction
+                    tables_data = None
+                    if tables_path.exists():
+                        try:
+                            tables_data = json.loads(tables_path.read_text())
+                        except Exception:
+                            pass
 
                     # Route ESG doc types to ESG-specific extraction
                     if dtype in ESG_DOC_TYPES:
@@ -302,7 +311,7 @@ async def run_batch_pipeline(
                             "fields_populated": extraction.get("esg_fields_populated", {}),
                         }
                     else:
-                        extraction = await extract_by_document_type(db, doc, full_text)
+                        extraction = await extract_by_document_type(db, doc, full_text, tables_data=tables_data)
                         items = extraction.get("raw_items", [])
                         doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
 

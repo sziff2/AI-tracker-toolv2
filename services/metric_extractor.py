@@ -111,10 +111,11 @@ def _smart_chunk(text: str, max_chars: int = 20000) -> list[str]:
 # ─────────────────────────────────────────────────────────────────
 
 async def extract_by_document_type(
-    db: AsyncSession, document: Document, text: str
+    db: AsyncSession, document: Document, text: str, tables_data: list = None
 ) -> dict:
     """
     Run type-specific extraction with PARALLEL chunk processing.
+    If tables_data is provided, runs table-first extraction and merges results.
     """
     doc_type = document.document_type or "other"
     prompt_template = DOCTYPE_PROMPTS.get(doc_type, COMBINED_EXTRACTOR)
@@ -124,6 +125,26 @@ async def extract_by_document_type(
 
     if not chunks:
         return {"document_type": doc_type, "items_extracted": 0, "raw_items": []}
+
+    # ── Table-first extraction (if tables available) ─────────
+    table_items = []
+    if tables_data and doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
+        try:
+            from services.metric_normaliser import extract_from_tables
+            from apps.api.models import Company
+            company_q = await db.execute(
+                __import__("sqlalchemy").select(Company).where(Company.id == document.company_id)
+            )
+            company = company_q.scalar_one_or_none()
+            table_items = await extract_from_tables(
+                tables_data,
+                company_name=company.name if company else "",
+                ticker=company.ticker if company else "",
+                document_title=document.title or "",
+            )
+            logger.info("Table-first extraction: %d items from %d table groups", len(table_items), len(tables_data))
+        except Exception as e:
+            logger.warning("Table-first extraction failed: %s", str(e)[:100])
 
     # Build all prompts and run in parallel
     prompts = [prompt_template.format(text=chunk) for chunk in chunks]
@@ -136,7 +157,21 @@ async def extract_by_document_type(
         elif isinstance(result, dict):
             all_items.append(result)
 
-    logger.info("Extracted %d items from %s document %s (parallel)", len(all_items), doc_type, document.id)
+    # Merge table-first items with text extraction items
+    if table_items:
+        all_items = table_items + all_items
+
+    logger.info("Extracted %d items from %s document %s (%d from tables, %d from text)",
+                len(all_items), doc_type, document.id, len(table_items), len(all_items) - len(table_items))
+
+    # ── Post-processing: normalise + dedup ────────────────────
+    try:
+        from services.metric_normaliser import post_process_metrics
+        before = len(all_items)
+        all_items = post_process_metrics(all_items)
+        logger.info("Post-processing: %d → %d items (normalised + deduped)", before, len(all_items))
+    except Exception as e:
+        logger.warning("Post-processing failed: %s", str(e)[:100])
 
     # ── Validation pipeline ──────────────────────────────────
     try:
@@ -194,6 +229,15 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
     # Split into metrics and guidance
     metrics_raw = [i for i in all_items if i.get("type") == "metric" or "metric_value" in i]
     guidance_raw = [i for i in all_items if i.get("type") == "guidance" or "guidance_type" in i]
+
+    # ── Post-processing: normalise + dedup ────────────────────
+    try:
+        from services.metric_normaliser import post_process_metrics
+        before = len(metrics_raw)
+        metrics_raw = post_process_metrics(metrics_raw)
+        logger.info("Combined post-processing: %d → %d items", before, len(metrics_raw))
+    except Exception as e:
+        logger.warning("Post-processing failed: %s", str(e)[:100])
 
     # ── Validation pipeline ──────────────────────────────────
     try:
