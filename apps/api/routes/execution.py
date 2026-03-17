@@ -85,19 +85,37 @@ async def extract_statements(ticker: str, period: str = None, db: AsyncSession =
     all_statements = []
 
     for doc in docs:
-        # Load parsed text
+        # Load parsed text — try disk first, fall back to DB sections
+        full_text = ""
         try:
             text_path = Path(settings.storage_base_path) / "processed" / ticker.upper() / (doc.period_label or "misc") / "parsed_text.json"
-            if not text_path.exists():
-                continue
-            pages = json.loads(text_path.read_text())
-            full_text = "\n\n".join(p["text"] for p in pages)
-            # Truncate for LLM context
-            if len(full_text) > 15000:
-                full_text = full_text[:15000]
-        except Exception as e:
-            logger.warning("Failed to load text for doc %s: %s", doc.id, str(e)[:100])
+            if text_path.exists():
+                pages = json.loads(text_path.read_text())
+                full_text = "\n\n".join(p["text"] for p in pages)
+        except Exception:
+            pass
+
+        # Fall back to DocumentSections in DB
+        if not full_text:
+            try:
+                from apps.api.models import DocumentSection
+                sections_q = await db.execute(
+                    select(DocumentSection).where(DocumentSection.document_id == doc.id)
+                    .order_by(DocumentSection.page_number)
+                )
+                sections = sections_q.scalars().all()
+                if sections:
+                    full_text = "\n\n".join(s.text_content for s in sections if s.text_content)
+            except Exception as e:
+                logger.warning("Failed to load sections for doc %s: %s", doc.id, str(e)[:100])
+
+        if not full_text:
+            logger.warning("No text available for doc %s (no file, no sections)", doc.id)
             continue
+
+        # Truncate for LLM context
+        if len(full_text) > 15000:
+            full_text = full_text[:15000]
 
         # Extract statements via LLM
         try:

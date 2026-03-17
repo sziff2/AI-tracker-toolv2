@@ -333,7 +333,7 @@ function renderCockpit(ticker,d){
   // Global chat bar
   h+='<div style="display:flex;gap:8px;margin-bottom:20px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(co.name)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
   h+='<div id="ck-chat-history" style="margin-bottom:20px"></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'execution\',this)">Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
@@ -916,8 +916,10 @@ function renderMetrics(ticker,d){
     }
   }
 
-  // Sort rows: group by base metric name
-  const sortedRows=Object.entries(rows).sort((a,b)=>a[0].localeCompare(b[0]));
+  // Sort rows and filter out empty ones (no numeric values in any column)
+  const sortedRows=Object.entries(rows).filter(([key,row])=>{
+    return Object.values(row.values).some(v=>v&&v.value!=null);
+  }).sort((a,b)=>a[0].localeCompare(b[0]));
 
   // ── Classify metrics into groups ──────────────────────────
   const metricGroups={
