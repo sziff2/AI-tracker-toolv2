@@ -919,41 +919,92 @@ function renderMetrics(ticker,d){
   // Sort rows: group by base metric name
   const sortedRows=Object.entries(rows).sort((a,b)=>a[0].localeCompare(b[0]));
 
+  // ── Classify metrics into groups ──────────────────────────
+  const metricGroups={
+    'P&L':{icon:'📊',keywords:['revenue','sales','turnover','operating profit','ebit','ebitda','net income','net profit','earnings','gross profit','cost of','selling','admin','interest expense','tax','depreciation','amortisation','amortization','impairment','restructuring','operating margin','gross margin','net margin','ebitda margin','ebit margin','profit margin','income tax','pretax','pre-tax'],rows:[]},
+    'Operational':{icon:'⚙️',keywords:['volume','unit','headcount','employee','fte','store','branch','customer','subscriber','member','capacity','utilisation','utilization','market share','backlog','order','production','yield','throughput','organic','like for like','same store','comparable','segment','region','division','specialty','self service','wholesale','europe','north america','germany','united kingdom','rest of world'],rows:[]},
+    'Cash Flow':{icon:'💰',keywords:['cash flow','operating cash','free cash','fcf','capex','capital expend','working capital','cash from','cash used','depreciation','amortisation','dividend','buyback','share repurchase','acquisition','disposal','investing','financing'],rows:[]},
+    'Balance Sheet':{icon:'🏦',keywords:['total assets','total debt','net debt','equity','book value','tangible','cash and','leverage','debt to','net debt/','goodwill','intangible','inventory','receivable','payable','current ratio','total liabilities','shareholders'],rows:[]},
+    'Guidance':{icon:'🔮',keywords:['guidance','outlook','expect','forecast','target','guidance:','range','assumption','full year','fy 202','projected'],rows:[]},
+    'Other':{icon:'📋',keywords:[],rows:[]},
+  };
+  const groupOrder=['P&L','Operational','Cash Flow','Balance Sheet','Guidance','Other'];
+
+  sortedRows.forEach(([key,row])=>{
+    const lower=key.toLowerCase();
+    let matched=false;
+    // Check guidance first (segment=guidance or name contains guidance)
+    if(row.segment==='guidance'||/guidance|outlook|expect|forecast/i.test(lower)){
+      metricGroups['Guidance'].rows.push([key,row]);matched=true;
+    }
+    if(!matched){
+      for(const gName of groupOrder){
+        if(gName==='Other'||gName==='Guidance')continue;
+        const g=metricGroups[gName];
+        if(g.keywords.some(kw=>lower.includes(kw))){
+          g.rows.push([key,row]);matched=true;break;
+        }
+      }
+    }
+    if(!matched)metricGroups['Other'].rows.push([key,row]);
+  });
+
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div><span style="font-family:var(--sans);font-size:14px;color:var(--text)">'+sortedRows.length+' metrics</span> <span style="font-family:var(--sans);font-size:12px;color:var(--text4)">across '+columns.length+' periods</span></div>';
   // Year toggle buttons
   h+='<div style="display:flex;gap:4px">';
   sortedYears.forEach(y=>{h+='<button class="ptab on" style="font-size:10px;padding:3px 8px" id="yr-'+y+'" onclick="toggleMetYear(\''+y+'\',this)">'+y+'</button>';});
   h+='</div></div>';
 
-  // Table
-  h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th style="min-width:220px;position:sticky;left:0;background:var(--bg);z-index:2">Metric</th>';
+  // Table with grouped sections
+  h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th style="min-width:240px;position:sticky;left:0;background:var(--bg);z-index:2">Metric</th>';
   columns.forEach(col=>{
-    const isQ=col.level==='q';const isH=col.level==='h';
-    h+='<th class="kv met-col-'+col.year+(isQ?' met-q':'')+(isH?' met-h':'')+'" style="min-width:80px;font-size:10px;white-space:nowrap">'+esc(col.label)+'</th>';
+    h+='<th class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'" style="min-width:80px;font-size:10px;white-space:nowrap">'+esc(col.label)+'</th>';
   });
   h+='</tr></thead><tbody>';
 
-  sortedRows.forEach(([key,row])=>{
-    h+='<tr><td style="font-family:var(--sans);font-size:12px;color:var(--gold);font-weight:500;position:sticky;left:0;background:var(--bg);z-index:1;white-space:nowrap">'+esc(key)+'</td>';
-    columns.forEach(col=>{
-      const v=row.values[col.label];
-      if(v&&v.value!=null){
-        const conf=v.confidence||0;
-        const confClr=conf>=0.8?'var(--green)':conf>=0.6?'var(--amber)':'var(--red)';
-        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'" style="font-family:var(--sans);font-size:12px" title="'+esc(v.source||'')+'">';
-        h+='<span style="font-weight:600">'+v.value+'</span>';
-        h+='<div style="width:30px;height:2px;background:var(--border);border-radius:1px;margin:2px auto 0"><div style="height:100%;width:'+(conf*100)+'%;background:'+confClr+';border-radius:1px"></div></div>';
-        h+='</td>';
-      }else if(v&&v.text){
-        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'" style="font-size:10px;color:var(--text4)">'+esc(v.text.substring(0,20))+'</td>';
-      }else{
-        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'">—</td>';
-      }
-    });
+  groupOrder.forEach(gName=>{
+    const g=metricGroups[gName];
+    if(!g.rows.length)return;
+    // Group header row (collapsible)
+    h+='<tr class="met-group-hdr" onclick="toggleMetGroup(\''+gName.replace(/[^a-zA-Z]/g,'')+'\')" style="cursor:pointer;background:var(--bg2)">';
+    h+='<td style="position:sticky;left:0;background:var(--bg2);z-index:1;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--gold);padding:10px 12px;letter-spacing:.5px">';
+    h+='<span id="met-grp-arr-'+gName.replace(/[^a-zA-Z]/g,'')+'">▾</span> '+g.icon+' '+esc(gName)+' <span style="font-weight:400;color:var(--text4);font-size:11px">('+g.rows.length+')</span></td>';
+    columns.forEach(col=>{h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'"></td>';});
     h+='</tr>';
+
+    // Metric rows in this group
+    g.rows.forEach(([key,row])=>{
+      h+='<tr class="met-grp-row-'+gName.replace(/[^a-zA-Z]/g,'')+'">';
+      h+='<td style="font-family:var(--sans);font-size:12px;color:var(--text);font-weight:500;position:sticky;left:0;background:var(--bg);z-index:1;white-space:nowrap;padding-left:24px">'+esc(key)+'</td>';
+      columns.forEach(col=>{
+        const v=row.values[col.label];
+        const tdCls='kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'');
+        if(v&&v.value!=null){
+          const conf=v.confidence||0;
+          const confClr=conf>=0.8?'var(--green)':conf>=0.6?'var(--amber)':'var(--red)';
+          h+='<td class="'+tdCls+'" style="font-family:var(--sans);font-size:12px" title="'+esc(v.source||'')+'">';
+          h+='<span style="font-weight:600">'+v.value+'</span>';
+          h+='<div style="width:30px;height:2px;background:var(--border);border-radius:1px;margin:2px auto 0"><div style="height:100%;width:'+(conf*100)+'%;background:'+confClr+';border-radius:1px"></div></div>';
+          h+='</td>';
+        }else if(v&&v.text){
+          h+='<td class="'+tdCls+'" style="font-size:10px;color:var(--text4)">'+esc(v.text.substring(0,20))+'</td>';
+        }else{
+          h+='<td class="'+tdCls+'">—</td>';
+        }
+      });
+      h+='</tr>';
+    });
   });
   h+='</tbody></table></div>';
   c.innerHTML=h;
+}
+
+function toggleMetGroup(gId){
+  const rows=document.querySelectorAll('.met-grp-row-'+gId);
+  const arr=E('met-grp-arr-'+gId);
+  const visible=rows.length&&rows[0].style.display!=='none';
+  rows.forEach(r=>{r.style.display=visible?'none':'';});
+  if(arr)arr.textContent=visible?'▸':'▾';
 }
 
 function toggleMetYear(year,btn){
