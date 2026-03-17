@@ -825,43 +825,141 @@ async function loadMetrics(ticker){
   try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metrics');if(!r.ok)throw new Error('Failed');const d=await r.json();renderMetrics(ticker,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
+function normalisePeriodLabel(p){
+  // Normalise messy period labels to standard format
+  if(!p)return p;
+  let s=p.replace(/_/g,' ').trim();
+  // "Fiscal_Year_Ended_December_31,_2024" -> "FY 2024"
+  if(/fiscal.year.*(\d{4})/i.test(s)){const m=s.match(/(\d{4})/);return m?'FY '+m[1]:s;}
+  // "December_31,_2024" or "December 31 2024" -> "FY 2024"
+  if(/^(december|march|june|september).*(\d{4})$/i.test(s)){const m=s.match(/(\d{4})/);return m?'FY '+m[1]:s;}
+  // "Nine_months_ended_September_30,_2024" -> skip (9M data)
+  if(/nine.month|9m|9.month/i.test(s))return null;
+  // "2025_Q4" -> "Q4 2025"
+  if(/^(\d{4})\s*(Q[1-4]|FY|HY|H[12])$/i.test(s)){const m=s.match(/^(\d{4})\s*(Q[1-4]|FY|HY|H[12])$/i);return m?m[2].toUpperCase()+' '+m[1]:s;}
+  // "2025_FY" -> "FY 2025"
+  if(/^(\d{4})\s*(FY|HY)$/i.test(s)){const m=s.match(/^(\d{4})\s*(FY|HY)$/i);return m?m[2].toUpperCase()+' '+m[1]:s;}
+  // Already formatted "Q4 2025" etc
+  if(/^(Q[1-4]|FY|HY|H[12])\s*\d{4}$/i.test(s))return s.toUpperCase();
+  return s;
+}
+
+function buildPeriodHierarchy(periods){
+  // Group periods into year -> FY/H1/H2 -> Q1-Q4
+  const years={};
+  periods.forEach(p=>{
+    const norm=normalisePeriodLabel(p);if(!norm)return;
+    const ym=norm.match(/(\d{4})/);if(!ym)return;
+    const year=ym[1];
+    if(!years[year])years[year]={fy:null,h1:null,h2:null,q1:null,q2:null,q3:null,q4:null,other:[]};
+    const upper=norm.toUpperCase();
+    if(upper.startsWith('FY'))years[year].fy={raw:p,label:norm};
+    else if(upper.startsWith('H1')||upper.startsWith('HY1'))years[year].h1={raw:p,label:norm};
+    else if(upper.startsWith('H2')||upper.startsWith('HY2'))years[year].h2={raw:p,label:norm};
+    else if(upper.startsWith('Q1'))years[year].q1={raw:p,label:norm};
+    else if(upper.startsWith('Q2'))years[year].q2={raw:p,label:norm};
+    else if(upper.startsWith('Q3'))years[year].q3={raw:p,label:norm};
+    else if(upper.startsWith('Q4'))years[year].q4={raw:p,label:norm};
+    else years[year].other.push({raw:p,label:norm});
+  });
+  return years;
+}
+
 function renderMetrics(ticker,d){
   const c=E('ck-metrics');let h='';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><span style="font-family:var(--sans);font-size:14px;color:var(--text)">'+d.total_metrics+' metrics</span> <span style="font-family:var(--sans);font-size:12px;color:var(--text4)">across '+d.periods.length+' periods</span></div></div>';
-  if(!d.periods.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No metrics extracted yet.</div>';return;}
-  // Period sub-tabs
-  h+='<div class="ptabs" id="met-ptabs">';
-  d.periods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showMetPeriod(\''+esc(p)+'\',this)">'+esc(p)+' ('+d.by_period[p].length+')</button>';});
-  h+='</div>';
-  // Metrics tables per period
-  d.periods.forEach((p,i)=>{
-    const metrics=d.by_period[p];
-    h+='<div id="met-'+esc(p)+'" style="'+(i>0?'display:none':'')+'">';
-    h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>Metric</th><th>Value</th><th>Unit</th><th>Segment</th><th>Confidence</th><th>Source</th></tr></thead><tbody>';
-    metrics.forEach(m=>{
-      const conf=m.confidence!=null?m.confidence:0;
-      const confClr=conf>=0.8?'var(--green)':conf>=0.6?'var(--amber)':'var(--red)';
-      const confBar='<div style="display:flex;align-items:center;gap:6px"><div style="width:40px;height:4px;background:var(--border);border-radius:2px"><div style="height:100%;width:'+(conf*100)+'%;background:'+confClr+';border-radius:2px"></div></div><span style="font-size:10px;color:'+confClr+'">'+conf.toFixed(2)+'</span></div>';
-      const val=m.metric_value!=null?m.metric_value:(m.metric_text?'<span style="color:var(--text3);font-size:11px">'+esc(m.metric_text.substring(0,60))+'</span>':'—');
-      const flagged=m.needs_review?'<span style="color:var(--amber);font-size:10px" title="Needs review"> ⚠</span>':'';
-      h+='<tr>';
-      h+='<td class="kn">'+esc(m.metric_name)+flagged+'</td>';
-      h+='<td style="font-family:var(--mono,monospace);font-weight:600">'+val+'</td>';
-      h+='<td style="font-size:11px;color:var(--text3)">'+esc(m.unit||'')+'</td>';
-      h+='<td style="font-size:11px;color:var(--text4)">'+esc(m.segment||'')+(m.geography?' · '+esc(m.geography):'')+'</td>';
-      h+='<td>'+confBar+'</td>';
-      h+='<td style="font-size:10px;color:var(--text4);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(m.source_snippet||'')+'">'+esc(m.source_snippet||'—')+'</td>';
-      h+='</tr>';
-    });
-    h+='</tbody></table></div></div>';
+  if(!d.total_metrics){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No metrics extracted yet.</div>';return;}
+
+  // Build period hierarchy and flatten to ordered columns
+  const hierarchy=buildPeriodHierarchy(d.periods);
+  const sortedYears=Object.keys(hierarchy).sort().reverse();
+
+  // Build flat column list with expand/collapse state
+  // Default: show FY and latest year's quarters
+  const latestYear=sortedYears[0];
+  let columns=[];// {raw, label, year, level}
+  sortedYears.forEach(year=>{
+    const y=hierarchy[year];
+    if(y.fy)columns.push({raw:y.fy.raw,label:'FY '+year,year,level:'fy'});
+    if(y.h1)columns.push({raw:y.h1.raw,label:'H1 '+year,year,level:'h'});
+    if(y.q1)columns.push({raw:y.q1.raw,label:'Q1 '+year,year,level:'q'});
+    if(y.q2)columns.push({raw:y.q2.raw,label:'Q2 '+year,year,level:'q'});
+    if(y.h2)columns.push({raw:y.h2.raw,label:'H2 '+year,year,level:'h'});
+    if(y.q3)columns.push({raw:y.q3.raw,label:'Q3 '+year,year,level:'q'});
+    if(y.q4)columns.push({raw:y.q4.raw,label:'Q4 '+year,year,level:'q'});
+    y.other.forEach(o=>columns.push({raw:o.raw,label:o.label,year,level:'other'}));
   });
+
+  // Pivot data: build rows keyed by "metric (unit) [segment]"
+  const rows={};
+  for(const [period,metrics] of Object.entries(d.by_period)){
+    for(const m of metrics){
+      const name=m.metric_name||'unknown';
+      const unit=m.unit||'';
+      const seg=m.segment||'';
+      // Build row key: "Revenue (USD_M) — Specialty"
+      let rowKey=name;
+      if(unit)rowKey+=' ('+unit+')';
+      if(seg&&seg.toLowerCase()!=='total'&&seg!=='guidance')rowKey+=' — '+seg;
+      if(!rows[rowKey])rows[rowKey]={name,unit,segment:seg,values:{},minConf:1};
+      // Map this period to the normalised period
+      const norm=normalisePeriodLabel(period);
+      if(!norm)continue;
+      // Find matching column
+      const col=columns.find(c=>normalisePeriodLabel(c.raw)===norm);
+      if(col){
+        const existing=rows[rowKey].values[col.label];
+        if(!existing||m.confidence>(existing.confidence||0)){
+          rows[rowKey].values[col.label]={value:m.metric_value,text:m.metric_text,confidence:m.confidence,source:m.source_snippet};
+        }
+        if(m.confidence<rows[rowKey].minConf)rows[rowKey].minConf=m.confidence;
+      }
+    }
+  }
+
+  // Sort rows: group by base metric name
+  const sortedRows=Object.entries(rows).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div><span style="font-family:var(--sans);font-size:14px;color:var(--text)">'+sortedRows.length+' metrics</span> <span style="font-family:var(--sans);font-size:12px;color:var(--text4)">across '+columns.length+' periods</span></div>';
+  // Year toggle buttons
+  h+='<div style="display:flex;gap:4px">';
+  sortedYears.forEach(y=>{h+='<button class="ptab on" style="font-size:10px;padding:3px 8px" id="yr-'+y+'" onclick="toggleMetYear(\''+y+'\',this)">'+y+'</button>';});
+  h+='</div></div>';
+
+  // Table
+  h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th style="min-width:220px;position:sticky;left:0;background:var(--bg);z-index:2">Metric</th>';
+  columns.forEach(col=>{
+    const isQ=col.level==='q';const isH=col.level==='h';
+    h+='<th class="kv met-col-'+col.year+(isQ?' met-q':'')+(isH?' met-h':'')+'" style="min-width:80px;font-size:10px;white-space:nowrap">'+esc(col.label)+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+
+  sortedRows.forEach(([key,row])=>{
+    h+='<tr><td style="font-family:var(--sans);font-size:12px;color:var(--gold);font-weight:500;position:sticky;left:0;background:var(--bg);z-index:1;white-space:nowrap">'+esc(key)+'</td>';
+    columns.forEach(col=>{
+      const v=row.values[col.label];
+      if(v&&v.value!=null){
+        const conf=v.confidence||0;
+        const confClr=conf>=0.8?'var(--green)':conf>=0.6?'var(--amber)':'var(--red)';
+        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'" style="font-family:var(--sans);font-size:12px" title="'+esc(v.source||'')+'">';
+        h+='<span style="font-weight:600">'+v.value+'</span>';
+        h+='<div style="width:30px;height:2px;background:var(--border);border-radius:1px;margin:2px auto 0"><div style="height:100%;width:'+(conf*100)+'%;background:'+confClr+';border-radius:1px"></div></div>';
+        h+='</td>';
+      }else if(v&&v.text){
+        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'" style="font-size:10px;color:var(--text4)">'+esc(v.text.substring(0,20))+'</td>';
+      }else{
+        h+='<td class="kv met-col-'+col.year+(col.level==='q'?' met-q':'')+(col.level==='h'?' met-h':'')+'">—</td>';
+      }
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
   c.innerHTML=h;
 }
 
-function showMetPeriod(p,btn){
-  document.querySelectorAll('[id^="met-"]').forEach(el=>{if(el.id!=='met-ptabs')el.style.display='none';});
-  const target=E('met-'+p);if(target)target.style.display='block';
-  E('met-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+function toggleMetYear(year,btn){
+  btn.classList.toggle('on');
+  const show=btn.classList.contains('on');
+  document.querySelectorAll('.met-col-'+year).forEach(el=>{el.style.display=show?'':'none';});
 }
 
 async function loadESG(ticker){
