@@ -779,3 +779,119 @@ async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = De
         "periods": list(by_period.keys()),
         "by_period": by_period,
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Competitive Advantage / Moat Analysis
+# ─────────────────────────────────────────────────────────────────
+@router.post("/companies/{ticker}/moat-analysis")
+async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Run a comprehensive competitive advantage analysis using all available data
+    for the company: thesis, metrics, documents, ESG, execution track record.
+    """
+    from services.llm_client import call_llm_json
+    from prompts import MOAT_ANALYSIS
+    from apps.api.models import (
+        ExtractedMetric, ESGData, DocumentSection,
+        ManagementStatement, ExecutionScorecard,
+    )
+
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    # Gather thesis
+    thesis_text = "No thesis on file."
+    thesis_q = await db.execute(
+        select(ThesisVersion).where(ThesisVersion.company_id == company.id)
+        .order_by(ThesisVersion.thesis_date.desc()).limit(1)
+    )
+    thesis = thesis_q.scalar_one_or_none()
+    if thesis:
+        thesis_text = f"Core thesis: {thesis.core_thesis or 'N/A'}\nKey risks: {thesis.key_risks or 'N/A'}\nValuation: {thesis.valuation_framework or 'N/A'}"
+
+    # Gather metrics (latest periods)
+    metrics_q = await db.execute(
+        select(ExtractedMetric).where(ExtractedMetric.company_id == company.id)
+        .order_by(ExtractedMetric.period_label.desc()).limit(100)
+    )
+    metrics = metrics_q.scalars().all()
+    metrics_text = "\n".join(
+        f"{m.metric_name}: {m.metric_value} {m.unit or ''} ({m.period_label})"
+        for m in metrics if m.metric_value is not None
+    )[:5000] or "No financial metrics available."
+
+    # Gather document commentary (from sections)
+    sections_q = await db.execute(
+        select(DocumentSection).where(
+            DocumentSection.document_id.in_(
+                select(Document.id).where(Document.company_id == company.id)
+            )
+        ).order_by(DocumentSection.id.desc()).limit(20)
+    )
+    sections = sections_q.scalars().all()
+    commentary_text = "\n\n".join(
+        s.text_content[:500] for s in sections if s.text_content
+    )[:8000] or "No document commentary available."
+
+    # Gather ESG data
+    esg_text = "No ESG data available."
+    import json as _json
+    esg_q = await db.execute(select(ESGData).where(ESGData.company_id == company.id))
+    esg_row = esg_q.scalar_one_or_none()
+    if esg_row and esg_row.data:
+        esg_dict = _json.loads(esg_row.data) if isinstance(esg_row.data, str) else esg_row.data
+        filled = {k: v for k, v in esg_dict.items() if v}
+        if filled:
+            esg_text = "\n".join(f"{k}: {v}" for k, v in filled.items())
+        if esg_row.ai_summary:
+            esg_text += f"\n\nAI Summary: {esg_row.ai_summary}"
+
+    # Gather execution track record
+    execution_text = "No execution data available."
+    scorecard_q = await db.execute(
+        select(ExecutionScorecard).where(
+            ExecutionScorecard.company_id == company.id,
+            ExecutionScorecard.period == "all_time",
+        )
+    )
+    scorecard = scorecard_q.scalar_one_or_none()
+    if scorecard:
+        execution_text = f"Execution score: {scorecard.overall_score}\n"
+        execution_text += f"Guidance bias: {scorecard.guidance_bias or 'N/A'}\n"
+        execution_text += f"Reliability: {scorecard.execution_reliability or 'N/A'}\n"
+        execution_text += f"Strategic consistency: {scorecard.strategic_consistency or 'N/A'}\n"
+        execution_text += f"Delivered: {scorecard.delivered_count}, Missed: {scorecard.missed_count}\n"
+        if scorecard.ai_assessment:
+            execution_text += f"Assessment: {scorecard.ai_assessment}"
+
+    # Statements summary
+    stmts_q = await db.execute(
+        select(ManagementStatement).where(
+            ManagementStatement.company_id == company.id
+        ).order_by(ManagementStatement.statement_date.desc()).limit(20)
+    )
+    stmts = stmts_q.scalars().all()
+    if stmts:
+        execution_text += "\n\nRecent statements:\n"
+        for s in stmts[:10]:
+            score_str = f" [Score: {s.score}]" if s.score is not None else ""
+            execution_text += f"- ({s.statement_date}) {s.statement_text}{score_str}\n"
+
+    # Run LLM analysis
+    prompt = MOAT_ANALYSIS.format(
+        company=company.name, ticker=company.ticker,
+        sector=company.sector or "N/A",
+        thesis=thesis_text, metrics=metrics_text,
+        commentary=commentary_text, esg_data=esg_text,
+        execution=execution_text,
+    )
+
+    try:
+        result = call_llm_json(prompt, max_tokens=4096)
+    except Exception as e:
+        raise HTTPException(502, f"Analysis failed: {str(e)[:200]}")
+
+    return result

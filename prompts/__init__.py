@@ -768,3 +768,72 @@ Schema:
   }}
 }}
 """
+
+# ═══════════════════════════════════════════════════════════════════
+# COMPETITIVE ADVANTAGE / MOAT ANALYSIS
+# ═══════════════════════════════════════════════════════════════════
+
+MOAT_ANALYSIS = """\
+You are a senior investment analyst specialising in competitive strategy and moat analysis.
+Conduct a rigorous assessment of this company's competitive advantages using ALL available data.
+
+COMPANY: {company} ({ticker})
+SECTOR: {sector}
+
+=== INVESTMENT THESIS ===
+{thesis}
+
+=== FINANCIAL DATA (extracted metrics) ===
+{metrics}
+
+=== MANAGEMENT COMMENTARY (from transcripts/documents) ===
+{commentary}
+
+=== ESG & GOVERNANCE DATA ===
+{esg_data}
+
+=== MANAGEMENT EXECUTION TRACK RECORD ===
+{execution}
+
+CRITICAL RULES:
+1. Base your analysis ONLY on the data provided above. Do NOT fabricate metrics or comparisons.
+2. If data is insufficient for a section, say so explicitly and note what's missing.
+3. Be precise and specific — avoid generic statements.
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "moat_rating": "wide" | "narrow" | "none",
+  "moat_trajectory": "strengthening" | "stable" | "weakening",
+  "sources": [
+    {{
+      "type": "network_effects" | "switching_costs" | "cost_advantages" | "intangible_assets" | "efficient_scale",
+      "strength": "strong" | "moderate" | "eroding" | "not_applicable",
+      "explanation": "<WHY it exists and HOW durable it is — be specific>",
+      "evidence": "<specific data points from the sources above>"
+    }}
+  ],
+  "trajectory_assessment": {{
+    "verdict": "<clear directional statement>",
+    "recent_developments": "<competitive, regulatory, technological, macro factors>",
+    "roic_trend": "<expanding, stable, or compressing vs cost of capital>",
+    "market_relevance": "<is the addressable market growing into the moat or making it less relevant?>"
+  }},
+  "key_drivers": [
+    "<specific factor 1 — e.g. '30-year rig activity datasets create switching costs'>",
+    "<specific factor 2>",
+    "<specific factor 3>"
+  ],
+  "key_risks": [
+    {{
+      "threat": "<precise description>",
+      "time_horizon": "near_term" | "medium_term" | "structural",
+      "probability_impact": "high" | "medium" | "low",
+      "management_response": "<is management addressing this?>"
+    }}
+  ],
+  "portfolio_implication": "<2-3 sentences: valuation sensitivity, position sizing, key variable to monitor>",
+  "data_gaps": ["<what additional information would sharpen this assessment>"]
+}}
+"""

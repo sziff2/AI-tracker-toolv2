@@ -333,17 +333,18 @@ function renderCockpit(ticker,d){
   // Global chat bar
   h+='<div style="display:flex;gap:8px;margin-bottom:20px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(co.name)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
   h+='<div id="ck-chat-history" style="margin-bottom:20px"></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'moat\',this)">Moat</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-moat" style="display:none"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-execution" style="display:none"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-metrics" style="display:none"><div class="ld" id="metrics-loading">Loading metrics…</div></div>';
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','kpis','results','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}}
+function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
@@ -684,6 +685,102 @@ function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extra
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
+// ── Moat / Competitive Advantage tab ─────────────────────────
+async function loadMoat(ticker){
+  const c=E('ck-moat');if(!c)return;
+  // Check if we already have results cached
+  if(c.dataset.loaded===ticker){return;}
+  c.innerHTML='<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">🏰</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:16px">Competitive advantage analysis uses all available data: thesis, financials, management commentary, ESG, and execution track record.</div><button class="btn" onclick="runMoatAnalysis(\''+esc(ticker)+'\')">🏰 Run Moat Analysis</button></div>';
+}
+
+async function runMoatAnalysis(ticker){
+  const c=E('ck-moat');
+  c.innerHTML='<div class="ld">Analysing competitive advantages… This pulls all available data and may take 30-60 seconds.</div>';
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/moat-analysis',{method:'POST'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    const d=await r.json();
+    c.dataset.loaded=ticker;
+    renderMoat(ticker,d);
+  }catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div><button class="btn2" style="margin-top:12px" onclick="runMoatAnalysis(\''+esc(ticker)+'\')">Retry</button>';}
+}
+
+function renderMoat(ticker,d){
+  const c=E('ck-moat');let h='';
+  // Header strip
+  const ratingClr=d.moat_rating==='wide'?'var(--green)':d.moat_rating==='narrow'?'var(--amber)':'var(--red)';
+  const trajClr=d.moat_trajectory==='strengthening'?'var(--green)':d.moat_trajectory==='weakening'?'var(--red)':'var(--amber)';
+  h+='<div class="ck-strip">';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Moat Width</div><div class="ck-stat-val" style="color:'+ratingClr+';text-transform:capitalize">'+esc(d.moat_rating||'—')+'</div></div>';
+  h+='<div class="ck-stat"><div class="ck-stat-label">Trajectory</div><div class="ck-stat-val" style="color:'+trajClr+';text-transform:capitalize">'+esc(d.moat_trajectory||'—')+'</div></div>';
+  h+='</div>';
+
+  // Sources of advantage
+  if(d.sources&&d.sources.length){
+    h+='<h2>Sources of Competitive Advantage</h2>';
+    d.sources.forEach(s=>{
+      if(s.strength==='not_applicable')return;
+      const sClr=s.strength==='strong'?'var(--green)':s.strength==='moderate'?'var(--amber)':'var(--red)';
+      const label=s.type.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase());
+      h+='<div class="cd" style="border-left-color:'+sClr+';padding:16px;margin-bottom:8px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center"><div class="cd-t" style="margin-bottom:0">'+esc(label)+'</div><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+sClr+';text-transform:uppercase">'+esc(s.strength)+'</span></div>';
+      h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-top:8px;line-height:1.6">'+esc(s.explanation||'')+'</div>';
+      if(s.evidence){h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:6px;font-style:italic">Evidence: '+esc(s.evidence)+'</div>';}
+      h+='</div>';
+    });
+  }
+
+  // Trajectory assessment
+  if(d.trajectory_assessment){
+    const ta=d.trajectory_assessment;
+    h+='<h2>Trajectory Assessment</h2>';
+    h+='<div class="cd gold"><div class="cd-c" style="font-size:13px">'+esc(ta.verdict||'')+'</div></div>';
+    if(ta.recent_developments){h+='<div class="cd"><div class="cd-t">Recent Developments</div><div class="cd-c" style="font-size:13px">'+esc(ta.recent_developments)+'</div></div>';}
+    if(ta.roic_trend){h+='<div class="cd"><div class="cd-t">ROIC Trend</div><div class="cd-c" style="font-size:13px">'+esc(ta.roic_trend)+'</div></div>';}
+    if(ta.market_relevance){h+='<div class="cd"><div class="cd-t">Market Relevance</div><div class="cd-c" style="font-size:13px">'+esc(ta.market_relevance)+'</div></div>';}
+  }
+
+  // Key drivers
+  if(d.key_drivers&&d.key_drivers.length){
+    h+='<h2>Key Drivers of Advantage</h2>';
+    d.key_drivers.forEach((dr,i)=>{
+      h+='<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-family:var(--sans);font-size:13px"><span style="color:var(--gold);font-weight:700;min-width:20px">'+(i+1)+'</span><span style="color:var(--text2)">'+esc(dr)+'</span></div>';
+    });
+  }
+
+  // Key risks
+  if(d.key_risks&&d.key_risks.length){
+    h+='<h2>Key Risks to Advantage</h2>';
+    d.key_risks.forEach(risk=>{
+      const hzClr=risk.time_horizon==='near_term'?'var(--red)':risk.time_horizon==='structural'?'var(--amber)':'var(--text3)';
+      const impClr=risk.probability_impact==='high'?'var(--red)':risk.probability_impact==='medium'?'var(--amber)':'var(--text4)';
+      h+='<div class="cd" style="padding:14px;margin-bottom:6px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-family:var(--sans);font-size:13px;color:var(--text);font-weight:500">'+esc(risk.threat||'')+'</div>';
+      h+='<div style="display:flex;gap:8px"><span style="font-family:var(--sans);font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg3);color:'+hzClr+'">'+esc((risk.time_horizon||'').replace(/_/g,' '))+'</span><span style="font-family:var(--sans);font-size:10px;padding:2px 8px;border-radius:4px;background:var(--bg3);color:'+impClr+'">'+esc(risk.probability_impact||'')+'</span></div></div>';
+      if(risk.management_response){h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3);margin-top:6px">Mgmt response: '+esc(risk.management_response)+'</div>';}
+      h+='</div>';
+    });
+  }
+
+  // Portfolio implication
+  if(d.portfolio_implication){
+    h+='<h2>Portfolio Implication</h2>';
+    h+='<div class="cd gold"><div class="cd-c" style="font-size:13px">'+esc(d.portfolio_implication)+'</div></div>';
+  }
+
+  // Data gaps
+  if(d.data_gaps&&d.data_gaps.length){
+    h+='<h2 style="color:var(--text4)">Data Gaps</h2>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    d.data_gaps.forEach(g=>{h+='<span style="font-family:var(--sans);font-size:11px;padding:4px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text4)">'+esc(g)+'</span>';});
+    h+='</div>';
+  }
+
+  // Re-run button
+  h+='<div style="margin-top:24px;text-align:center"><button class="btn2" onclick="c=E(\'ck-moat\');c.dataset.loaded=\'\';runMoatAnalysis(\''+esc(ticker)+'\')">🔄 Re-run Analysis</button></div>';
+  c.innerHTML=h;
+}
+
 // ── Execution tab ────────────────────────────────────────────
 async function loadExecution(ticker){
   const c=E('ck-execution');if(!c)return;c.innerHTML='<div class="ld">Loading execution data…</div>';
