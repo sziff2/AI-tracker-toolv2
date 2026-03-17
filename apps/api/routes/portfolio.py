@@ -264,6 +264,9 @@ class BulkHoldingRow(BaseModel):
     weight: float = 0
     cost_basis: Optional[float] = None
     status: str = "active"
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    country: Optional[str] = None
 
 class BulkHoldingsImport(BaseModel):
     holdings: list[BulkHoldingRow]
@@ -272,33 +275,53 @@ class BulkHoldingsImport(BaseModel):
 async def bulk_import_holdings(portfolio_id: uuid.UUID, body: BulkHoldingsImport, db: AsyncSession = Depends(get_db)):
     results = []
     for row in body.holdings:
-        try:
-            company = await _get_company(db, row.ticker)
-            # Check if already exists
-            existing_q = await db.execute(
-                select(PortfolioHolding).where(
-                    PortfolioHolding.portfolio_id == portfolio_id,
-                    PortfolioHolding.company_id == company.id,
+        # Look up company; auto-create if name provided and not found
+        co_q = await db.execute(select(Company).where(Company.ticker == row.ticker.upper()))
+        company = co_q.scalar_one_or_none()
+        if not company:
+            if row.name:
+                company = Company(
+                    id=uuid.uuid4(),
+                    ticker=row.ticker.upper(),
+                    name=row.name,
+                    sector=row.sector or None,
+                    country=row.country or None,
+                    coverage_status="active",
                 )
-            )
-            existing = existing_q.scalar_one_or_none()
-            if existing:
-                existing.weight = row.weight
-                if row.cost_basis: existing.cost_basis = row.cost_basis
-                existing.status = row.status
-                results.append({"ticker": row.ticker, "status": "updated"})
+                db.add(company)
+                await db.flush()
+                auto_created = True
             else:
-                h = PortfolioHolding(
-                    id=uuid.uuid4(), portfolio_id=portfolio_id, company_id=company.id,
-                    weight=row.weight, cost_basis=row.cost_basis, status=row.status,
-                    date_added=datetime.now(timezone.utc),
-                )
-                db.add(h)
-                results.append({"ticker": row.ticker, "status": "created"})
-        except HTTPException:
-            results.append({"ticker": row.ticker, "status": "company_not_found"})
+                results.append({"ticker": row.ticker, "status": "company_not_found"})
+                continue
+        else:
+            auto_created = False
+
+        # Upsert holding
+        existing_q = await db.execute(
+            select(PortfolioHolding).where(
+                PortfolioHolding.portfolio_id == portfolio_id,
+                PortfolioHolding.company_id == company.id,
+            )
+        )
+        existing = existing_q.scalar_one_or_none()
+        if existing:
+            existing.weight = row.weight
+            if row.cost_basis is not None: existing.cost_basis = row.cost_basis
+            existing.status = row.status
+            results.append({"ticker": row.ticker, "status": "company_created_and_updated" if auto_created else "updated"})
+        else:
+            h = PortfolioHolding(
+                id=uuid.uuid4(), portfolio_id=portfolio_id, company_id=company.id,
+                weight=row.weight, cost_basis=row.cost_basis, status=row.status,
+                date_added=datetime.now(timezone.utc),
+            )
+            db.add(h)
+            results.append({"ticker": row.ticker, "status": "company_created" if auto_created else "created"})
+
     await db.commit()
-    return {"imported": len([r for r in results if r["status"] != "company_not_found"]), "results": results}
+    imported = len([r for r in results if r["status"] not in ("company_not_found",)])
+    return {"imported": imported, "results": results}
 
 
 # ═══════════════════════════════════════════════════════════════

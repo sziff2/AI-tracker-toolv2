@@ -1595,7 +1595,10 @@ async function importPortfolioCSV(input){
         const weight=parseFloat(rawWeight.replace('%',''))||0;
         const costBasis=get('cost basis')||get('cost')||'';
         const status=get('status')||'active';
-        holdings.push({ticker,weight,cost_basis:costBasis?parseFloat(costBasis):null,status});
+        const hName=get('name')||'';
+        const hSector=get('sector')||'';
+        const hCountry=get('country')||'';
+        holdings.push({ticker,weight,cost_basis:costBasis?parseFloat(costBasis):null,status,name:hName||undefined,sector:hSector||undefined,country:hCountry||undefined});
         const price=get('current price')||get('price')||'';
         const currency=get('currency')||'USD';
         if(price&&!isNaN(parseFloat(price)))prices.push({ticker,price:parseFloat(price),currency});
