@@ -1,5 +1,5 @@
 """
-Pydantic schemas for the Research CoWork Agent.
+Pydantic schemas for API request / response validation.
 Includes probabilistic scenario and Bayesian signal structures.
 """
 
@@ -13,9 +13,196 @@ from pydantic import BaseModel, Field
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Company
+# ═══════════════════════════════════════════════════════════════════
+class CompanyCreate(BaseModel):
+    ticker: str
+    name: str
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    country: Optional[str] = None
+    coverage_status: str = "active"
+    primary_analyst: Optional[str] = None
+
+
+class CompanyUpdate(BaseModel):
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    country: Optional[str] = None
+    coverage_status: Optional[str] = None
+    primary_analyst: Optional[str] = None
+
+
+class CompanyOut(BaseModel):
+    id: uuid.UUID
+    ticker: str
+    name: str
+    sector: Optional[str]
+    industry: Optional[str]
+    country: Optional[str]
+    coverage_status: Optional[str]
+    primary_analyst: Optional[str]
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Document
+# ═══════════════════════════════════════════════════════════════════
+class DocumentCreate(BaseModel):
+    document_type: str
+    title: str
+    period_label: str
+    source: str = "manual"
+    source_url: Optional[str] = None
+    published_at: Optional[datetime] = None
+
+
+class DocumentOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    document_type: Optional[str]
+    title: Optional[str]
+    period_label: Optional[str]
+    source: Optional[str]
+    source_url: Optional[str]
+    published_at: Optional[datetime]
+    file_path: Optional[str]
+    checksum: Optional[str]
+    parsing_status: Optional[str]
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentOutFull(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    document_type: Optional[str]
+    period_label: Optional[str]
+    original_filename: Optional[str]
+    file_size: Optional[int]
+    page_count: Optional[int]
+    upload_timestamp: Optional[datetime]
+    file_path: Optional[str]
+    checksum: Optional[str]
+    parsing_status: Optional[str]
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Extracted Metric
+# ═══════════════════════════════════════════════════════════════════
+class ExtractedMetricOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    document_id: uuid.UUID
+    period_label: Optional[str]
+    metric_name: str
+    metric_value: Optional[float]
+    metric_text: Optional[str]
+    unit: Optional[str]
+    segment: Optional[str]
+    geography: Optional[str]
+    source_snippet: Optional[str]
+    page_number: Optional[int]
+    confidence: Optional[float]
+    needs_review: bool
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Thesis
+# ═══════════════════════════════════════════════════════════════════
+class ThesisCreate(BaseModel):
+    thesis_date: date
+    core_thesis: str
+    variant_perception: Optional[str] = None
+    key_risks: Optional[str] = None
+    debate_points: Optional[str] = None
+    capital_allocation_view: Optional[str] = None
+    valuation_framework: Optional[str] = None
+
+
+class ThesisOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    thesis_date: date
+    core_thesis: Optional[str]
+    variant_perception: Optional[str]
+    key_risks: Optional[str]
+    debate_points: Optional[str]
+    capital_allocation_view: Optional[str]
+    valuation_framework: Optional[str]
+    active: bool
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Event Assessment
+# ═══════════════════════════════════════════════════════════════════
+class EventAssessmentOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    document_id: uuid.UUID
+    event_type: Optional[str]
+    thesis_direction: Optional[str]
+    surprise_level: Optional[str]
+    summary: Optional[str]
+    confidence: Optional[float]
+    needs_review: bool
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Research Output
+# ═══════════════════════════════════════════════════════════════════
+class ResearchOutputOut(BaseModel):
+    id: uuid.UUID
+    company_id: uuid.UUID
+    period_label: Optional[str]
+    output_type: Optional[str]
+    content_path: Optional[str]
+    review_status: Optional[str]
+    approved_by: Optional[str]
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Review Queue
+# ═══════════════════════════════════════════════════════════════════
+class ReviewAction(BaseModel):
+    comment: Optional[str] = None
+
+
+class ReviewQueueOut(BaseModel):
+    id: uuid.UUID
+    entity_type: str
+    entity_id: uuid.UUID
+    queue_reason: Optional[str]
+    priority: Optional[str]
+    assigned_to: Optional[str]
+    status: str
+    created_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ═══════════════════════════════════════════════════════════════════
 # LLM Response Schemas  (used by prompt services)
 # ═══════════════════════════════════════════════════════════════════
-
 class ClassifiedDocument(BaseModel):
     document_type: str
     company_ticker: Optional[str] = None
@@ -78,50 +265,37 @@ class IRQuestion(BaseModel):
 # ─────────────────────────────────────────────────────────────────
 
 class ScenarioOutcome(BaseModel):
-    """
-    A single weighted scenario for a key assumption or forward outlook.
-    Probabilities across all scenarios for the same dimension should sum to ~1.0.
-    """
+    """Single weighted scenario. Probabilities across scenarios should sum to ~1.0."""
     label: str                          # e.g. "Bull", "Base", "Bear"
     probability: float                  # 0.0–1.0
-    description: str                    # What this scenario implies
-    key_trigger: str                    # What would cause this outcome
+    description: str
+    key_trigger: str
     thesis_impact: str                  # strengthened | weakened | neutral
-    implied_return: Optional[str] = None  # e.g. "+30%", "-15%", qualitative
+    implied_return: Optional[str] = None
 
 
 class BayesianSignal(BaseModel):
-    """
-    A single piece of evidence from the period that should update prior beliefs.
-    Captures what the analyst believed before, what the evidence suggests,
-    and the direction + magnitude of the update.
-    """
-    assumption: str                     # The prior belief being updated
-    prior_view: str                     # What was believed before this period
-    new_evidence: str                   # What the data/commentary showed
+    """Evidence that updates a prior belief."""
+    assumption: str
+    prior_view: str
+    new_evidence: str
     posterior_direction: str            # strengthened | weakened | unchanged | reversed
     update_magnitude: str               # large | moderate | small
-    confidence: float                   # 0.0–1.0, how certain is this signal
+    confidence: float
     source: str                         # earnings | transcript | broker | guidance
 
 
 class AssumptionProbability(BaseModel):
-    """
-    A key thesis assumption with explicit probability assignment.
-    Used to build a probability tree for the investment case.
-    """
-    assumption: str                     # e.g. "CBAM fully implemented by 2026"
-    probability: float                  # analyst's current probability: 0.0–1.0
-    direction: str                      # positive | negative | neutral for thesis
-    rationale: str                      # why this probability was assigned
-    key_watch: str                      # what to monitor to update this
+    """Key thesis assumption with explicit probability."""
+    assumption: str
+    probability: float                  # 0.0–1.0
+    direction: str                      # positive | negative | neutral
+    rationale: str
+    key_watch: str
 
 
 class ProbabilisticBriefing(BaseModel):
-    """
-    Full probabilistic output embedded in the briefing.
-    Scenario tree + Bayesian signal updates + key assumption probabilities.
-    """
+    """Full probabilistic output block embedded in a briefing."""
     scenarios: list[ScenarioOutcome] = Field(default_factory=list)
     bayesian_signals: list[BayesianSignal] = Field(default_factory=list)
     key_assumptions: list[AssumptionProbability] = Field(default_factory=list)
@@ -141,141 +315,4 @@ class BriefingSection(BaseModel):
     risks: str
     follow_ups: str
     bottom_line: str
-    # Optional probabilistic enrichment — present only when prompts request it
     probabilistic: Optional[ProbabilisticBriefing] = None
-
-
-# ═══════════════════════════════════════════════════════════════════
-# API output schemas (ORM → response)
-# ═══════════════════════════════════════════════════════════════════
-
-class CompanyOut(BaseModel):
-    id: uuid.UUID
-    ticker: str
-    name: str
-    sector: Optional[str]
-    country: Optional[str]
-    coverage_status: Optional[str]
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class DocumentOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    document_type: Optional[str]
-    period_label: Optional[str]
-    original_filename: Optional[str]
-    parsing_status: Optional[str]
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class DocumentOutFull(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    document_type: Optional[str]
-    period_label: Optional[str]
-    original_filename: Optional[str]
-    file_size: Optional[int]
-    page_count: Optional[int]
-    upload_timestamp: Optional[datetime]
-    file_path: Optional[str]
-    checksum: Optional[str]
-    parsing_status: Optional[str]
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class ExtractedMetricOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    document_id: uuid.UUID
-    period_label: Optional[str]
-    metric_name: str
-    metric_value: Optional[float]
-    metric_text: Optional[str]
-    unit: Optional[str]
-    segment: Optional[str]
-    geography: Optional[str]
-    source_snippet: Optional[str]
-    page_number: Optional[int]
-    confidence: Optional[float]
-    needs_review: bool
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class ThesisCreate(BaseModel):
-    thesis_date: date
-    core_thesis: str
-    variant_perception: Optional[str] = None
-    key_risks: Optional[str] = None
-    debate_points: Optional[str] = None
-    capital_allocation_view: Optional[str] = None
-    valuation_framework: Optional[str] = None
-
-
-class ThesisOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    thesis_date: date
-    core_thesis: Optional[str]
-    variant_perception: Optional[str]
-    key_risks: Optional[str]
-    debate_points: Optional[str]
-    capital_allocation_view: Optional[str]
-    valuation_framework: Optional[str]
-    active: bool
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class EventAssessmentOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    document_id: uuid.UUID
-    event_type: Optional[str]
-    thesis_direction: Optional[str]
-    surprise_level: Optional[str]
-    summary: Optional[str]
-    confidence: Optional[float]
-    needs_review: bool
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class ResearchOutputOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    period_label: Optional[str]
-    output_type: Optional[str]
-    content_path: Optional[str]
-    review_status: Optional[str]
-    approved_by: Optional[str]
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
-class ReviewAction(BaseModel):
-    comment: Optional[str] = None
-
-
-class ReviewQueueOut(BaseModel):
-    id: uuid.UUID
-    entity_type: str
-    entity_id: uuid.UUID
-    queue_reason: Optional[str]
-    priority: Optional[str]
-    assigned_to: Optional[str]
-    status: str
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
