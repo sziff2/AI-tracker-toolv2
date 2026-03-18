@@ -470,3 +470,294 @@ Schema:
   }}
 }}
 """
+
+
+# ─────────────────────────────────────────────────────────────────
+# Generic fallbacks (used by metric_extractor.py)
+# ─────────────────────────────────────────────────────────────────
+KPI_EXTRACTOR = """\
+You are a KPI extraction agent for an investment research system.
+Extract ONLY explicitly stated quantitative metrics from the document text.
+
+RULES:
+- Do NOT infer or calculate any values.
+- Every metric must include the exact source snippet.
+- If a value is ambiguous, set confidence below 0.8.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "metric_name": "<n>",
+  "metric_value": <number or null>,
+  "metric_text": "<raw text>",
+  "unit": "<EUR_M | USD_M | % | bps | x | null>",
+  "segment": "<segment or null>",
+  "geography": "<region or null>",
+  "source_snippet": "<verbatim>",
+  "page_number": <int or null>,
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+GUIDANCE_EXTRACTOR = """\
+You are a guidance extraction agent. Identify forward-looking management
+guidance statements from the text below.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "metric_name": "<metric being guided>",
+  "guidance_type": "range" | "point" | "directional",
+  "guidance_text": "<full guidance statement>",
+  "low": <number or null>,
+  "high": <number or null>,
+  "unit": "<unit or null>",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+THESIS_COMPARATOR_V2 = THESIS_COMPARATOR  # alias used by experiments.py
+
+# ─────────────────────────────────────────────────────────────────
+# ESG extractors (used by metric_extractor.py for ESG doc types)
+# ─────────────────────────────────────────────────────────────────
+ESG_ENVIRONMENTAL_EXTRACTOR = """\
+You are an ESG environmental data extraction agent analysing a corporate document.
+Extract ALL environmental metrics, commitments, and disclosures.
+
+Focus areas:
+- GHG emissions: Scope 1, 2, 3 (absolute and intensity), total carbon footprint
+- Energy: renewable vs non-renewable consumption, energy intensity
+- Climate targets: SBTi status, net-zero commitments, interim targets, base year, progress
+- NACE sector exposures: revenue % from high-impact climate sectors
+- Biodiversity: operations near sensitive areas, land use, deforestation policies
+- Water: consumption, discharge, pollution incidents, water stress exposure
+- Waste: hazardous waste generated, recycling rates, circular economy initiatives
+- Physical & transition risk: exposure assessment, TCFD alignment, scenario analysis
+
+RULES:
+- Extract ONLY explicitly stated data. Do NOT infer or estimate.
+- Include the exact source snippet for every item.
+- Note the reporting year/period for each metric.
+- Flag whether data is audited/assured or self-reported.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "ghg_emissions" | "energy" | "climate_target" | "nace_exposure" | "biodiversity" | "water" | "waste" | "transition_risk",
+  "metric_name": "<specific metric>",
+  "value": "<stated value>",
+  "unit": "<unit or null>",
+  "year": "<reporting year or null>",
+  "assured": true | false | null,
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+ESG_SOCIAL_EXTRACTOR = """\
+You are an ESG social data extraction agent analysing a corporate document.
+Extract ALL social metrics, policies, and disclosures.
+
+Focus areas:
+- Workforce: headcount, gender diversity, pay gap, turnover, training hours
+- Health & safety: TRIR, fatalities, lost-time incidents
+- Human rights: policy existence, supply chain due diligence, UNGC compliance
+- Community: social investment, controversy incidents
+- Supply chain: labour standards, audit coverage
+
+RULES:
+- Extract ONLY explicitly stated data. Do NOT infer or estimate.
+- Include the exact source snippet for every item.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "workforce" | "health_safety" | "human_rights" | "community" | "supply_chain",
+  "metric_name": "<specific metric>",
+  "value": "<stated value>",
+  "unit": "<unit or null>",
+  "year": "<reporting year or null>",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+ESG_GOVERNANCE_EXTRACTOR = """\
+You are an ESG governance data extraction agent analysing a corporate document.
+Extract ALL governance metrics, structures, and disclosures.
+
+Focus areas:
+- Board composition: size, independence %, diversity, tenure
+- Executive pay: CEO ratio, LTI/STI structure, ESG linkage
+- Audit: committee independence, auditor tenure, non-audit fees
+- Anti-corruption: policy, training, incidents, whistleblower
+- Controversial weapons: involvement y/n
+- Shareholder rights: voting structure, related-party transactions
+
+RULES:
+- Extract ONLY explicitly stated data. Do NOT infer or estimate.
+- Include the exact source snippet for every item.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "category": "board" | "executive_pay" | "audit" | "anti_corruption" | "weapons" | "shareholder_rights",
+  "metric_name": "<specific metric>",
+  "value": "<stated value>",
+  "unit": "<unit or null>",
+  "year": "<reporting year or null>",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+--- DOCUMENT TEXT ---
+{text}
+"""
+
+# ─────────────────────────────────────────────────────────────────
+# Management accountability prompts (used by execution route)
+# ─────────────────────────────────────────────────────────────────
+MGMT_TRACKER = """\
+You are a management accountability analyst extracting forward-looking statements
+made by company management in earnings calls, presentations, and press releases.
+
+Extract every SPECIFIC, VERIFIABLE forward-looking statement — promises, targets,
+predictions, and guidance that can later be assessed against actual results.
+
+COMPANY: {company} ({ticker})
+PERIOD: {period}
+
+--- DOCUMENT TEXT ---
+{text}
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+Item schema:
+{{
+  "speaker": "CEO" | "CFO" | "COO" | "management" | "<name>",
+  "category": "revenue" | "margins" | "capex" | "cost_reduction" | "strategy" | "market_share" | "balance_sheet" | "regulation",
+  "statement_text": "<concise summary of what was promised/predicted>",
+  "target_metric": "<specific metric being targeted>",
+  "target_value": "<specific target value, e.g. 18%, $500M, 3x>",
+  "target_direction": "increase" | "decrease" | "maintain" | "achieve",
+  "target_timeframe": "<e.g. next quarter, 2 years, medium term, by 2026>",
+  "confidence_type": "explicit" | "directional" | "aspirational",
+  "source_snippet": "<verbatim quote from document>",
+  "confidence": <0.0-1.0>
+}}
+"""
+
+MGMT_OUTCOME_ASSESSOR = """\
+You are a management accountability analyst assessing whether management
+delivered on their forward-looking statements.
+
+COMPANY: {company} ({ticker})
+
+=== MANAGEMENT STATEMENTS TO ASSESS ===
+{statements}
+
+=== ACTUAL RESULTS (from extracted metrics and documents) ===
+{actual_results}
+
+For EACH statement, assess the outcome:
+  Delivered        = +2 (target met or exceeded)
+  Mostly Delivered = +1 (within 10-20% of target)
+  Neutral          =  0 (insufficient data or ambiguous)
+  Missed           = -1 (meaningfully below target)
+  Major Miss       = -2 (significantly below target or abandoned)
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "assessments": [
+    {{
+      "statement_index": <0-based index>,
+      "status": "delivered" | "mostly_delivered" | "neutral" | "missed" | "major_miss",
+      "score": <-2 to +2>,
+      "outcome_value": "<what actually happened>",
+      "evidence": "<specific evidence for the score>"
+    }}
+  ],
+  "overall": {{
+    "guidance_bias": "optimistic" | "conservative" | "balanced",
+    "execution_reliability": "high" | "medium" | "low",
+    "strategic_consistency": "high" | "medium" | "low",
+    "narrative": "<3-4 sentence assessment of management credibility>"
+  }}
+}}
+"""
+
+# ─────────────────────────────────────────────────────────────────
+# Moat / competitive advantage analysis
+# ─────────────────────────────────────────────────────────────────
+MOAT_ANALYSIS = """\
+You are a senior investment analyst specialising in competitive strategy and moat analysis.
+Conduct a rigorous assessment of this company's competitive advantages using ALL available data.
+
+COMPANY: {company} ({ticker})
+SECTOR: {sector}
+
+=== AVAILABLE DATA ===
+{context}
+
+Assess the following moat sources. For each, provide: strength (strong/moderate/weak/none),
+trajectory (strengthening/stable/weakening), key evidence, and risks to the moat.
+
+Moat sources to assess:
+1. Network effects
+2. Switching costs
+3. Cost advantages (scale, process, location)
+4. Intangible assets (brands, patents, licences, regulatory)
+5. Efficient scale
+
+Respond ONLY with a JSON object. No preamble, no markdown fences.
+
+Schema:
+{{
+  "moat_sources": [
+    {{
+      "type": "<moat type>",
+      "strength": "strong" | "moderate" | "weak" | "none",
+      "trajectory": "strengthening" | "stable" | "weakening",
+      "explanation": "<evidence-based explanation>",
+      "evidence": "<specific data points>",
+      "risks": "<what could erode this advantage>"
+    }}
+  ],
+  "trajectory_assessment": {{
+    "verdict": "<overall moat trajectory>",
+    "recent_developments": "<what has changed recently>",
+    "roic_trend": "<ROIC trend commentary if data available>",
+    "market_relevance": "<is the moat still relevant in the current market?>"
+  }},
+  "key_drivers": ["<top driver 1>", "<top driver 2>", "<top driver 3>"],
+  "key_risks": [
+    {{
+      "risk": "<risk description>",
+      "probability_impact": "high" | "medium" | "low",
+      "time_horizon": "near_term" | "medium_term" | "structural"
+    }}
+  ],
+  "portfolio_implication": "<1-2 sentence implication for the investment thesis>"
+}}
+"""
