@@ -9,5 +9,18 @@ from apps.api.routes.experiments import router as experiments_router
 from apps.api.routes.esg import router as esg_router
 from apps.api.routes.portfolio import router as portfolio_router
 from apps.api.routes.execution import router as execution_router
+from apps.api.routes.search import router as search_router
 
-__all__ = ["companies_router", "documents_router", "outputs_router", "review_router", "kpi_tracker_router", "cockpit_router", "experiments_router", "esg_router", "portfolio_router", "execution_router"]
+__all__ = [
+    "companies_router",
+    "documents_router",
+    "outputs_router",
+    "review_router",
+    "kpi_tracker_router",
+    "cockpit_router",
+    "experiments_router",
+    "esg_router",
+    "portfolio_router",
+    "execution_router",
+    "search_router",
+]

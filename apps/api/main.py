@@ -24,6 +24,7 @@ from apps.api.routes import (
     esg_router,
     portfolio_router,
     execution_router,
+    search_router,
 )
 from configs.settings import settings
 
@@ -71,6 +72,7 @@ app.include_router(experiments_router, prefix=PREFIX)
 app.include_router(esg_router, prefix=PREFIX)
 app.include_router(portfolio_router, prefix=PREFIX)
 app.include_router(execution_router, prefix=PREFIX)
+app.include_router(search_router, prefix=PREFIX)
 
 
 @app.get("/health")
