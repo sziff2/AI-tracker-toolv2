@@ -142,7 +142,7 @@ async def global_search(body: SearchRequest, db: AsyncSession = Depends(get_db))
     ).where(
         or_(
             _build_ilike(ExtractedMetric.metric_name, terms),
-            _build_ilike(ExtractedMetric.value_text, terms),
+            _build_ilike(ExtractedMetric.metric_text, terms),
         )
     )
 
@@ -153,7 +153,7 @@ async def global_search(body: SearchRequest, db: AsyncSession = Depends(get_db))
 
     met_rows = await db.execute(met_q)
     for met, co in met_rows.all():
-        val = met.value_text or (str(float(met.value)) if met.value else "")
+        val = met.metric_text or (str(float(met.metric_value)) if met.metric_value else "")
         unit = met.unit or ""
         snippet = f"{met.metric_name}: {val} {unit}".strip()
         if met.source_snippet:
