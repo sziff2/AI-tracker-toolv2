@@ -123,7 +123,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .gs-panel.open{display:block}
 .gs-inner{max-width:1100px;margin:0 auto;padding:20px 24px 28px}
 .gs-answer{font-family:var(--sans);font-size:14px;color:var(--text2);line-height:1.6;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:16px}
-.gs-answer strong{color:var(--gold)}
 .gs-hits{font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:12px;letter-spacing:.05em}
 .gs-result{display:flex;gap:12px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .15s}
 .gs-result:hover{border-color:var(--gold)}
@@ -141,7 +140,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .gs-kbd{font-family:var(--mono);font-size:10px;padding:2px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text3)}
 .gs-close{margin-left:auto;background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px}
 .gs-close:hover{color:var(--red)}
-/* Push page content down to clear the search bar */
 .wrap{padding-top:76px!important}
 </style>
 </head>
@@ -157,7 +155,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <button class="gs-btn" id="gs-btn" onclick="runSearch()">Search</button>
   <button class="gs-close" onclick="closeSearch()" title="Close">✕</button>
 </div>
-
 <!-- ═══ GLOBAL SEARCH RESULTS PANEL ═══ -->
 <div class="gs-panel" id="gs-panel">
   <div class="gs-inner" id="gs-inner"></div>
@@ -766,114 +763,101 @@ async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value
 // ── Renderers for new analysis results ──────────────────────
 
 // ═══ PROBABILISTIC / BAYESIAN OUTPUT RENDERERS ════════════════════════
+function renderProbabilisticHTML(prob){
+  if(!prob)return '';
+  var h='';
+  var bg2='var(--bg2)',bg3='var(--bg3)',bdr='var(--border)',t='var(--text)',t3='var(--text3)',t4='var(--text4)',grn='var(--green)',red='var(--red)',amb='var(--amber)',gld='var(--gold)';
 
-function renderProbabilisticHTML(prob) {
-  if (!prob) return '';
-  let h = '';
-
-  if (prob.overall_conviction_direction) {
-    const convDir = prob.overall_conviction_direction.toUpperCase();
-    const convScore = prob.overall_conviction_score || 0;
-    const convPct = Math.round(convScore * 100);
-    const dirColour = {
-      BUY: 'var(--green)', ADD: 'var(--green)',
-      HOLD: 'var(--amber)', WATCH: 'var(--amber)',
-      REDUCE: 'var(--red)', SELL: 'var(--red)',
-    }[convDir] || 'var(--text)';
-    h += `<div style="display:flex;align-items:center;gap:16px;background:var(--bg2);border:1px solid var(--border);border-left:4px solid ${dirColour};border-radius:10px;padding:14px 18px;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:22px;font-weight:700;color:${dirColour};min-width:70px">${esc(convDir)}</div>
-      <div style="flex:1">
-        <div style="font-family:var(--sans);font-size:12px;color:var(--text3);margin-bottom:6px">Conviction</div>
-        <div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
-          <div style="width:${convPct}%;height:100%;background:${dirColour};border-radius:3px;transition:width .5s"></div>
-        </div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">${convPct}% — ${esc(prob.conviction_rationale || '')}</div>
-      </div>
-    </div>`;
+  // ── Conviction banner ──
+  if(prob.overall_conviction_direction){
+    var cd=prob.overall_conviction_direction.toUpperCase();
+    var cs=prob.overall_conviction_score||0;
+    var cp=Math.round(cs*100);
+    var dc={'BUY':grn,'ADD':grn,'HOLD':amb,'WATCH':amb,'REDUCE':red,'SELL':red}[cd]||t;
+    h+='<div style="display:flex;align-items:center;gap:16px;background:'+bg2+';border:1px solid '+bdr+';border-left:4px solid '+dc+';border-radius:10px;padding:14px 18px;margin-bottom:16px">';
+    h+='<div style="font-family:var(--sans);font-size:22px;font-weight:700;color:'+dc+';min-width:70px">'+esc(cd)+'</div>';
+    h+='<div style="flex:1">';
+    h+='<div style="font-family:var(--sans);font-size:12px;color:'+t3+';margin-bottom:6px">Conviction</div>';
+    h+='<div style="width:100%;height:6px;background:'+bg3+';border-radius:3px;overflow:hidden">';
+    h+='<div style="width:'+cp+'%;height:100%;background:'+dc+';border-radius:3px"></div></div>';
+    h+='<div style="font-family:var(--sans);font-size:11px;color:'+t4+';margin-top:4px">'+cp+'% \u2014 '+esc(prob.conviction_rationale||'')+'</div>';
+    h+='</div></div>';
   }
 
-  if (prob.scenarios && prob.scenarios.length) {
-    h += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:14px">Scenario Probabilities</div>`;
-    prob.scenarios.forEach(s => {
-      const pct = Math.round((s.probability || 0) * 100);
-      const lbl = (s.label || '').toUpperCase();
-      const barCol = lbl === 'BULL' ? 'var(--green)' : lbl === 'BEAR' ? 'var(--red)' : 'var(--gold)';
-      const impactIcon = s.thesis_impact === 'strengthened' ? '↑' : s.thesis_impact === 'weakened' ? '↓' : '→';
-      h += `<div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-          <div style="font-family:var(--sans);font-size:13px;font-weight:600;color:${barCol}">${esc(s.label || '')} <span style="font-size:11px;color:var(--text3);font-weight:400">${impactIcon} ${esc(s.thesis_impact || '')}</span></div>
-          <div style="font-family:var(--sans);font-size:16px;font-weight:700;color:${barCol}">${pct}%</div>
-        </div>
-        <div style="width:100%;height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:4px">
-          <div style="width:${pct}%;height:100%;background:${barCol};border-radius:4px;transition:width .6s"></div>
-        </div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text3)">${esc(s.description || '')}</div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">
-          <span style="color:var(--text3);font-weight:500">Trigger:</span> ${esc(s.key_trigger || '')}
-          ${s.implied_return ? `&nbsp;·&nbsp;<span style="color:var(--text3);font-weight:500">Return:</span> ${esc(s.implied_return)}` : ''}
-        </div>
-      </div>`;
-    });
-    h += `</div>`;
+  // ── Scenario bars ──
+  if(prob.scenarios&&prob.scenarios.length){
+    h+='<div style="background:'+bg2+';border:1px solid '+bdr+';border-radius:10px;padding:16px 18px;margin-bottom:16px">';
+    h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:'+t3+';margin-bottom:14px">Scenario Probabilities</div>';
+    for(var si=0;si<prob.scenarios.length;si++){
+      var s=prob.scenarios[si];
+      var sp=Math.round((s.probability||0)*100);
+      var sl=(s.label||'').toUpperCase();
+      var bc=sl==='BULL'?grn:sl==='BEAR'?red:gld;
+      var ii=s.thesis_impact==='strengthened'?'\u2191':s.thesis_impact==='weakened'?'\u2193':'\u2192';
+      h+='<div style="margin-bottom:12px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">';
+      h+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+bc+'">'+esc(s.label||'')+' <span style="font-size:11px;color:'+t3+';font-weight:400">'+ii+' '+esc(s.thesis_impact||'')+'</span></div>';
+      h+='<div style="font-family:var(--sans);font-size:16px;font-weight:700;color:'+bc+'">'+sp+'%</div></div>';
+      h+='<div style="width:100%;height:8px;background:'+bg3+';border-radius:4px;overflow:hidden;margin-bottom:4px">';
+      h+='<div style="width:'+sp+'%;height:100%;background:'+bc+';border-radius:4px"></div></div>';
+      h+='<div style="font-family:var(--sans);font-size:11px;color:'+t3+'">'+esc(s.description||'')+'</div>';
+      h+='<div style="font-family:var(--sans);font-size:11px;color:'+t4+';margin-top:2px"><span style="color:'+t3+';font-weight:500">Trigger:</span> '+esc(s.key_trigger||'')+(s.implied_return?' &nbsp;&middot;&nbsp;<span style="color:'+t3+';font-weight:500">Return:</span> '+esc(s.implied_return):'')+'</div>';
+      h+='</div>';
+    }
+    h+='</div>';
   }
 
-  if (prob.bayesian_signals && prob.bayesian_signals.length) {
-    h += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:12px">Bayesian Belief Updates</div>`;
-    prob.bayesian_signals.forEach(sig => {
-      const dir = sig.posterior_direction || 'unchanged';
-      const arrow = dir === 'strengthened' ? '↑' : dir === 'weakened' ? '↓' : dir === 'reversed' ? '⇄' : '→';
-      const arrowCol = dir === 'strengthened' ? 'var(--green)' : dir === 'weakened' ? 'var(--red)' : dir === 'reversed' ? 'var(--amber)' : 'var(--text3)';
-      const mag = sig.update_magnitude || 'small';
-      const magDots = mag === 'large' ? '●●●' : mag === 'moderate' ? '●●○' : '●○○';
-      const conf = Math.round((sig.confidence || 0) * 100);
-      h += `<div style="border-left:3px solid ${arrowCol};padding:10px 14px;margin-bottom:10px;background:var(--bg);border-radius:0 8px 8px 0">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <div style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text)">${esc(sig.assumption || '')}</div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;color:var(--text4)">${esc(magDots)}</span>
-            <span style="font-size:18px;font-weight:700;color:${arrowCol}">${arrow}</span>
-            <span style="font-size:11px;color:var(--text4)">${conf}%</span>
-          </div>
-        </div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text3);margin-bottom:2px"><span style="color:var(--text4)">Prior:</span> ${esc(sig.prior_view || '')}</div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text)"><span style="color:var(--text4)">Evidence:</span> ${esc(sig.new_evidence || '')}</div>
-        <div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:3px;text-transform:uppercase;letter-spacing:.05em">${esc(sig.source || '')} · ${esc(dir)}</div>
-      </div>`;
-    });
-    h += `</div>`;
+  // ── Bayesian signals ──
+  if(prob.bayesian_signals&&prob.bayesian_signals.length){
+    h+='<div style="background:'+bg2+';border:1px solid '+bdr+';border-radius:10px;padding:16px 18px;margin-bottom:16px">';
+    h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:'+t3+';margin-bottom:12px">Bayesian Belief Updates</div>';
+    for(var bi=0;bi<prob.bayesian_signals.length;bi++){
+      var sig=prob.bayesian_signals[bi];
+      var dir=sig.posterior_direction||'unchanged';
+      var arrow=dir==='strengthened'?'\u2191':dir==='weakened'?'\u2193':dir==='reversed'?'\u21c4':'\u2192';
+      var ac=dir==='strengthened'?grn:dir==='weakened'?red:dir==='reversed'?amb:t3;
+      var mag=sig.update_magnitude||'small';
+      var dots=mag==='large'?'\u25cf\u25cf\u25cf':mag==='moderate'?'\u25cf\u25cf\u25cb':'\u25cf\u25cb\u25cb';
+      var cf=Math.round((sig.confidence||0)*100);
+      h+='<div style="border-left:3px solid '+ac+';padding:10px 14px;margin-bottom:10px;background:var(--bg);border-radius:0 8px 8px 0">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+      h+='<div style="font-family:var(--sans);font-size:12px;font-weight:600;color:'+t+'">'+esc(sig.assumption||'')+'</div>';
+      h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:'+t4+'">'+dots+'</span><span style="font-size:18px;font-weight:700;color:'+ac+'">'+arrow+'</span><span style="font-size:11px;color:'+t4+'">'+cf+'%</span></div>';
+      h+='</div>';
+      h+='<div style="font-family:var(--sans);font-size:11px;color:'+t3+';margin-bottom:2px"><span style="color:'+t4+'">Prior:</span> '+esc(sig.prior_view||'')+'</div>';
+      h+='<div style="font-family:var(--sans);font-size:11px;color:'+t+'"><span style="color:'+t4+'">Evidence:</span> '+esc(sig.new_evidence||'')+'</div>';
+      h+='<div style="font-family:var(--sans);font-size:10px;color:'+t4+';margin-top:3px;text-transform:uppercase;letter-spacing:.05em">'+esc(sig.source||'')+' \u00b7 '+esc(dir)+'</div>';
+      h+='</div>';
+    }
+    h+='</div>';
   }
 
-  if (prob.key_assumptions && prob.key_assumptions.length) {
-    h += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:12px">Key Assumption Probabilities</div>
-      <div style="display:flex;flex-direction:column;gap:10px">`;
-    prob.key_assumptions.forEach(a => {
-      const pct = Math.round((a.probability || 0) * 100);
-      const dirCol = a.direction === 'positive' ? 'var(--green)' : a.direction === 'negative' ? 'var(--red)' : 'var(--text3)';
-      const barCol = a.direction === 'positive'
-        ? (pct > 60 ? 'var(--green)' : pct > 35 ? 'var(--amber)' : 'var(--red)')
-        : a.direction === 'negative'
-          ? (pct > 60 ? 'var(--red)' : pct > 35 ? 'var(--amber)' : 'var(--green)')
-          : 'var(--text3)';
-      h += `<div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-          <div style="font-family:var(--sans);font-size:12px;color:var(--text)">${esc(a.assumption || '')}</div>
-          <div style="font-family:var(--sans);font-size:13px;font-weight:700;color:${dirCol};min-width:40px;text-align:right">${pct}%</div>
-        </div>
-        <div style="width:100%;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:3px">
-          <div style="width:${pct}%;height:100%;background:${barCol};border-radius:3px"></div>
-        </div>
-        <div style="font-family:var(--sans);font-size:11px;color:var(--text4)">${esc(a.rationale || '')}${a.key_watch ? ` · <span style="color:var(--text3)">Watch: ${esc(a.key_watch)}</span>` : ''}</div>
-      </div>`;
-    });
-    h += `</div></div>`;
+  // ── Key assumption chips ──
+  if(prob.key_assumptions&&prob.key_assumptions.length){
+    h+='<div style="background:'+bg2+';border:1px solid '+bdr+';border-radius:10px;padding:16px 18px;margin-bottom:16px">';
+    h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:'+t3+';margin-bottom:12px">Key Assumption Probabilities</div>';
+    h+='<div style="display:flex;flex-direction:column;gap:10px">';
+    for(var ai=0;ai<prob.key_assumptions.length;ai++){
+      var a=prob.key_assumptions[ai];
+      var ap=Math.round((a.probability||0)*100);
+      var dc2=a.direction==='positive'?grn:a.direction==='negative'?red:t3;
+      var bc2=a.direction==='positive'?(ap>60?grn:ap>35?amb:red):a.direction==='negative'?(ap>60?red:ap>35?amb:grn):t3;
+      h+='<div>';
+      h+='<div style="display:flex;justify-content:space-between;margin-bottom:3px">';
+      h+='<div style="font-family:var(--sans);font-size:12px;color:'+t+'">'+esc(a.assumption||'')+'</div>';
+      h+='<div style="font-family:var(--sans);font-size:13px;font-weight:700;color:'+dc2+';min-width:40px;text-align:right">'+ap+'%</div>';
+      h+='</div>';
+      h+='<div style="width:100%;height:5px;background:'+bg3+';border-radius:3px;overflow:hidden;margin-bottom:3px">';
+      h+='<div style="width:'+ap+'%;height:100%;background:'+bc2+';border-radius:3px"></div></div>';
+      h+='<div style="font-family:var(--sans);font-size:11px;color:'+t4+'">'+esc(a.rationale||'')+(a.key_watch?' \u00b7 <span style="color:'+t3+'">Watch: '+esc(a.key_watch)+'</span>':'')+'</div>';
+      h+='</div>';
+    }
+    h+='</div></div>';
   }
   return h;
 }
-function renderBatchHTML(d){const{company,period,synthesis,surprises,ir_questions}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises?.length)h+=card('','Surprises',surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));if(ir_questions&&ir_questions.length)h+=card('','IR Questions',ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));return h;}
-function renderSingleHTML(d){const{company,period,briefing,pipeline_status,extraction_error}=d;let h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company?.name||'')+' — '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status?.length){const errs=pipeline_status.filter(s=>s.status==='error');if(errs.length)h+=card('blue','Pipeline Issues',errs.map(e=>esc(e.step)+': '+esc(e.detail)).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing?.what_happened){h+=card('','What Happened',esc(briefing.what_happened));if(briefing.thesis_status)h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('gold','Bottom Line',esc(briefing.bottom_line));if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
+function renderBatchHTML(d){var company=d.company,period=d.period,synthesis=d.synthesis,surprises=d.surprises,ir_questions=d.ir_questions;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises&&surprises.length)h+=card('','Surprises',surprises.map(function(s){return(s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic)+': '+esc(s.description);}).join('\n\n'));if(ir_questions&&ir_questions.length)h+=card('','IR Questions',ir_questions.map(function(q,i){return(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question);}).join('\n\n'));return h;}
+function renderSingleHTML(d){var company=d.company,period=d.period,briefing=d.briefing,pipeline_status=d.pipeline_status,extraction_error=d.extraction_error;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status&&pipeline_status.length){var errs=pipeline_status.filter(function(s){return s.status==='error';});if(errs.length)h+=card('blue','Pipeline Issues',errs.map(function(e){return esc(e.step)+': '+esc(e.detail);}).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing&&briefing.what_happened){h+=card('','What Happened',esc(briefing.what_happened));if(briefing.thesis_status)h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('gold','Bottom Line',esc(briefing.bottom_line));if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
@@ -2556,60 +2540,44 @@ function renderOptSummaryCard(label, result, holdings, corrMatrix, colour) {
 loadDD();
 
 // ═══ GLOBAL SEARCH ════════════════════════════════════════════════
-
 function gsPopulateTickers(){
-  const sel=E('gs-ticker');if(!sel)return;
-  const cur=sel.value;
+  var sel=E('gs-ticker');if(!sel)return;
+  var cur=sel.value;
   sel.innerHTML='<option value="">All companies</option>';
-  (CC||[]).forEach(c=>{
-    const o=document.createElement('option');
+  (CC||[]).forEach(function(c){
+    var o=document.createElement('option');
     o.value=c.ticker;
-    o.textContent=c.ticker+(c.name?' — '+c.name.substring(0,20):'');
+    o.textContent=c.ticker+(c.name?' \u2014 '+c.name.substring(0,20):'');
     sel.appendChild(o);
   });
   sel.value=cur;
 }
-
 document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){
     e.preventDefault();
-    const inp=E('gs-input');
-    if(inp){inp.focus();inp.select();}
+    var inp=E('gs-input');if(inp){inp.focus();inp.select();}
   }
 });
-
 document.addEventListener('click',function(e){
-  const panel=E('gs-panel');const bar=document.querySelector('.gs-bar');
-  if(panel&&bar&&!panel.contains(e.target)&&!bar.contains(e.target)){
-    closeSearch();
-  }
+  var panel=E('gs-panel');var bar=document.querySelector('.gs-bar');
+  if(panel&&bar&&!panel.contains(e.target)&&!bar.contains(e.target)){closeSearch();}
 });
-
-function closeSearch(){
-  const p=E('gs-panel');if(p)p.classList.remove('open');
-}
-
-const GS_TYPE_ICONS={section:'📄',metric:'📊',statement:'💬',note:'📝'};
-const GS_TYPE_LABELS={section:'Document',metric:'Metric',statement:'Statement',note:'Note'};
-
+function closeSearch(){var p=E('gs-panel');if(p)p.classList.remove('open');}
+var GS_TYPE_ICONS={section:'📄',metric:'📊',statement:'💬',note:'📝'};
+var GS_TYPE_LABELS={section:'Document',metric:'Metric',statement:'Statement',note:'Note'};
 async function runSearch(){
-  const q=(E('gs-input').value||'').trim();
-  if(!q)return;
-  const ticker=(E('gs-ticker').value||'').trim()||null;
-  const btn=E('gs-btn');const panel=E('gs-panel');const inner=E('gs-inner');
-  btn.disabled=true;btn.textContent='Searching…';
+  var q=(E('gs-input').value||'').trim();if(!q)return;
+  var ticker=(E('gs-ticker').value||'').trim()||null;
+  var btn=E('gs-btn'),panel=E('gs-panel'),inner=E('gs-inner');
+  btn.disabled=true;btn.textContent='Searching\u2026';
   panel.classList.add('open');
-  inner.innerHTML='<div class="ld" style="padding:32px 0;text-align:center">Searching across documents, metrics, statements and notes…</div>';
+  inner.innerHTML='<div class="ld" style="padding:32px 0;text-align:center">Searching across documents, metrics, statements and notes\u2026</div>';
   try{
-    const body={query:q,limit:8};
+    var body={query:q,limit:8};
     if(ticker)body.ticker=ticker;
-    const r=await fetch('/api/v1/search',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(body)
-    });
-    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Search failed');}
-    const d=await r.json();
+    var r=await fetch('/api/v1/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok){var e=await r.json().catch(function(){return {};});throw new Error(e.detail||'Search failed');}
+    var d=await r.json();
     renderSearchResults(d,q);
   }catch(e){
     inner.innerHTML='<div class="err">'+esc(e.message)+'</div>';
@@ -2617,40 +2585,33 @@ async function runSearch(){
     btn.disabled=false;btn.textContent='Search';
   }
 }
-
 function renderSearchResults(d,q){
-  const inner=E('gs-inner');
-  let h='';
-  if(d.answer){
-    h+='<div class="gs-answer">'+esc(d.answer)+'</div>';
-  }
-  h+='<div class="gs-hits">'+d.total_hits+' match'+(d.total_hits!==1?'es':'')+' · showing top '+d.results.length+' · <span class="gs-kbd">Esc</span> to close</div>';
+  var inner=E('gs-inner');var h='';
+  if(d.answer){h+='<div class="gs-answer">'+esc(d.answer)+'</div>';}
+  h+='<div class="gs-hits">'+d.total_hits+' match'+(d.total_hits!==1?'es':'')+' \u00b7 showing top '+d.results.length+' \u00b7 <span class="gs-kbd">Esc</span> to close</div>';
   if(!d.results||!d.results.length){
     h+='<div class="gs-empty">No results found for "'+esc(q)+'".<br>Try different keywords or broaden your search.</div>';
     inner.innerHTML=h;return;
   }
   d.results.forEach(function(res){
-    const icon=GS_TYPE_ICONS[res.type]||'📄';
-    const label=GS_TYPE_LABELS[res.type]||res.type;
-    const badgeCls='gs-type-'+res.type;
-    const ticker=res.ticker||'';
-    const period=res.period?(' · '+res.period):'';
-    const onclick=ticker?'sideSelectCo(''+esc(ticker)+'');closeSearch();':'closeSearch();';
+    var icon=GS_TYPE_ICONS[res.type]||'📄';
+    var label=GS_TYPE_LABELS[res.type]||res.type;
+    var badgeCls='gs-type-'+res.type;
+    var ticker=res.ticker||'';
+    var period=res.period?(' \u00b7 '+res.period):'';
+    var onclick=ticker?'sideSelectCo(\''+esc(ticker)+'\');closeSearch();':'closeSearch();';
     h+='<div class="gs-result" onclick="'+onclick+'">';
     h+='<div class="gs-result-icon">'+icon+'</div>';
     h+='<div class="gs-result-body">';
     h+='<div class="gs-result-title">'+esc(res.title)+'</div>';
-    h+='<div class="gs-result-meta"><span class="gs-badge '+badgeCls+'">'+label+'</span>'+esc(ticker)+period+(res.company_name&&res.company_name!==ticker?' · '+esc(res.company_name):'')+'</div>';
+    h+='<div class="gs-result-meta"><span class="gs-badge '+badgeCls+'">'+label+'</span>'+esc(ticker)+period+(res.company_name&&res.company_name!==ticker?' \u00b7 '+esc(res.company_name):'')+'</div>';
     h+='<div class="gs-result-snippet">'+esc(res.snippet)+'</div>';
     h+='</div></div>';
   });
   inner.innerHTML=h;
 }
-
-const _gsTickerObserver=setInterval(function(){
-  if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){
-    gsPopulateTickers();
-  }
+setInterval(function(){
+  if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){gsPopulateTickers();}
 },1000);
 </script>
 </body>
