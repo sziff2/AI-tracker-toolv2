@@ -173,13 +173,13 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
   <div class="nav-sec">
     <div class="nav-lbl">Workspace</div>
-    <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
     <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
-    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
+    <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
-    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
     <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
     <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
+    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
+    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
   </div>
 
   <div class="nav-sec">
@@ -393,9 +393,33 @@ async function submitForm(){
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/batch-upload',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
   else{const f=UF[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
-  if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}ld.style.display='block';
+  if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
+  ld.style.display='block';
+  ld.innerHTML='<div style="font-family:var(--sans);padding:24px 0;text-align:center"><div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:12px">Starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
   const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-    ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:8px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
+    var STEPS=['upload','parse','extract','compare','surprises','briefing','ir_questions','synthesis'];
+    var stepLabels={'upload':'Upload','parse':'Parse','extract':'Extract KPIs','compare':'Thesis Compare','surprises':'Surprises','briefing':'Briefing','ir_questions':'IR Questions','synthesis':'Synthesise'};
+    var stepIcons={'upload':'📤','parse':'📄','extract':'📊','compare':'🔍','surprises':'⚡','briefing':'📝','ir_questions':'❓','synthesis':'✨'};
+    var ldh='<div style="font-family:var(--sans);padding:24px 0">';
+    ldh+='<div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:16px;text-align:center">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>';
+    ldh+='<div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:20px">';
+    ldh+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div>';
+    ldh+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">';
+    for(var si=0;si<STEPS.length;si++){
+      var sn=STEPS[si];
+      var done=steps.indexOf(sn)>=0;
+      var active=step===sn;
+      var bg=done?'var(--greenDim)':active?'var(--goldDim)':'var(--bg2)';
+      var bdr=done?'rgba(34,197,94,.4)':active?'rgba(196,164,90,.5)':'var(--border)';
+      var clr=done?'var(--green)':active?'var(--gold)':'var(--text4)';
+      var icon=done?'✓':(stepIcons[sn]||'·');
+      ldh+='<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
+      ldh+='<span style="font-size:12px">'+icon+'</span>';
+      ldh+='<span style="font-size:11px;font-weight:600;color:'+clr+'">'+esc(stepLabels[sn]||sn)+'</span>';
+      ldh+='</div>';
+    }
+    ldh+='</div></div>';
+    ld.innerHTML=ldh;
     if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
   }catch(e){}},3000);
