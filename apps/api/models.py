@@ -456,3 +456,26 @@ class ExecutionScorecard(Base, TimestampMixin):
     ai_assessment = Column(Text)                       # LLM-generated narrative assessment
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Extraction Feedback — inline analyst annotations on analysis output
+# ─────────────────────────────────────────────────────────────────
+class ExtractionFeedback(Base, TimestampMixin):
+    __tablename__ = "extraction_feedback"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    period_label = Column(Text)
+    # What was tagged — e.g. "metric:revenue", "briefing:bottom_line", "snippet:3", "surprise:1"
+    section = Column(Text, nullable=False)
+    tag = Column(Text, nullable=False)       # correct | wrong | imprecise | missing | hallucinated
+    comment = Column(Text)                   # analyst free-text comment
+    source_snippet = Column(Text)            # the original text excerpt being flagged
+    metric_id = Column(UUID(as_uuid=True), ForeignKey("extracted_metrics.id"), nullable=True)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    prompt_type = Column(Text)               # which prompt produced this output
+    author = Column(Text)
+    promoted = Column(Boolean, default=False)  # True once sent to Prompt Lab
+
+    company = relationship("Company")
