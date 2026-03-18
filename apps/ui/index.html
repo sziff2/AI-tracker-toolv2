@@ -141,6 +141,40 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .gs-close{margin-left:auto;background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px}
 .gs-close:hover{color:var(--red)}
 .wrap{padding-top:76px!important}
+
+/* ── Inline Feedback System ─────────────────────────────────── */
+.fb-wrap{position:relative}
+.fb-wrap:hover .fb-bar{opacity:1;pointer-events:auto}
+.fb-bar{position:absolute;top:4px;right:4px;display:flex;gap:3px;align-items:center;opacity:0;pointer-events:none;transition:opacity .15s;z-index:10}
+.fb-btn{padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);font-family:var(--sans);font-size:11px;cursor:pointer;white-space:nowrap;line-height:1.6;transition:background .12s,border-color .12s}
+.fb-btn:hover{background:#2a2a3a}
+.fb-btn.fb-correct{color:#4ade80}.fb-btn.fb-correct.active{background:rgba(74,222,128,.18);border-color:#4ade80}
+.fb-btn.fb-imprecise{color:#facc15}.fb-btn.fb-imprecise.active{background:rgba(250,204,21,.18);border-color:#facc15}
+.fb-btn.fb-wrong{color:#f87171}.fb-btn.fb-wrong.active{background:rgba(248,113,113,.18);border-color:#f87171}
+.fb-btn.fb-missing{color:#a78bfa}.fb-btn.fb-missing.active{background:rgba(167,139,250,.18);border-color:#a78bfa}
+.fb-btn.fb-comment{color:var(--text3);font-size:12px}
+.fb-comment-box{margin-top:6px;display:none;background:var(--bg2);border:1px solid var(--gold);border-radius:6px;padding:8px;gap:6px}
+.fb-comment-box.open{display:flex;flex-direction:column}
+.fb-comment-box textarea{width:100%;min-height:52px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:5px 8px;resize:vertical;box-sizing:border-box}
+.fb-comment-box textarea:focus{outline:none;border-color:var(--gold)}
+.fb-comment-box-row{display:flex;gap:6px;align-items:center}
+.fb-save-btn{padding:4px 12px;background:var(--gold);color:var(--bg);border:none;border-radius:4px;font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer}
+.fb-save-btn:hover{opacity:.85}
+.fb-tag-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;margin-left:6px;vertical-align:middle}
+.fb-tag-badge.correct{background:rgba(74,222,128,.18);color:#4ade80}
+.fb-tag-badge.wrong{background:rgba(248,113,113,.18);color:#f87171}
+.fb-tag-badge.imprecise{background:rgba(250,204,21,.18);color:#facc15}
+.fb-tag-badge.missing{background:rgba(167,139,250,.18);color:#a78bfa}
+.fb-promote-panel{margin-top:12px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;display:none;flex-direction:column;gap:10px}
+.fb-promote-panel.visible{display:flex}
+.fb-promote-panel h4{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin:0}
+.fb-promote-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fb-promote-row label{font-family:var(--sans);font-size:12px;color:var(--text3)}
+.fb-promote-row select,.fb-promote-row input[type=number]{background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:4px 8px}
+.fb-promote-notes{width:100%}
+.fb-promote-notes textarea{width:100%;min-height:44px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:5px 8px;resize:vertical;box-sizing:border-box}
+.fb-counter{font-family:var(--sans);font-size:12px;color:var(--text4);padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--border)}
+.fb-counter span{color:var(--gold);font-weight:600}
 </style>
 </head>
 <body>
@@ -420,7 +454,7 @@ async function submitForm(){
     }
     ldh+='</div></div>';
     ld.innerHTML=ldh;
-    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';fbSetContext(t,p);c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result,t,p):renderSingleHTML(j.result,t,p))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
   }catch(e){}},3000);
 }
@@ -565,6 +599,7 @@ function renderCkResults(ticker,d){
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
+    if(i===0){(function(pp,tt){setTimeout(function(){fbSetContext(tt,pp);},150);})(p,ticker);}
     // Period header with reprocess and delete buttons
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     // Documents used for this period
@@ -587,10 +622,10 @@ function renderCkResults(ticker,d){
     if(analysis?.content){
       h+='<h2>Analysis Output</h2>';
       const c=analysis.content;
-      if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}
-      else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}
-      if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
-      if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
+      if(c.synthesis){h+=renderBatchHTML(c,ticker,p);}
+      else if(c.briefing){h+=renderSingleHTML(c,ticker,p);}
+      else{if(c.surprises&&c.surprises.length){var sHtml2='';c.surprises.forEach(function(s,si){sHtml2+=fbWrap('surprise:'+si,'<div style="padding:6px 0">'+esc((s.direction==='positive'?'↑':'↓')+' '+s.metric_or_topic)+': '+esc(s.description)+'</div>',s.description,'surprise');});h+=card('','Surprises',sHtml2);}
+      if(c.ir_questions&&c.ir_questions.length){var irHtml2='';c.ir_questions.forEach(function(q,qi){irHtml2+=fbWrap('ir_question:'+qi,'<div style="padding:6px 0">'+esc(q.question||q.topic||'')+'</div>',q.question||'','synthesis');});h+=card('','IR Questions',irHtml2);}}
     } else if(!pdocs.length){
       h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';
     }
@@ -606,9 +641,11 @@ function renderCkResults(ticker,d){
   return h;
 }
 function showResPeriod(p,btn){
-  document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
-  const target=E('res-'+p);if(target)target.style.display='block';
-  E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.querySelectorAll('[id^="res-"]').forEach(function(el){if(el.id!=='res-ptabs')el.style.display='none';});
+  var target=E('res-'+p);if(target)target.style.display='block';
+  E('res-ptabs').querySelectorAll('.ptab').forEach(function(b){b.classList.remove('on');});btn.classList.add('on');
+  var ticker=E('ck-company').value;
+  if(ticker&&p)fbSetContext(ticker,p);
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
@@ -880,8 +917,8 @@ function renderProbabilisticHTML(prob){
   }
   return h;
 }
-function renderBatchHTML(d){var company=d.company,period=d.period,synthesis=d.synthesis,surprises=d.surprises,ir_questions=d.ir_questions;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises&&surprises.length)h+=card('','Surprises',surprises.map(function(s){return(s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic)+': '+esc(s.description);}).join('\n\n'));if(ir_questions&&ir_questions.length)h+=card('','IR Questions',ir_questions.map(function(q,i){return(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question);}).join('\n\n'));return h;}
-function renderSingleHTML(d){var company=d.company,period=d.period,briefing=d.briefing,pipeline_status=d.pipeline_status,extraction_error=d.extraction_error;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status&&pipeline_status.length){var errs=pipeline_status.filter(function(s){return s.status==='error';});if(errs.length)h+=card('blue','Pipeline Issues',errs.map(function(e){return esc(e.step)+': '+esc(e.detail);}).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing&&briefing.what_happened){h+=card('','What Happened',esc(briefing.what_happened));if(briefing.thesis_status)h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('gold','Bottom Line',esc(briefing.bottom_line));if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
+function renderBatchHTML(d,ticker,period){var company=d.company,synthesis=d.synthesis,surprises=d.surprises,ir_questions=d.ir_questions;var periodLabel=period||d.period||'';var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(periodLabel)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=fbWrap('briefing:headline',card('gold','Headline',esc(synthesis.headline)),synthesis.headline,'synthesis');if(synthesis.what_happened)h+=fbWrap('briefing:what_happened',card('','What Happened',esc(synthesis.what_happened)),synthesis.what_happened,'synthesis');if(synthesis.management_message)h+=fbWrap('briefing:management_message',card('','Management Message',esc(synthesis.management_message)),synthesis.management_message,'synthesis');if(synthesis.thesis_impact)h+=fbWrap('briefing:thesis_impact',card('','Thesis Impact',esc(synthesis.thesis_impact)),synthesis.thesis_impact,'thesis_comparison');if(synthesis.bottom_line)h+=fbWrap('briefing:bottom_line',card('gold','Bottom Line',esc(synthesis.bottom_line)),synthesis.bottom_line,'synthesis');if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises&&surprises.length){var sHtml='';for(var si=0;si<surprises.length;si++){var s=surprises[si];sHtml+=fbWrap('surprise:'+si,'<div style="padding:6px 0;border-bottom:1px solid var(--border)"><span style="color:'+(s.direction==='positive'?'var(--green)':'var(--red)')+'">'+( s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic)+'</span><div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-top:3px">'+esc(s.description)+'</div>'+(s.source_snippet?'<div style="font-family:var(--sans);font-size:10px;color:var(--text4);font-style:italic;margin-top:2px">"'+esc(s.source_snippet.substring(0,100))+'..."</div>':'')+'</div>',s.description,'surprise');}h+=card('','Surprises',sHtml);}if(ir_questions&&ir_questions.length){var irHtml='';for(var ii=0;ii<ir_questions.length;ii++){var q=ir_questions[ii];irHtml+=fbWrap('ir_question:'+ii,'<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-family:var(--sans);font-size:13px;color:var(--text);font-weight:500">'+esc(q.question||q.topic||'')+'</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">'+esc(q.rationale||'')+'</div></div>',q.question||'','synthesis');}h+=card('','IR Questions',irHtml);}h+=fbPromotePanel('synthesis');return h;}
+function renderSingleHTML(d,ticker,period){var company=d.company,briefing=d.briefing,pipeline_status=d.pipeline_status,extraction_error=d.extraction_error;var periodLabel=period||d.period||'';var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(periodLabel)+'</div><div class="gl"></div>';if(pipeline_status&&pipeline_status.length){var errs=pipeline_status.filter(function(s){return s.status==='error';});if(errs.length)h+=card('blue','Pipeline Issues',errs.map(function(e){return esc(e.step)+': '+esc(e.detail);}).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing&&briefing.what_happened){h+=fbWrap('briefing:what_happened',card('','What Happened',esc(briefing.what_happened)),briefing.what_happened,'briefing');if(briefing.what_changed)h+=fbWrap('briefing:what_changed',card('','What Changed',esc(briefing.what_changed)),briefing.what_changed,'briefing');if(briefing.thesis_status)h+=fbWrap('briefing:thesis_status',card('','Thesis Status',esc(briefing.thesis_status)),briefing.thesis_status,'thesis_comparison');h+=fbWrap('briefing:bottom_line',card('gold','Bottom Line',esc(briefing.bottom_line)),briefing.bottom_line,'briefing');if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');h+=fbPromotePanel('briefing');return h;}
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
