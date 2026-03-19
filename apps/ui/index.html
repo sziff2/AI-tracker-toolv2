@@ -458,10 +458,10 @@ async function submitForm(){
     };
     var elapsed=Math.round((Date.now()-_pipelineStart)/1000);
     var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
-    var detail=stepDetail[step]||('Running: '+step.replace(/_/g,' ')+'\u2026');
+    var detail=stepDetail[step]||('Running: '+step.split('_').join(' ')+'\u2026');
     var ldh='<div style="font-family:var(--sans);padding:20px 0">';
     ldh+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
-    ldh+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.replace(/_/g,' '))+'\u2026</div>';
+    ldh+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.split('_').join(' '))+'\u2026</div>';
     ldh+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
     ldh+='</div>';
     ldh+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:12px">';
@@ -788,10 +788,10 @@ function pollReprocess(jobId,ticker,period){
       if(!prog)return;
       var elapsed=Math.round((Date.now()-_rpStart)/1000);
       var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
-      var detail=stepDetail[step]||('Running: '+step.replace(/_/g,' ')+'\u2026');
+      var detail=stepDetail[step]||('Running: '+step.split('_').join(' ')+'\u2026');
       var h='<div style="font-family:var(--sans);padding:4px 0">';
       h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
-      h+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.replace(/_/g,' '))+'\u2026</div>';
+      h+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.split('_').join(' '))+'\u2026</div>';
       h+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
       h+='</div>';
       h+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:10px">';
