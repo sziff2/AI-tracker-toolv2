@@ -1,21 +1,15 @@
 """
 Prompt Experimentation — A/B testing, variant management, and LLM-driven refinement.
-
-Workflow:
-  1. Seed initial prompt variants (or import from prompts/__init__.py)
-  2. Run experiments: same input → two variants → side-by-side output
-  3. Analyst picks winner → stats updated
-  4. After N experiments, auto-promote winner as default
-  5. Periodically, LLM reviews feedback and generates improved variants
 """
 
 import json
+import re
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db
@@ -23,7 +17,7 @@ from apps.api.models import Company, PromptVariant, ABExperiment
 
 router = APIRouter(tags=["experiments"])
 
-AUTO_PROMOTE_THRESHOLD = 5  # wins needed to auto-promote
+AUTO_PROMOTE_THRESHOLD = 5
 
 
 # ── Schemas ──────────────────────────────────────────────────
@@ -32,6 +26,14 @@ class VariantCreate(BaseModel):
     variant_name: str
     prompt_text: str
     is_active: bool = False
+    is_candidate: bool = True
+    notes: Optional[str] = None
+
+
+class VariantUpdate(BaseModel):
+    prompt_text: Optional[str] = None
+    is_candidate: Optional[bool] = None
+    is_active: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -39,18 +41,63 @@ class ExperimentCreate(BaseModel):
     prompt_type: str
     ticker: Optional[str] = None
     period_label: Optional[str] = None
-    input_text: str  # the document text or context to test against
+    input_text: str
 
 
 class ExperimentJudge(BaseModel):
-    winner: str          # "a" | "b" | "tie"
-    rating_a: Optional[int] = None  # 1-5
-    rating_b: Optional[int] = None  # 1-5
+    winner: str
+    rating_a: Optional[int] = None
+    rating_b: Optional[int] = None
     feedback: Optional[str] = None
 
 
 class RefineRequest(BaseModel):
     prompt_type: str
+
+
+# ── Smart prompt formatter ────────────────────────────────────
+def _format_prompt(prompt_text: str, input_text: str, ticker: str = "", period: str = "") -> str:
+    """
+    Safely format any prompt template for A/B testing regardless of placeholders.
+    Extraction prompts use {text}. Briefing/synthesis prompts use {company}, {kpis} etc.
+    We fill every placeholder found with sensible test values.
+    """
+    placeholders = set(re.findall(r'\{(\w+)\}', prompt_text))
+
+    # Double-braces used for JSON schema examples — leave them alone
+    # We only act on single-brace placeholders
+    fill = {}
+    raw_input = input_text[:15000]
+
+    for p in placeholders:
+        if p in ('text', 'kpis', 'earnings_data', 'transcript_data', 'broker_data',
+                 'presentation_data', 'quarter_data', 'prior_data', 'current_metrics',
+                 'prior_metrics', 'document_summary', 'prior_analysis', 'findings',
+                 'expectations', 'actuals', 'actual_results', 'statements', 'context',
+                 'source_text'):
+            fill[p] = raw_input
+        elif p in ('thesis', 'thesis_comparison', 'thesis_risks', 'tracked_kpis'):
+            fill[p] = '[Paste thesis text here for a better test — or leave as-is to test formatting only]'
+        elif p == 'surprises':
+            fill[p] = '[No surprises data — run surprise detection separately]'
+        elif p == 'company':
+            fill[p] = ticker or 'Test Company'
+        elif p == 'ticker':
+            fill[p] = ticker or 'TEST'
+        elif p in ('period', 'current_period'):
+            fill[p] = period or 'Test Period'
+        elif p == 'prior_period':
+            fill[p] = 'Prior Period'
+        elif p == 'sector':
+            fill[p] = 'Unknown sector'
+        else:
+            fill[p] = f'[{p}]'
+
+    try:
+        return prompt_text.format(**fill)
+    except (KeyError, ValueError):
+        # Last resort — strip all remaining {placeholders}
+        return re.sub(r'\{(\w+)\}', lambda m: fill.get(m.group(1), f'[{m.group(1)}]'), prompt_text)
 
 
 # ── Variant CRUD ─────────────────────────────────────────────
@@ -74,7 +121,6 @@ async def list_variants(prompt_type: Optional[str] = None, db: AsyncSession = De
 
 @router.post("/experiments/variants", status_code=201)
 async def create_variant(body: VariantCreate, db: AsyncSession = Depends(get_db)):
-    # If setting as active, deactivate others of same type
     if body.is_active:
         existing = await db.execute(
             select(PromptVariant).where(PromptVariant.prompt_type == body.prompt_type, PromptVariant.is_active == True)
@@ -84,7 +130,8 @@ async def create_variant(body: VariantCreate, db: AsyncSession = Depends(get_db)
 
     variant = PromptVariant(
         id=uuid.uuid4(), prompt_type=body.prompt_type, variant_name=body.variant_name,
-        prompt_text=body.prompt_text, is_active=body.is_active, notes=body.notes,
+        prompt_text=body.prompt_text, is_active=body.is_active,
+        is_candidate=body.is_candidate, notes=body.notes,
     )
     db.add(variant)
     await db.commit()
@@ -99,11 +146,36 @@ async def get_variant(variant_id: uuid.UUID, db: AsyncSession = Depends(get_db))
         raise HTTPException(404, "Variant not found")
     return {
         "id": str(v.id), "prompt_type": v.prompt_type, "variant_name": v.variant_name,
-        "prompt_text": v.prompt_text, "is_active": v.is_active,
+        "prompt_text": v.prompt_text, "is_active": v.is_active, "is_candidate": v.is_candidate,
         "win_count": v.win_count, "loss_count": v.loss_count,
         "total_runs": v.total_runs, "avg_rating": float(v.avg_rating) if v.avg_rating else 0,
         "generation": v.generation, "notes": v.notes,
     }
+
+
+@router.patch("/experiments/variants/{variant_id}")
+async def update_variant(variant_id: uuid.UUID, body: VariantUpdate, db: AsyncSession = Depends(get_db)):
+    """Update prompt text, candidate flag, or notes on an existing variant."""
+    result = await db.execute(select(PromptVariant).where(PromptVariant.id == variant_id))
+    v = result.scalar_one_or_none()
+    if not v:
+        raise HTTPException(404, "Variant not found")
+    if body.prompt_text is not None:
+        v.prompt_text = body.prompt_text
+    if body.is_candidate is not None:
+        v.is_candidate = body.is_candidate
+    if body.notes is not None:
+        v.notes = body.notes
+    if body.is_active is not None:
+        if body.is_active:
+            others = await db.execute(
+                select(PromptVariant).where(PromptVariant.prompt_type == v.prompt_type, PromptVariant.is_active == True)
+            )
+            for other in others.scalars().all():
+                other.is_active = False
+        v.is_active = body.is_active
+    await db.commit()
+    return {"status": "updated", "id": str(v.id), "variant_name": v.variant_name}
 
 
 @router.post("/experiments/variants/{variant_id}/activate")
@@ -112,7 +184,6 @@ async def activate_variant(variant_id: uuid.UUID, db: AsyncSession = Depends(get
     v = result.scalar_one_or_none()
     if not v:
         raise HTTPException(404, "Variant not found")
-    # Deactivate others of same type
     others = await db.execute(
         select(PromptVariant).where(PromptVariant.prompt_type == v.prompt_type, PromptVariant.is_active == True)
     )
@@ -126,13 +197,9 @@ async def activate_variant(variant_id: uuid.UUID, db: AsyncSession = Depends(get
 # ── Run Experiment ───────────────────────────────────────────
 @router.post("/experiments/run")
 async def run_experiment(body: ExperimentCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Run the same input through two prompt variants and return both outputs
-    for side-by-side comparison.
-    """
     from services.llm_client import call_llm_json_async
+    import asyncio
 
-    # Find two variants: the active one + a random candidate
     active_q = await db.execute(
         select(PromptVariant).where(
             PromptVariant.prompt_type == body.prompt_type, PromptVariant.is_active == True
@@ -150,22 +217,23 @@ async def run_experiment(body: ExperimentCreate, db: AsyncSession = Depends(get_
     candidate = candidates_q.scalar_one_or_none()
 
     if not active:
-        raise HTTPException(400, f"No active variant for prompt type '{body.prompt_type}'. Seed variants first.")
+        raise HTTPException(400, f"No active variant for '{body.prompt_type}'. Click 'Seed Default Variants' first.")
     if not candidate:
-        raise HTTPException(400, f"No candidate variants to test against for '{body.prompt_type}'. Create a variant first.")
+        raise HTTPException(400, f"No candidate variants for '{body.prompt_type}'. The 3 new variants should have is_candidate=true — check Prompt Lab.")
 
-    # Look up company if provided
     company_id = None
+    ticker = body.ticker or ""
+    period = body.period_label or ""
     if body.ticker:
         co_q = await db.execute(select(Company).where(Company.ticker == body.ticker.upper()))
         co = co_q.scalar_one_or_none()
         if co:
             company_id = co.id
+            ticker = co.ticker
 
-    # Run both prompts in parallel
-    import asyncio
-    prompt_a = active.prompt_text.format(text=body.input_text[:15000])
-    prompt_b = candidate.prompt_text.format(text=body.input_text[:15000])
+    # Smart format — works for both extraction ({text}) and briefing ({company}, {kpis} etc)
+    prompt_a = _format_prompt(active.prompt_text, body.input_text, ticker, period)
+    prompt_b = _format_prompt(candidate.prompt_text, body.input_text, ticker, period)
 
     try:
         result_a, result_b = await asyncio.gather(
@@ -179,11 +247,9 @@ async def run_experiment(body: ExperimentCreate, db: AsyncSession = Depends(get_
     output_a = json.dumps(result_a, default=str) if not isinstance(result_a, Exception) else json.dumps({"error": str(result_a)[:200]})
     output_b = json.dumps(result_b, default=str) if not isinstance(result_b, Exception) else json.dumps({"error": str(result_b)[:200]})
 
-    # Update run counts
     active.total_runs += 1
     candidate.total_runs += 1
 
-    # Create experiment record
     experiment = ABExperiment(
         id=uuid.uuid4(), company_id=company_id, prompt_type=body.prompt_type,
         period_label=body.period_label, variant_a_id=active.id, variant_b_id=candidate.id,
@@ -204,10 +270,6 @@ async def run_experiment(body: ExperimentCreate, db: AsyncSession = Depends(get_
 # ── Judge Experiment ─────────────────────────────────────────
 @router.post("/experiments/{experiment_id}/judge")
 async def judge_experiment(experiment_id: uuid.UUID, body: ExperimentJudge, db: AsyncSession = Depends(get_db)):
-    """
-    Record which variant the analyst preferred.
-    Auto-promotes winner if it crosses the threshold.
-    """
     result = await db.execute(select(ABExperiment).where(ABExperiment.id == experiment_id))
     exp = result.scalar_one_or_none()
     if not exp:
@@ -221,44 +283,43 @@ async def judge_experiment(experiment_id: uuid.UUID, body: ExperimentJudge, db: 
 
     # Update variant stats
     va_q = await db.execute(select(PromptVariant).where(PromptVariant.id == exp.variant_a_id))
-    vb_q = await db.execute(select(PromptVariant).where(PromptVariant.id == exp.variant_b_id))
     va = va_q.scalar_one_or_none()
+    vb_q = await db.execute(select(PromptVariant).where(PromptVariant.id == exp.variant_b_id))
     vb = vb_q.scalar_one_or_none()
 
     if va and vb:
         if body.winner == "a":
-            va.win_count += 1
-            vb.loss_count += 1
+            va.win_count += 1; vb.loss_count += 1
         elif body.winner == "b":
-            vb.win_count += 1
-            va.loss_count += 1
+            vb.win_count += 1; va.loss_count += 1
 
-        # Update average ratings
-        if body.rating_a and va:
-            total = va.win_count + va.loss_count
-            va.avg_rating = ((float(va.avg_rating or 0) * (total - 1)) + body.rating_a) / total if total > 0 else body.rating_a
-        if body.rating_b and vb:
-            total = vb.win_count + vb.loss_count
-            vb.avg_rating = ((float(vb.avg_rating or 0) * (total - 1)) + body.rating_b) / total if total > 0 else body.rating_b
-
-        # Auto-promote: if challenger wins enough, it becomes the default
-        auto_promoted = None
-        if body.winner == "b" and vb.win_count >= AUTO_PROMOTE_THRESHOLD and not vb.is_active:
-            # Check win rate is > 60%
-            total_b = vb.win_count + vb.loss_count
-            if total_b > 0 and (vb.win_count / total_b) > 0.6:
-                va.is_active = False
-                vb.is_active = True
-                auto_promoted = vb.variant_name
+        if body.rating_a:
+            total_a = float(va.avg_rating or 0) * max(va.total_runs - 1, 0)
+            va.avg_rating = (total_a + body.rating_a) / va.total_runs if va.total_runs else body.rating_a
+        if body.rating_b:
+            total_b = float(vb.avg_rating or 0) * max(vb.total_runs - 1, 0)
+            vb.avg_rating = (total_b + body.rating_b) / vb.total_runs if vb.total_runs else body.rating_b
 
     await db.commit()
 
-    return {
-        "status": "judged",
-        "winner": body.winner,
-        "auto_promoted": auto_promoted,
-        "message": f"Variant '{auto_promoted}' auto-promoted as new default!" if auto_promoted else None,
-    }
+    # Auto-promote check
+    auto_promoted = False
+    message = "Judged."
+    winner_variant = va if body.winner == "a" else (vb if body.winner == "b" else None)
+    if winner_variant and not winner_variant.is_active and winner_variant.win_count >= AUTO_PROMOTE_THRESHOLD:
+        others = await db.execute(
+            select(PromptVariant).where(
+                PromptVariant.prompt_type == winner_variant.prompt_type, PromptVariant.is_active == True
+            )
+        )
+        for other in others.scalars().all():
+            other.is_active = False
+        winner_variant.is_active = True
+        await db.commit()
+        auto_promoted = True
+        message = f"Auto-promoted {winner_variant.variant_name} as new active variant!"
+
+    return {"status": "judged", "winner": body.winner, "auto_promoted": auto_promoted, "message": message}
 
 
 # ── List Experiments ─────────────────────────────────────────
@@ -281,13 +342,8 @@ async def list_experiments(prompt_type: Optional[str] = None, status: Optional[s
 # ── LLM-Driven Refinement ───────────────────────────────────
 @router.post("/experiments/refine")
 async def refine_prompts(body: RefineRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Review all experiment feedback for a prompt type and use the LLM
-    to generate an improved variant based on what analysts preferred.
-    """
     from services.llm_client import call_llm
 
-    # Get the current active variant
     active_q = await db.execute(
         select(PromptVariant).where(
             PromptVariant.prompt_type == body.prompt_type, PromptVariant.is_active == True
@@ -297,7 +353,6 @@ async def refine_prompts(body: RefineRequest, db: AsyncSession = Depends(get_db)
     if not active:
         raise HTTPException(400, "No active variant for this type")
 
-    # Get all completed experiments with feedback
     exps_q = await db.execute(
         select(ABExperiment).where(
             ABExperiment.prompt_type == body.prompt_type,
@@ -307,10 +362,15 @@ async def refine_prompts(body: RefineRequest, db: AsyncSession = Depends(get_db)
     )
     experiments = exps_q.scalars().all()
 
-    if len(experiments) < 3:
-        raise HTTPException(400, f"Need at least 3 judged experiments with feedback to refine. Currently have {len(experiments)}.")
+    if len(experiments) < 1:
+        raise HTTPException(400, f"No judged experiments with feedback found for '{body.prompt_type}'. Run at least one experiment and submit a judgement first.")
 
-    # Build feedback summary
+    best_q = await db.execute(
+        select(PromptVariant).where(PromptVariant.prompt_type == body.prompt_type)
+        .order_by(PromptVariant.avg_rating.desc()).limit(1)
+    )
+    best = best_q.scalar_one_or_none()
+
     feedback_lines = []
     for exp in experiments:
         winner_label = "A (active)" if exp.winner == "a" else "B (challenger)" if exp.winner == "b" else "Tie"
@@ -318,22 +378,15 @@ async def refine_prompts(body: RefineRequest, db: AsyncSession = Depends(get_db)
             f"Winner: {winner_label} | Rating A: {exp.rating_a}/5 | Rating B: {exp.rating_b}/5 | Feedback: {exp.analyst_feedback}"
         )
 
-    # Get top-performing variant for reference
-    best_q = await db.execute(
-        select(PromptVariant).where(PromptVariant.prompt_type == body.prompt_type)
-        .order_by(PromptVariant.avg_rating.desc()).limit(1)
-    )
-    best = best_q.scalar_one_or_none()
-
-    refinement_prompt = f"""You are a prompt engineering expert. Your task is to improve an LLM prompt
-based on analyst feedback from A/B testing.
+    refinement_prompt = f"""You are a prompt engineering expert for a buy-side investment research platform.
+Your task is to improve a prompt based on analyst feedback.
 
 CURRENT ACTIVE PROMPT ({active.variant_name}, generation {active.generation}):
 ---
 {active.prompt_text}
 ---
 
-BEST-PERFORMING VARIANT ({best.variant_name if best else 'N/A'}, avg rating {float(best.avg_rating) if best else 0:.1f}/5):
+BEST-PERFORMING VARIANT ({best.variant_name if best else 'N/A'}):
 ---
 {best.prompt_text if best and best.id != active.id else 'Same as active.'}
 ---
@@ -342,22 +395,17 @@ ANALYST FEEDBACK FROM {len(experiments)} EXPERIMENTS:
 {chr(10).join(feedback_lines)}
 
 INSTRUCTIONS:
-1. Analyse the feedback patterns — what do analysts consistently prefer?
+1. Analyse the feedback — what do analysts consistently prefer?
 2. Identify specific weaknesses in the current prompt
 3. Generate an IMPROVED prompt that addresses the feedback
-4. Keep the same output JSON schema — only change the instructions/framing
-5. The prompt must contain {{text}} as a placeholder for the input document
+4. Keep the same placeholder variables (e.g. {{company}}, {{kpis}}, {{text}})
+5. Keep the same output JSON schema — only improve instructions/framing
 
 Return ONLY the improved prompt text. No explanation, no markdown fences."""
 
     try:
         new_prompt_text = call_llm(refinement_prompt, max_tokens=8192)
 
-        # Validate it still has the {text} placeholder
-        if "{text}" not in new_prompt_text:
-            new_prompt_text = new_prompt_text + "\n\n--- DOCUMENT TEXT ---\n{text}"
-
-        # Create new variant
         new_variant = PromptVariant(
             id=uuid.uuid4(),
             prompt_type=body.prompt_type,
@@ -367,7 +415,7 @@ Return ONLY the improved prompt text. No explanation, no markdown fences."""
             is_candidate=True,
             parent_variant_id=active.id,
             generation=active.generation + 1,
-            notes=f"LLM-refined from {active.variant_name} based on {len(experiments)} experiments. Key feedback: {experiments[0].analyst_feedback[:200] if experiments[0].analyst_feedback else 'N/A'}",
+            notes=f"LLM-refined from {active.variant_name} based on {len(experiments)} experiments.",
         )
         db.add(new_variant)
         await db.commit()
@@ -384,10 +432,9 @@ Return ONLY the improved prompt text. No explanation, no markdown fences."""
         raise HTTPException(500, f"Refinement failed: {str(e)[:200]}")
 
 
-# ── Seed initial variants from current prompts ───────────────
+# ── Seed initial variants ─────────────────────────────────────
 @router.post("/experiments/seed")
 async def seed_variants(db: AsyncSession = Depends(get_db)):
-    """Seed prompt variants from the current prompts/__init__.py for A/B testing."""
     from prompts import (
         COMBINED_EXTRACTOR, EARNINGS_RELEASE_EXTRACTOR, TRANSCRIPT_EXTRACTOR,
         BROKER_NOTE_EXTRACTOR, PRESENTATION_EXTRACTOR,
@@ -428,11 +475,9 @@ async def seed_variants(db: AsyncSession = Depends(get_db)):
     return {"seeded": created, "message": f"Created {len(created)} default variants"}
 
 
-# ── Stats dashboard ──────────────────────────────────────────
+# ── Stats ─────────────────────────────────────────────────────
 @router.get("/experiments/stats")
 async def experiment_stats(db: AsyncSession = Depends(get_db)):
-    """Overview stats for the experimentation system."""
-    # Count by type
     variants_q = await db.execute(
         select(PromptVariant.prompt_type, func.count(PromptVariant.id))
         .group_by(PromptVariant.prompt_type)
