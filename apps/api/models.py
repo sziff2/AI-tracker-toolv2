@@ -3,7 +3,7 @@ SQLAlchemy ORM models – mirrors §6 of the technical specification.
 """
 
 from sqlalchemy import (
-    Boolean, Column, Date, ForeignKey, Integer, LargeBinary, Numeric, Text, DateTime,
+    Boolean, Column, Date, ForeignKey, Index, Integer, LargeBinary, Numeric, Text, DateTime,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -27,11 +27,11 @@ class Company(Base, TimestampMixin):
     primary_analyst = Column(Text)
 
     # relationships
-    documents = relationship("Document", back_populates="company", lazy="selectin")
-    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="selectin")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="selectin")
-    event_assessments = relationship("EventAssessment", back_populates="company", lazy="selectin")
-    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="selectin")
+    documents = relationship("Document", back_populates="company", lazy="select")
+    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="select")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="select")
+    event_assessments = relationship("EventAssessment", back_populates="company", lazy="select")
+    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="select")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -39,6 +39,9 @@ class Company(Base, TimestampMixin):
 # ─────────────────────────────────────────────────────────────────
 class Document(Base, TimestampMixin):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_company_period", "company_id", "period_label"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -54,9 +57,9 @@ class Document(Base, TimestampMixin):
     parsing_status = Column(Text, default="pending")  # pending | processing | completed | failed
 
     company = relationship("Company", back_populates="documents")
-    sections = relationship("DocumentSection", back_populates="document", lazy="selectin")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="selectin")
-    event_assessments = relationship("EventAssessment", back_populates="document", lazy="selectin")
+    sections = relationship("DocumentSection", back_populates="document", lazy="select")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="select")
+    event_assessments = relationship("EventAssessment", back_populates="document", lazy="select")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -81,6 +84,10 @@ class DocumentSection(Base, TimestampMixin):
 # ─────────────────────────────────────────────────────────────────
 class ExtractedMetric(Base, TimestampMixin):
     __tablename__ = "extracted_metrics"
+    __table_args__ = (
+        Index("ix_metrics_company_period", "company_id", "period_label"),
+        Index("ix_metrics_document", "document_id"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -106,6 +113,9 @@ class ExtractedMetric(Base, TimestampMixin):
 # ─────────────────────────────────────────────────────────────────
 class ThesisVersion(Base, TimestampMixin):
     __tablename__ = "thesis_versions"
+    __table_args__ = (
+        Index("ix_thesis_company_active", "company_id", "active"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -154,6 +164,9 @@ class EventAssessment(Base, TimestampMixin):
 # ─────────────────────────────────────────────────────────────────
 class ResearchOutput(Base, TimestampMixin):
     __tablename__ = "research_outputs"
+    __table_args__ = (
+        Index("ix_outputs_company_period", "company_id", "period_label"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -195,7 +208,7 @@ class TrackedKPI(Base, TimestampMixin):
     display_order = Column(Integer, default=0)
 
     company = relationship("Company")
-    scores = relationship("KPIScore", back_populates="tracked_kpi", lazy="selectin")
+    scores = relationship("KPIScore", back_populates="tracked_kpi", lazy="select")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -345,7 +358,7 @@ class Portfolio(Base, TimestampMixin):
     currency = Column(Text, default="USD")
     is_active = Column(Boolean, default=True)
 
-    holdings = relationship("PortfolioHolding", back_populates="portfolio", lazy="selectin")
+    holdings = relationship("PortfolioHolding", back_populates="portfolio", lazy="select")
 
 
 # ─────────────────────────────────────────────────────────────────

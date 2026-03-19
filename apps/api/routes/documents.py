@@ -10,12 +10,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.database import get_db
+from apps.api.database import get_db, get_company_or_404
 from apps.api.models import Company, Document, DocumentSection, ExtractedMetric, EventAssessment, ResearchOutput, ReviewQueueItem
+from configs.settings import settings
 from schemas import DocumentCreate, DocumentOut
 from services.document_ingestion import ingest_document
 from services.document_parser import process_document
-from services.metric_extractor import extract_metrics, extract_guidance
+from services.metric_extractor import extract_metrics
 from services.thesis_comparator import compare_thesis
 
 router = APIRouter(tags=["documents"])
@@ -47,16 +48,14 @@ async def upload_document(
     title: str = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    # Look up company
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
-    # Save upload to temp file
+    # Save upload to temp file with size limit
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, f"File too large. Maximum size is {settings.max_upload_size_mb} MB.")
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
 
@@ -96,16 +95,14 @@ async def upload_and_process(
     from apps.api.models import ProcessingJob
     from services.background_processor import run_single_pipeline, start_background_job
 
-    # Look up company
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
-    # Ingest
+    # Ingest with size limit
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
+    content = await file.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, f"File too large. Maximum size is {settings.max_upload_size_mb} MB.")
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
         tmp.write(content)
         tmp_path = tmp.name
 
@@ -163,10 +160,7 @@ async def batch_upload_and_process(
     from apps.api.models import ProcessingJob
     from services.background_processor import run_batch_pipeline, start_background_job
 
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
     doc_types_list = [t.strip() for t in document_types.split(",")]
     titles_list = [t.strip() for t in titles.split(",")] if titles else []
@@ -175,12 +169,14 @@ async def batch_upload_and_process(
     while len(titles_list) < len(files):
         titles_list.append(None)
 
-    # Ingest all files first (fast)
+    # Ingest all files first (fast) with size limit
     doc_ids = []
     for i, file in enumerate(files):
         suffix = Path(file.filename).suffix if file.filename else ".pdf"
+        content = await file.read()
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(413, f"File '{file.filename}' too large. Maximum size is {settings.max_upload_size_mb} MB.")
         with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
         try:
@@ -369,11 +365,9 @@ async def extract_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     full_text = "\n\n".join(p["text"] for p in pages)
 
     metrics = await extract_metrics(db, doc, full_text)
-    guidance = await extract_guidance(db, doc, full_text)
 
     return {
         "metrics_extracted": len(metrics),
-        "guidance_items": len(guidance),
     }
 
 
@@ -420,10 +414,7 @@ async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get
 # ─────────────────────────────────────────────────────────────────
 @router.delete("/companies/{ticker}/documents")
 async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
     try:
         docs = await db.execute(select(Document).where(Document.company_id == company.id))
@@ -461,10 +452,7 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
 # ─────────────────────────────────────────────────────────────────
 @router.delete("/companies/{ticker}/periods/{period_label}")
 async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
     try:
         # Find documents for this period
@@ -526,10 +514,7 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     from apps.api.models import ProcessingJob
     from services.background_processor import run_batch_pipeline, start_background_job
 
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+    company = await get_company_or_404(db, ticker)
 
     # Find existing documents for this period
     docs_q = await db.execute(

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.database import get_db
+from apps.api.database import get_db, get_company_or_404
 from apps.api.models import Company, ThesisVersion
 from schemas import CompanyCreate, CompanyOut, CompanyUpdate, ThesisCreate, ThesisOut
 

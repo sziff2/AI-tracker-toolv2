@@ -2,12 +2,14 @@
 Investment Research CoWork Agent — FastAPI application entry point.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from apps.api.database import async_engine, Base
 from apps.api.routes import (
@@ -26,18 +28,30 @@ from apps.api.routes import (
 )
 from configs.settings import settings
 
+logger = logging.getLogger(__name__)
+
+
+class CorrelationIDMiddleware(BaseHTTPMiddleware):
+    """Attach a correlation ID to each request for structured logging."""
+
+    async def dispatch(self, request: Request, call_next):
+        from services.logging_config import request_id_var, new_request_id
+        rid = request.headers.get("X-Request-ID") or new_request_id()
+        token = request_id_var.set(rid)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        request_id_var.reset(token)
+        return response
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables on startup and run migrations."""
+    """Create tables on startup."""
+    from services.logging_config import configure_logging
+    configure_logging(debug=settings.debug, structured=not settings.debug)
+    settings.validate_at_startup()
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        sa_text = __import__("sqlalchemy").text
-        await conn.execute(sa_text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_content BYTEA"))
-        await conn.execute(sa_text("ALTER TABLE research_outputs ADD COLUMN IF NOT EXISTS content_json TEXT"))
-        for col in ["recommendation", "catalyst", "conviction", "what_would_make_us_wrong",
-                    "disconfirming_evidence", "positive_surprises", "negative_surprises"]:
-            await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
     yield
     await async_engine.dispose()
 
@@ -48,13 +62,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = settings.cors_origins_list or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CorrelationIDMiddleware)
 
 PREFIX = settings.api_prefix
 
