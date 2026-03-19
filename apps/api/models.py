@@ -27,11 +27,11 @@ class Company(Base, TimestampMixin):
     primary_analyst = Column(Text)
 
     # relationships
-    documents = relationship("Document", back_populates="company", lazy="select")
-    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="select")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="select")
-    event_assessments = relationship("EventAssessment", back_populates="company", lazy="select")
-    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="select")
+    documents = relationship("Document", back_populates="company", lazy="selectin")
+    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="selectin")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="selectin")
+    event_assessments = relationship("EventAssessment", back_populates="company", lazy="selectin")
+    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -57,9 +57,9 @@ class Document(Base, TimestampMixin):
     parsing_status = Column(Text, default="pending")  # pending | processing | completed | failed
 
     company = relationship("Company", back_populates="documents")
-    sections = relationship("DocumentSection", back_populates="document", lazy="select")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="select")
-    event_assessments = relationship("EventAssessment", back_populates="document", lazy="select")
+    sections = relationship("DocumentSection", back_populates="document", lazy="selectin")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="selectin")
+    event_assessments = relationship("EventAssessment", back_populates="document", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ class TrackedKPI(Base, TimestampMixin):
     display_order = Column(Integer, default=0)
 
     company = relationship("Company")
-    scores = relationship("KPIScore", back_populates="tracked_kpi", lazy="select")
+    scores = relationship("KPIScore", back_populates="tracked_kpi", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ class Portfolio(Base, TimestampMixin):
     currency = Column(Text, default="USD")
     is_active = Column(Boolean, default=True)
 
-    holdings = relationship("PortfolioHolding", back_populates="portfolio", lazy="select")
+    holdings = relationship("PortfolioHolding", back_populates="portfolio", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
