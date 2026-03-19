@@ -46,6 +46,77 @@ async def _update_step(job_id: uuid.UUID, step: str, pct: int, completed_steps: 
     )
 
 
+async def _run_generation_steps(
+    company_id: uuid.UUID, doc_id: uuid.UUID, period_label: str
+) -> dict:
+    """Run compare, surprises, briefing, and IR questions in parallel with separate sessions."""
+
+    async def _compare():
+        try:
+            async with AsyncSessionLocal() as db2:
+                from services.thesis_comparator import compare_thesis
+                c = await compare_thesis(db2, company_id, doc_id, period_label)
+                return ("thesis_comparison", c.model_dump())
+        except ValueError:
+            return ("thesis_comparison", None)
+        except Exception as e:
+            return ("thesis_comparison", {"error": str(e)[:200]})
+
+    async def _surprises():
+        try:
+            async with AsyncSessionLocal() as db2:
+                from services.surprise_detector import detect_surprises
+                s = await detect_surprises(db2, company_id, doc_id, period_label)
+                return ("surprises", [x.model_dump() for x in s])
+        except Exception as e:
+            return ("surprises", {"error": str(e)[:200]})
+
+    async def _briefing():
+        try:
+            async with AsyncSessionLocal() as db2:
+                from services.output_generator import generate_briefing
+                b = await generate_briefing(db2, company_id, period_label)
+                return ("briefing", b.model_dump())
+        except Exception as e:
+            return ("briefing", {"error": str(e)[:200]})
+
+    async def _ir():
+        try:
+            async with AsyncSessionLocal() as db2:
+                from services.output_generator import generate_ir_questions
+                q = await generate_ir_questions(db2, company_id, period_label)
+                return ("ir_questions", [x.model_dump() for x in q])
+        except Exception as e:
+            return ("ir_questions", {"error": str(e)[:200]})
+
+    tasks = await asyncio.gather(_compare(), _surprises(), _briefing(), _ir(), return_exceptions=True)
+    results = {}
+    for r in tasks:
+        if isinstance(r, Exception):
+            logger.error("Generation step failed: %s", r)
+            continue
+        results[r[0]] = r[1]
+    return results
+
+
+async def _save_research_output(company_id: uuid.UUID, period_label: str, output: dict, output_type: str = "full_analysis"):
+    """Persist a research output to the database."""
+    try:
+        async with AsyncSessionLocal() as db:
+            ro = ResearchOutput(
+                id=uuid.uuid4(),
+                company_id=company_id,
+                period_label=period_label,
+                output_type=output_type,
+                content_json=json.dumps(output, default=str),
+                review_status="draft",
+            )
+            db.add(ro)
+            await db.commit()
+    except Exception as e:
+        logger.error("Failed to save research output: %s", e)
+
+
 async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: str, doc_id: uuid.UUID, period_label: str):
     """Run the full single-document pipeline in the background."""
     completed = []
@@ -97,13 +168,12 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
                     guidance = extraction.get("guidance", [])
                 except Exception:
                     # Fall back to legacy extraction
-                    from services.metric_extractor import extract_metrics, extract_guidance
+                    from services.metric_extractor import extract_metrics
                     text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
                     pages = json.loads(text_path.read_text())
                     full_text = "\n\n".join(p["text"] for p in pages)
                     metrics = await extract_metrics(db, doc, full_text)
-                    guidance_items = await extract_guidance(db, doc, full_text)
-                    guidance = guidance_items
+                    guidance = []
 
                 output["metrics"] = [
                     {
@@ -128,79 +198,14 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
 
             # ── Steps 3-6: Compare, surprises, briefing, IR (parallel with separate sessions) ──
             await _update_step(job_id, "generating", 55, completed)
-            import asyncio as _aio
-
-            async def _compare():
-                try:
-                    async with AsyncSessionLocal() as db2:
-                        from services.thesis_comparator import compare_thesis
-                        c = await compare_thesis(db2, company_id, doc_id, period_label)
-                        return ("compare", c.model_dump())
-                except ValueError:
-                    return ("compare", None)
-                except Exception as e:
-                    return ("compare", {"error": str(e)[:200]})
-
-            async def _surprises():
-                try:
-                    async with AsyncSessionLocal() as db2:
-                        from services.surprise_detector import detect_surprises
-                        s = await detect_surprises(db2, company_id, doc_id, period_label)
-                        return ("surprises", [x.model_dump() for x in s])
-                except Exception as e:
-                    return ("surprises", [], str(e)[:200])
-
-            async def _briefing():
-                try:
-                    async with AsyncSessionLocal() as db2:
-                        from services.output_generator import generate_briefing
-                        b = await generate_briefing(db2, company_id, period_label)
-                        return ("briefing", b.model_dump())
-                except Exception as e:
-                    return ("briefing", {"error": str(e)[:200]})
-
-            async def _ir():
-                try:
-                    async with AsyncSessionLocal() as db2:
-                        from services.output_generator import generate_ir_questions
-                        q = await generate_ir_questions(db2, company_id, period_label)
-                        return ("ir_questions", [x.model_dump() for x in q])
-                except Exception as e:
-                    return ("ir_questions", [], str(e)[:200])
-
-            results = await _aio.gather(_compare(), _surprises(), _briefing(), _ir(), return_exceptions=True)
-            for r in results:
-                if isinstance(r, Exception):
-                    continue
-                if r[0] == "compare":
-                    output["thesis_comparison"] = r[1]
-                    completed.append("compare")
-                elif r[0] == "surprises":
-                    output["surprises"] = r[1]
-                    completed.append("surprises")
-                elif r[0] == "briefing":
-                    output["briefing"] = r[1]
-                    completed.append("briefing")
-                elif r[0] == "ir_questions":
-                    output["ir_questions"] = r[1]
-                    completed.append("ir_questions")
+            generation_results = await _run_generation_steps(company_id, doc_id, period_label)
+            for step_name, step_result in generation_results.items():
+                output[step_name] = step_result
+                completed.append(step_name)
 
             # ── Save to DB ───────────────────────────────────
             await _update_step(job_id, "saving", 90, completed)
-            try:
-                async with AsyncSessionLocal() as db2:
-                    ro = ResearchOutput(
-                        id=uuid.uuid4(),
-                        company_id=company_id,
-                        period_label=period_label,
-                        output_type="full_analysis",
-                        content_json=json.dumps(output, default=str),
-                        review_status="draft",
-                    )
-                    db2.add(ro)
-                    await db2.commit()
-            except Exception:
-                pass
+            await _save_research_output(company_id, period_label, output, "full_analysis")
 
         # ── Done ─────────────────────────────────────────────
         await _update_job(
@@ -431,20 +436,7 @@ async def run_batch_pipeline(
 
             # ── Save ─────────────────────────────────────────
             await _update_step(job_id, "saving", 95, completed)
-            try:
-                async with AsyncSessionLocal() as db2:
-                    ro = ResearchOutput(
-                        id=uuid.uuid4(),
-                        company_id=company_id,
-                        period_label=period_label,
-                        output_type="batch_synthesis",
-                        content_json=json.dumps(output, default=str),
-                        review_status="draft",
-                    )
-                    db2.add(ro)
-                    await db2.commit()
-            except Exception:
-                pass
+            await _save_research_output(company_id, period_label, output, "batch_synthesis")
 
         await _update_job(
             job_id, status="completed", current_step="done", progress_pct=100,

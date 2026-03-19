@@ -54,18 +54,9 @@ celery_app.conf.beat_schedule = {
 
 @celery_app.task(name="apps.worker.tasks.scan_sources")
 def scan_sources():
-    """
-    Daily scan: check IR websites, transcript providers, and
-    internal folders for new documents.
-    """
-    logger.info("Starting daily source scan …")
-    # TODO: implement source connectors per §7 Ingestion
-    #   - Email connector
-    #   - IR website scraper
-    #   - SEC EDGAR connector
-    #   - Internal file share monitor
-    logger.info("Daily source scan complete.")
-    return {"status": "completed"}
+    """Daily scan for new documents. Currently a no-op stub."""
+    logger.info("scan_sources: not yet implemented")
+    return {"status": "not_implemented"}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -89,7 +80,7 @@ async def _async_process(document_id: str):
     from apps.api.database import AsyncSessionLocal
     from apps.api.models import Company, Document
     from services.document_parser import process_document
-    from services.metric_extractor import extract_metrics, extract_guidance
+    from services.metric_extractor import extract_metrics
     from services.thesis_comparator import compare_thesis
     from services.surprise_detector import detect_surprises
 
@@ -122,7 +113,6 @@ async def _async_process(document_id: str):
             pages = json.loads(text_path.read_text())
             full_text = "\n\n".join(p["text"] for p in pages)
             await extract_metrics(db, doc, full_text)
-            await extract_guidance(db, doc, full_text)
 
         # 3. Compare thesis
         logger.info("[%s] Step 3: Thesis comparison …", document_id)

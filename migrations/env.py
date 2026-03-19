@@ -10,8 +10,13 @@ from alembic import context
 # Import all models so metadata is populated
 from apps.api.database import Base
 from apps.api import models  # noqa: F401
+from configs.settings import settings
 
 config = context.config
+
+# Override sqlalchemy.url from settings (avoids hardcoded credentials in alembic.ini)
+config.set_main_option("sqlalchemy.url", settings.database_url_sync)
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 

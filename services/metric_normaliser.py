@@ -428,7 +428,27 @@ async def extract_from_tables(
 
 
 # ─────────────────────────────────────────────────────────────────
-# 5. Combined pipeline: normalise → validate segments → dedup
+# 5. Period Normalisation
+# ─────────────────────────────────────────────────────────────────
+
+def normalise_period(raw_period: str) -> str:
+    """
+    Normalise period format: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY".
+    Returns underscore-joined format suitable for period_label fields.
+    """
+    if not raw_period or not raw_period.strip():
+        return raw_period or ""
+
+    parts = raw_period.strip().split()
+    if len(parts) == 2:
+        if parts[0] in ("Q1", "Q2", "Q3", "Q4", "FY", "HY"):
+            return f"{parts[1]}_{parts[0]}"
+        return f"{parts[0]}_{parts[1]}"
+    return raw_period.strip().replace(" ", "_")
+
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Combined pipeline: normalise → validate segments → dedup
 # ─────────────────────────────────────────────────────────────────
 
 def post_process_metrics(items: list[dict]) -> list[dict]:

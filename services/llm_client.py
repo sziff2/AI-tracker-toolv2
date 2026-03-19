@@ -1,11 +1,13 @@
 """
 LLM client with both sync and async support for parallel calls.
+Includes token usage tracking and improved error handling.
 """
 
 import asyncio
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
@@ -15,7 +17,37 @@ from configs.settings import settings
 logger = logging.getLogger(__name__)
 
 _client: anthropic.Anthropic | None = None
-_executor = ThreadPoolExecutor(max_workers=6)
+_executor = ThreadPoolExecutor(max_workers=int(settings.llm_max_tokens / 500) or 6)
+
+
+# ── Token usage tracking ─────────────────────────────────────────
+
+@dataclass
+class _UsageTracker:
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_requests: int = 0
+    failed_requests: int = 0
+
+    def record(self, input_tokens: int, output_tokens: int):
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_requests += 1
+
+    def record_failure(self):
+        self.failed_requests += 1
+
+    @property
+    def summary(self) -> dict:
+        return {
+            "total_requests": self.total_requests,
+            "failed_requests": self.failed_requests,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+        }
+
+
+usage_tracker = _UsageTracker()
 
 
 def get_client() -> anthropic.Anthropic:
@@ -34,7 +66,11 @@ def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float |
         messages=[{"role": "user", "content": prompt}],
     )
     text = resp.content[0].text.strip()
-    logger.debug("LLM response length: %d chars, stop_reason: %s", len(text), resp.stop_reason)
+    usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
+    logger.debug(
+        "LLM response: %d chars, stop=%s, tokens_in=%d, tokens_out=%d",
+        len(text), resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens,
+    )
     return text
 
 
@@ -64,7 +100,7 @@ def _parse_json(raw: str) -> Any:
         logger.warning("Repaired truncated JSON (%d chars)", len(cleaned))
         return result
     except json.JSONDecodeError as exc:
-        logger.error("Failed to parse LLM JSON: %s — raw: %s", exc, raw[:500])
+        logger.error("Failed to parse LLM JSON: %s — raw: %s", exc, raw[:1000])
         raise
 
 
@@ -84,10 +120,15 @@ async def call_llm_json_parallel(prompts: list[str], **kwargs) -> list[Any]:
     tasks = [call_llm_json_async(p, **kwargs) for p in prompts]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     out = []
-    for r in results:
+    failed_indices = []
+    for i, r in enumerate(results):
         if isinstance(r, Exception):
-            logger.warning("Parallel LLM call failed: %s", str(r)[:200])
+            logger.warning("Parallel LLM call %d/%d failed: %s", i + 1, len(prompts), r)
+            usage_tracker.record_failure()
+            failed_indices.append(i)
             out.append([])
         else:
             out.append(r)
+    if failed_indices:
+        logger.warning("LLM parallel batch: %d/%d calls failed (indices: %s)", len(failed_indices), len(prompts), failed_indices)
     return out

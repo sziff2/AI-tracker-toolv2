@@ -256,89 +256,18 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
         logger.warning("Validation failed, using unvalidated metrics: %s", str(e)[:100])
         validation_stats = None
 
-    # Persist metrics
-    metrics = []
-    for item in metrics_raw:
-        try:
-            confidence = item.get("confidence", 1.0)
-            # Use the extracted period label if available, otherwise fall back to document period
-            item_period = item.get("period")
-            metric_period = document.period_label
-            metric_name = item.get("metric_name", "unknown")
-            # If the item has a period and it differs from the document period, prefix the name
-            if item_period and item_period.strip():
-                # Normalise period format: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY"
-                parts = item_period.strip().split()
-                if len(parts) == 2:
-                    if parts[0] in ("Q1","Q2","Q3","Q4","FY","HY"):
-                        normalised = f"{parts[1]}_{parts[0]}"
-                    else:
-                        normalised = f"{parts[0]}_{parts[1]}"
-                else:
-                    normalised = item_period.strip().replace(" ", "_")
-                # Only store current period metrics with the document's period_label
-                # Prior period comparisons get their own period label
-                if item.get("is_current_period") is False:
-                    metric_period = normalised
-                    metric_name = f"[{item_period}] {metric_name}"
-
-            metric = ExtractedMetric(
-                id=uuid.uuid4(),
-                company_id=document.company_id,
-                document_id=document.id,
-                period_label=metric_period,
-                metric_name=metric_name,
-                metric_value=item.get("metric_value"),
-                metric_text=item.get("metric_text", ""),
-                unit=item.get("unit"),
-                segment=item.get("segment"),
-                geography=item.get("geography"),
-                source_snippet=item.get("source_snippet", ""),
-                page_number=item.get("page_number"),
-                confidence=confidence,
-                needs_review=confidence < REVIEW_THRESHOLD,
-            )
-            db.add(metric)
-            metrics.append(metric)
-            if confidence < REVIEW_THRESHOLD:
-                db.add(ReviewQueueItem(
-                    id=uuid.uuid4(), entity_type="metric", entity_id=metric.id,
-                    queue_reason=f"Low confidence ({confidence:.2f}) on {item.get('metric_name')}",
-                    priority="high" if confidence < 0.5 else "normal",
-                ))
-        except Exception as e:
-            logger.warning("Failed to persist metric: %s", str(e)[:100])
+    # Persist metrics using shared helper
+    metrics = await _persist_metrics(db, document, metrics_raw)
 
     # Persist guidance as metrics with guidance segment
-    guidance_records = []
-    for item in guidance_raw:
-        try:
-            metric = ExtractedMetric(
-                id=uuid.uuid4(),
-                company_id=document.company_id,
-                document_id=document.id,
-                period_label=document.period_label,
-                metric_name=f"GUIDANCE: {item.get('metric_name', 'unknown')}",
-                metric_value=item.get("high") or item.get("low"),
-                metric_text=item.get("guidance_text", ""),
-                unit=item.get("unit"),
-                segment="guidance",
-                source_snippet=item.get("source_snippet", ""),
-                confidence=item.get("confidence", 0.8),
-                needs_review=False,
-            )
-            db.add(metric)
-            guidance_records.append(item)
-        except Exception as e:
-            logger.warning("Failed to persist guidance: %s", str(e)[:100])
+    guidance_records = await _persist_metrics(db, document, guidance_raw, guidance_mode=True)
 
-    await db.commit()
     logger.info("Combined extraction: %d metrics, %d guidance from document %s",
                 len(metrics), len(guidance_records), document.id)
 
     return {
         "metrics": metrics,
-        "guidance": guidance_records,
+        "guidance": guidance_raw,
         "total_items": len(all_items),
     }
 
@@ -347,49 +276,34 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
 # Persistence helpers
 # ─────────────────────────────────────────────────────────────────
 
-async def _persist_earnings_metrics(db, document, raw_items):
+def _resolve_period_and_name(item: dict, document_period: str) -> tuple[str, str]:
+    """Resolve the period label and metric name, normalising extracted period info."""
+    from services.metric_normaliser import normalise_period
+
+    item_period = item.get("period")
+    metric_period = document_period
+    metric_name = item.get("metric_name", "unknown")
+
+    if item_period and item_period.strip():
+        normalised = normalise_period(item_period)
+        if item.get("is_current_period") is False:
+            metric_period = normalised
+            metric_name = f"[{item_period}] {metric_name}"
+
+    return metric_period, metric_name
+
+
+async def _persist_metrics(
+    db, document, raw_items: list[dict], *, segment_filter: str | None = None, guidance_mode: bool = False
+) -> list[ExtractedMetric]:
+    """Shared persistence for all metric types."""
+    metrics = []
     for item in raw_items:
         try:
-            confidence = item.get("confidence", 1.0)
-            # Period-aware labelling: use extracted period if available
-            item_period = item.get("period")
-            metric_period = document.period_label
-            metric_name = item.get("metric_name", "unknown")
+            if segment_filter and item.get("category", "") != segment_filter:
+                continue
 
-            if item_period and item_period.strip():
-                # Normalise: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY"
-                parts = item_period.strip().split()
-                if len(parts) == 2:
-                    if parts[0] in ("Q1","Q2","Q3","Q4","FY","HY"):
-                        normalised = f"{parts[1]}_{parts[0]}"
-                    else:
-                        normalised = f"{parts[0]}_{parts[1]}"
-                else:
-                    normalised = item_period.strip().replace(" ", "_")
-                # Prior period comparisons get their own period label
-                if item.get("is_current_period") is False:
-                    metric_period = normalised
-                    metric_name = f"[{item_period}] {metric_name}"
-
-            metric = ExtractedMetric(
-                id=uuid.uuid4(), company_id=document.company_id, document_id=document.id,
-                period_label=metric_period, metric_name=metric_name,
-                metric_value=item.get("metric_value"), metric_text=item.get("metric_text", ""),
-                unit=item.get("unit"), segment=item.get("segment"), geography=item.get("geography"),
-                source_snippet=item.get("source_snippet", ""), page_number=item.get("page_number"),
-                confidence=confidence, needs_review=confidence < REVIEW_THRESHOLD,
-            )
-            db.add(metric)
-        except Exception as e:
-            logger.warning("Failed to persist metric: %s", str(e)[:100])
-    await db.commit()
-
-
-async def _persist_transcript_items(db, document, raw_items):
-    for item in raw_items:
-        try:
-            cat = item.get("category", "")
-            if cat == "guidance":
+            if guidance_mode:
                 metric = ExtractedMetric(
                     id=uuid.uuid4(), company_id=document.company_id, document_id=document.id,
                     period_label=document.period_label,
@@ -400,46 +314,52 @@ async def _persist_transcript_items(db, document, raw_items):
                     source_snippet=item.get("source_snippet", ""),
                     confidence=item.get("confidence", 0.8), needs_review=False,
                 )
-                db.add(metric)
+            else:
+                confidence = item.get("confidence", 1.0)
+                metric_period, metric_name = _resolve_period_and_name(item, document.period_label)
+
+                metric = ExtractedMetric(
+                    id=uuid.uuid4(), company_id=document.company_id, document_id=document.id,
+                    period_label=metric_period, metric_name=metric_name,
+                    metric_value=item.get("metric_value"), metric_text=item.get("metric_text", ""),
+                    unit=item.get("unit"), segment=item.get("segment"), geography=item.get("geography"),
+                    source_snippet=item.get("source_snippet", ""), page_number=item.get("page_number"),
+                    confidence=confidence, needs_review=confidence < REVIEW_THRESHOLD,
+                )
+
+            db.add(metric)
+            metrics.append(metric)
+
+            if not guidance_mode:
+                confidence = item.get("confidence", 1.0)
+                if confidence < REVIEW_THRESHOLD:
+                    db.add(ReviewQueueItem(
+                        id=uuid.uuid4(), entity_type="metric", entity_id=metric.id,
+                        queue_reason=f"Low confidence ({confidence:.2f}) on {item.get('metric_name')}",
+                        priority="high" if confidence < 0.5 else "normal",
+                    ))
         except Exception as e:
-            logger.warning("Failed to persist transcript item: %s", str(e)[:100])
+            logger.warning("Failed to persist metric: %s", e)
     await db.commit()
+    return metrics
+
+
+async def _persist_earnings_metrics(db, document, raw_items):
+    await _persist_metrics(db, document, raw_items)
+
+
+async def _persist_transcript_items(db, document, raw_items):
+    await _persist_metrics(db, document, raw_items, segment_filter="guidance", guidance_mode=True)
 
 
 # ─────────────────────────────────────────────────────────────────
-# Legacy functions (kept for single-doc pipeline compatibility)
+# Public API — thin wrappers around extract_combined
 # ─────────────────────────────────────────────────────────────────
-
-def _chunk_text(text: str, max_chars: int = 15000) -> list[str]:
-    if len(text) <= max_chars:
-        return [text]
-    chunks = []
-    lines = text.split("\n")
-    current = []
-    current_len = 0
-    for line in lines:
-        if current_len + len(line) > max_chars and current:
-            chunks.append("\n".join(current))
-            current = []
-            current_len = 0
-        current.append(line)
-        current_len += len(line)
-    if current:
-        chunks.append("\n".join(current))
-    return chunks
-
 
 async def extract_metrics(db: AsyncSession, document: Document, text: str) -> list[ExtractedMetric]:
     """Combined extraction used by single-doc pipeline."""
     result = await extract_combined(db, document, text)
     return result["metrics"]
-
-
-async def extract_guidance(db: AsyncSession, document: Document, text: str) -> list[dict]:
-    """Returns guidance already extracted by extract_metrics/extract_combined."""
-    # If called after extract_combined, guidance is already persisted
-    # Just return empty — the combined extraction handles it
-    return []
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -453,7 +373,7 @@ async def extract_esg(db: AsyncSession, document: Document, text: str) -> dict:
     """
     import asyncio
 
-    chunks = smart_chunk(text, max_tokens=12000)
+    chunks = _smart_chunk(text, max_chars=12000)
     full_text = "\n\n".join(chunks[:3])  # First 3 chunks for ESG (proxy docs are long)
 
     # Run all three in parallel

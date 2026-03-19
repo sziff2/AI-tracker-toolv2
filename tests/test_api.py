@@ -40,6 +40,12 @@ async def test_health(client):
     assert resp.json()["status"] == "ok"
 
 
+@pytest.mark.asyncio
+async def test_health_returns_version(client):
+    resp = await client.get("/health")
+    assert "version" in resp.json()
+
+
 # ─────────────────────────────────────────────────────────────────
 # Companies CRUD
 # ─────────────────────────────────────────────────────────────────
@@ -81,6 +87,41 @@ async def test_company_not_found(client):
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_ticker_case_insensitive(client):
+    await client.post("/api/v1/companies", json={"ticker": "HEIA", "name": "Heineken"})
+    resp = await client.get("/api/v1/companies/heia")
+    assert resp.status_code == 200
+    assert resp.json()["ticker"] == "HEIA"
+
+
+# ─────────────────────────────────────────────────────────────────
+# Documents — error cases
+# ─────────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_upload_document_company_not_found(client):
+    resp = await client.post(
+        "/api/v1/companies/XXXX/documents/upload",
+        files={"file": ("test.pdf", b"fake pdf content", "application/pdf")},
+        data={"document_type": "earnings_release", "period_label": "2025_Q4"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_document_not_found(client):
+    import uuid
+    resp = await client.get(f"/api/v1/documents/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_job_not_found(client):
+    import uuid
+    resp = await client.get(f"/api/v1/jobs/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
 # ─────────────────────────────────────────────────────────────────
 # Review Queue
 # ─────────────────────────────────────────────────────────────────
@@ -89,3 +130,17 @@ async def test_review_queue_empty(client):
     resp = await client.get("/api/v1/review-queue")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ─────────────────────────────────────────────────────────────────
+# Correlation ID Middleware
+# ─────────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_correlation_id_in_response(client):
+    resp = await client.get("/health")
+    assert "x-request-id" in resp.headers
+
+@pytest.mark.asyncio
+async def test_correlation_id_passed_through(client):
+    resp = await client.get("/health", headers={"X-Request-ID": "test-123"})
+    assert resp.headers.get("x-request-id") == "test-123"
