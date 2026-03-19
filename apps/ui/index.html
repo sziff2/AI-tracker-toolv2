@@ -433,30 +433,57 @@ async function submitForm(){
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
   if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
   ld.style.display='block';
-  ld.innerHTML='<div style="font-family:var(--sans);padding:24px 0;text-align:center"><div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:12px">Starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
+  var _pipelineStart=Date.now();
+  var _docCount=UF.length||1;
+  ld.innerHTML='<div style="font-family:var(--sans);padding:24px 0;text-align:center"><div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:12px">Starting pipeline\u2026</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
   const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
     var STEPS=['upload','parse','extract','compare','surprises','briefing','ir_questions','synthesis'];
     var stepLabels={'upload':'Upload','parse':'Parse','extract':'Extract KPIs','compare':'Thesis Compare','surprises':'Surprises','briefing':'Briefing','ir_questions':'IR Questions','synthesis':'Synthesise'};
-    var stepIcons={'upload':'📤','parse':'📄','extract':'📊','compare':'🔍','surprises':'⚡','briefing':'📝','ir_questions':'❓','synthesis':'✨'};
-    var ldh='<div style="font-family:var(--sans);padding:24px 0">';
-    ldh+='<div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:16px;text-align:center">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>';
-    ldh+='<div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:20px">';
-    ldh+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div>';
-    ldh+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">';
+    var stepIcons={'upload':'\ud83d\udce4','parse':'\ud83d\udcc4','extract':'\ud83d\udcca','compare':'\ud83d\udd0d','surprises':'\u26a1','briefing':'\ud83d\udcdd','ir_questions':'\u2753','synthesis':'\u2728'};
+    var stepDetail={
+      'upload':'Uploading document'+(_docCount>1?'s ('+_docCount+' files)':'')+' to the server\u2026',
+      'parse':'Reading the PDF — extracting text from all pages, identifying tables, classifying document type\u2026',
+      'extract':'Running '+(_docCount>1?_docCount+' type-specific':'a')+' extractor'+(_docCount>1?'s in parallel':'')+' — pulling every KPI, margin, guidance figure and source snippet from the document\u2026',
+      'compare':'Comparing the extracted numbers and management commentary against your investment thesis to check if key assumptions still hold\u2026',
+      'surprises':'Scanning for beats and misses — checking every reported figure against prior guidance and management targets\u2026',
+      'briefing':'Writing the one-page analyst briefing — synthesising the numbers, management tone, and thesis impact into a clear view\u2026',
+      'ir_questions':'Drafting targeted IR questions based on gaps in the data, surprises, and areas where management was evasive\u2026',
+      'synthesis':'Cross-referencing all documents — earnings release, transcript, broker notes, presentation — into a single opinionated research update\u2026',
+      'saving':'Saving briefing, metrics, and IR questions to the research database\u2026',
+      'generating questions':'Finalising the IR question list for the next investor call\u2026',
+      'processing_documents':'Coordinating parallel extraction across '+_docCount+' document'+(_docCount>1?'s':'')+'\u2026',
+      'reprocessing':'Clearing previous outputs and rerunning the full pipeline with the latest extractors\u2026',
+      'processing':'Pipeline running\u2026',
+      'done':'Wrapping up and saving results\u2026'
+    };
+    var elapsed=Math.round((Date.now()-_pipelineStart)/1000);
+    var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
+    var detail=stepDetail[step]||('Running: '+step.replace(/_/g,' ')+'\u2026');
+    var ldh='<div style="font-family:var(--sans);padding:20px 0">';
+    ldh+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
+    ldh+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.replace(/_/g,' '))+'\u2026</div>';
+    ldh+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
+    ldh+='</div>';
+    ldh+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:12px">';
+    ldh+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:4px;transition:width .6s"></div></div>';
+    ldh+='<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5;min-height:36px">'+esc(detail)+'</div>';
+    ldh+='<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center">';
     for(var si=0;si<STEPS.length;si++){
       var sn=STEPS[si];
       var done=steps.indexOf(sn)>=0;
-      var active=step===sn;
+      var active=step===sn||step.indexOf(sn)>=0;
       var bg=done?'var(--greenDim)':active?'var(--goldDim)':'var(--bg2)';
       var bdr=done?'rgba(34,197,94,.4)':active?'rgba(196,164,90,.5)':'var(--border)';
       var clr=done?'var(--green)':active?'var(--gold)':'var(--text4)';
-      var icon=done?'✓':(stepIcons[sn]||'·');
-      ldh+='<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
+      var icon=done?'\u2713':(stepIcons[sn]||'\u00b7');
+      ldh+='<div style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
       ldh+='<span style="font-size:12px">'+icon+'</span>';
       ldh+='<span style="font-size:11px;font-weight:600;color:'+clr+'">'+esc(stepLabels[sn]||sn)+'</span>';
       ldh+='</div>';
     }
-    ldh+='</div></div>';
+    ldh+='</div>';
+    if(steps.length>0){ldh+='<div style="text-align:center;margin-top:10px;font-size:11px;color:var(--text4)">'+steps.length+' of '+STEPS.length+' steps complete</div>';}
+    ldh+='</div>';
     ld.innerHTML=ldh;
     if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';fbSetContext(t,p);c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result,t,p):renderSingleHTML(j.result,t,p))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
@@ -1644,7 +1671,7 @@ function renderLab(variants,experiments,stats){
   h+='<div class="cd gold" style="margin-bottom:24px">';
   h+='<div class="cd-t">&#10024; Refine Prompts from Feedback</div>';
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">';
-  h+='Feedback you&#39;ve sent from the Results tab appears here. Select a prompt type and click <strong>LLM Refine</strong> to generate an improved prompt based on your annotations.';
+  h+='Feedback you've sent from the Results tab appears here. Select a prompt type and click <strong>LLM Refine</strong> to generate an improved prompt based on your annotations.';
   h+='</div>';
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
   promptTypes.forEach(function(type){
@@ -1652,7 +1679,7 @@ function renderLab(variants,experiments,stats){
     const hasVariant=variants.some(function(v){return v.prompt_type===type;});
     const clr=count>0?'var(--gold)':'var(--text4)';
     h+='<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
-    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(\''+type+'\')">'; 
+    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(''+type+'')">';
     h+='&#10024; '+esc(type);
     if(count>0)h+=' <span style="font-size:10px;background:var(--goldDim);padding:1px 5px;border-radius:3px">'+count+' note'+(count!==1?'s':'')+'</span>';
     h+='</button>';
@@ -1687,15 +1714,15 @@ function renderLab(variants,experiments,stats){
         h+='<span style="color:var(--red)">L:'+v.loss_count+'</span>';
         h+='<span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span>';
         h+='<span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>';
-        if(!v.is_active)h+='<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>';
+        if(!v.is_active)h+='<button class="btn-sm" onclick="activateVariant(''+v.id+'')">Promote</button>';
         h+='</div></div>';
         h+='<div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>';
         if(v.notes)h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>';
         h+='</div>';
       });
       h+='<div style="display:flex;gap:8px;margin:4px 0 20px">';
-      h+='<button class="btn2" onclick="refineType(\''+type+'\')">&#10024; LLM Refine</button>';
-      h+='<button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button>';
+      h+='<button class="btn2" onclick="refineType(''+type+'')">&#10024; LLM Refine</button>';
+      h+='<button class="btn2" onclick="newVariant(''+type+'')">+ Manual Variant</button>';
       h+='</div>';
     });
   }
