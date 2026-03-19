@@ -1733,7 +1733,7 @@ function renderLab(variants,experiments,stats){
     const hasVariant=variants.some(function(v){return v.prompt_type===type;});
     const clr=count>0?'var(--gold)':'var(--text4)';
     h+='<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
-    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(''+type+'')">';
+    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(\''+type+'\')">';
     h+='&#10024; '+esc(type);
     if(count>0)h+=' <span style="font-size:10px;background:var(--goldDim);padding:1px 5px;border-radius:3px">'+count+' note'+(count!==1?'s':'')+'</span>';
     h+='</button>';
