@@ -757,20 +757,74 @@ async function reprocessPeriod(ticker,period){
   }catch(e){alert('Reprocess failed: '+e.message);}
 }
 function pollReprocess(jobId,ticker,period){
+  var _rpStart=Date.now();
+  var STEPS=['upload','parse','extract','compare','surprises','briefing','ir_questions','synthesis'];
+  var stepLabels={'upload':'Upload','parse':'Parse','extract':'Extract KPIs','compare':'Thesis Compare','surprises':'Surprises','briefing':'Briefing','ir_questions':'IR Questions','synthesis':'Synthesise'};
+  var stepIcons={'upload':'\ud83d\udce4','parse':'\ud83d\udcc4','extract':'\ud83d\udcca','compare':'\ud83d\udd0d','surprises':'\u26a1','briefing':'\ud83d\udcdd','ir_questions':'\u2753','synthesis':'\u2728'};
+  var stepDetail={
+    'upload':'Uploading documents to the server\u2026',
+    'parse':'Reading the PDF \u2014 extracting text from all pages, identifying tables, classifying document type\u2026',
+    'extract':'Running type-specific extractors \u2014 pulling every KPI, margin, guidance figure and source snippet\u2026',
+    'compare':'Comparing extracted metrics against your investment thesis to check if key assumptions still hold\u2026',
+    'surprises':'Scanning for beats and misses \u2014 checking every reported figure against prior guidance and targets\u2026',
+    'briefing':'Writing the one-page analyst briefing \u2014 synthesising numbers, management tone and thesis impact\u2026',
+    'ir_questions':'Drafting targeted IR questions based on gaps, surprises and areas where management was evasive\u2026',
+    'synthesis':'Cross-referencing all documents into a single opinionated research update\u2026',
+    'saving':'Saving briefing, metrics and IR questions to the research database\u2026',
+    'generating questions':'Finalising the IR question list for the next investor call\u2026',
+    'processing_documents':'Coordinating parallel extraction across documents\u2026',
+    'reprocessing':'Clearing previous outputs and rerunning the full pipeline with the latest extractors\u2026',
+    'processing':'Pipeline running\u2026',
+    'done':'Wrapping up and saving results\u2026'
+  };
   const poll=setInterval(async()=>{
     try{
       const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
       const j=await r.json();
-      const bar=E('reprocess-bar');const step=E('reprocess-step');
-      if(bar)bar.style.width=(j.progress_pct||0)+'%';
-      if(step)step.textContent=(j.current_step||'Processing…')+' — '+(j.progress_pct||0)+'%';
+      const pct=j.progress_pct||0;
+      const step=j.current_step||'processing';
+      const steps=j.steps_completed||[];
+      const prog=E('reprocess-progress');
+      if(!prog)return;
+      var elapsed=Math.round((Date.now()-_rpStart)/1000);
+      var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
+      var detail=stepDetail[step]||('Running: '+step.replace(/_/g,' ')+'\u2026');
+      var h='<div style="font-family:var(--sans);padding:4px 0">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
+      h+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.replace(/_/g,' '))+'\u2026</div>';
+      h+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
+      h+='</div>';
+      h+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:10px">';
+      h+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:4px;transition:width .6s"></div></div>';
+      h+='<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5;min-height:32px">'+esc(detail)+'</div>';
+      h+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
+      for(var si=0;si<STEPS.length;si++){
+        var sn=STEPS[si];
+        var done=steps.indexOf(sn)>=0;
+        var active=step===sn||step.indexOf(sn)>=0;
+        var bg=done?'var(--greenDim)':active?'var(--goldDim)':'var(--bg2)';
+        var bdr=done?'rgba(34,197,94,.4)':active?'rgba(196,164,90,.5)':'var(--border)';
+        var clr=done?'var(--green)':active?'var(--gold)':'var(--text4)';
+        var icon=done?'\u2713':(stepIcons[sn]||'\u00b7');
+        h+='<div style="display:flex;align-items:center;gap:4px;padding:4px 9px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
+        h+='<span style="font-size:11px">'+icon+'</span>';
+        h+='<span style="font-size:11px;font-weight:600;color:'+clr+'">'+esc(stepLabels[sn]||sn)+'</span>';
+        h+='</div>';
+      }
+      h+='</div>';
+      if(steps.length>0){h+='<div style="margin-top:8px;font-size:11px;color:var(--text4)">'+steps.length+' of '+STEPS.length+' steps complete</div>';}
+      h+='</div>';
       if(j.status==='completed'){
         clearInterval(poll);
-        if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
-        setTimeout(()=>loadCockpit(),1500);
+        h='<div style="font-family:var(--sans);padding:12px 0;text-align:center"><span style="font-size:14px;color:var(--green)">\u2713 Analysis complete \u2014 loading results\u2026</span></div>';
+        prog.innerHTML=h;
+        setTimeout(function(){loadCockpit();},1500);
       }else if(j.status==='failed'){
         clearInterval(poll);
-        if(step)step.innerHTML='<span style="color:var(--red)">✕ Failed: '+(j.error||'Unknown error').substring(0,100)+'</span>';
+        h='<div style="font-family:var(--sans);padding:12px 0"><span style="color:var(--red)">\u2715 Failed: '+(j.error_message||'Unknown error').substring(0,200)+'</span></div>';
+        prog.innerHTML=h;
+      }else{
+        prog.innerHTML=h;
       }
     }catch(e){}
   },3000);
