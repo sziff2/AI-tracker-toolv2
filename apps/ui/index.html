@@ -1644,7 +1644,7 @@ function renderLab(variants,experiments,stats){
   h+='<div class="cd gold" style="margin-bottom:24px">';
   h+='<div class="cd-t">&#10024; Refine Prompts from Feedback</div>';
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">';
-  h+='Feedback you&#39;ve sent from the Results tab appears here. Select a prompt type and click <strong>LLM Refine</strong> to generate an improved prompt based on your annotations.';
+  h+='Feedback you've sent from the Results tab appears here. Select a prompt type and click <strong>LLM Refine</strong> to generate an improved prompt based on your annotations.';
   h+='</div>';
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
   promptTypes.forEach(function(type){
@@ -1652,7 +1652,7 @@ function renderLab(variants,experiments,stats){
     const hasVariant=variants.some(function(v){return v.prompt_type===type;});
     const clr=count>0?'var(--gold)':'var(--text4)';
     h+='<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
-    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(\''+type+'\')">'; 
+    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(''+type+'')">';
     h+='&#10024; '+esc(type);
     if(count>0)h+=' <span style="font-size:10px;background:var(--goldDim);padding:1px 5px;border-radius:3px">'+count+' note'+(count!==1?'s':'')+'</span>';
     h+='</button>';
@@ -1687,15 +1687,15 @@ function renderLab(variants,experiments,stats){
         h+='<span style="color:var(--red)">L:'+v.loss_count+'</span>';
         h+='<span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span>';
         h+='<span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>';
-        if(!v.is_active)h+='<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>';
+        if(!v.is_active)h+='<button class="btn-sm" onclick="activateVariant(''+v.id+'')">Promote</button>';
         h+='</div></div>';
         h+='<div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>';
         if(v.notes)h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>';
         h+='</div>';
       });
       h+='<div style="display:flex;gap:8px;margin:4px 0 20px">';
-      h+='<button class="btn2" onclick="refineType(\''+type+'\')">&#10024; LLM Refine</button>';
-      h+='<button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button>';
+      h+='<button class="btn2" onclick="refineType(''+type+'')">&#10024; LLM Refine</button>';
+      h+='<button class="btn2" onclick="newVariant(''+type+'')">+ Manual Variant</button>';
       h+='</div>';
     });
   }
