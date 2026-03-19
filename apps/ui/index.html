@@ -212,6 +212,10 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
     <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
     <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Dev Tools</div>
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
   </div>
@@ -1729,7 +1733,7 @@ function newVariant(type){const name=prompt('Variant name:');if(!name)return;con
 async function runExperiment(){
   const type=E('lab-type').value,ticker=E('lab-ticker').value.trim(),period=E('lab-period').value.trim(),input=E('lab-input').value.trim();
   if(!input){alert('Paste test input.');return;}const res=E('lab-result');res.innerHTML='<div class="ld">Running both variants…</div>';
-  try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();
+  try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(function(){return {};});const msg=e.detail||(e.message)||'HTTP '+r.status+' — check that (1) a v1_default active variant exists and (2) at least one candidate variant exists for this prompt type. Run: Seed Defaults first.';res.innerHTML='<div class="err" style="white-space:pre-wrap">'+esc(msg)+'</div>';return;}const d=await r.json();
     let h='<div class="g2" style="margin-top:0"><div class="cd" style="border-left-color:var(--gold)"><div class="cd-t">A: '+esc(d.variant_a.name)+' (active)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_a,null,2))+'</div></div><div class="cd" style="border-left-color:var(--green)"><div class="cd-t">B: '+esc(d.variant_b.name)+' (challenger)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_b,null,2))+'</div></div></div>';
     h+='<div style="margin-top:16px;padding:16px;background:var(--bg2);border-radius:10px"><div class="fl">Judge</div><div class="form-row"><select id="lab-winner"><option value="">Pick winner…</option><option value="a">A wins</option><option value="b">B wins</option><option value="tie">Tie</option></select><input id="lab-ra" type="number" min="1" max="5" placeholder="Rate A 1-5" style="max-width:100px"><input id="lab-rb" type="number" min="1" max="5" placeholder="Rate B 1-5" style="max-width:100px"></div><div class="form-row" style="margin-top:6px"><input id="lab-fb" placeholder="Why is the winner better?"><button onclick="judgeExp(\''+d.experiment_id+'\')">Submit</button></div></div>';
     res.innerHTML=h;
