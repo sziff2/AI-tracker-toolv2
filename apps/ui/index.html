@@ -862,10 +862,9 @@ function _fbApplyBadge(section,tag){
 
 function _fbUpdateCounter(){
   var unpromoted=Object.values(window._fbSession).filter(function(f){return f.tag&&!f.promoted;}).length;
-  var ctr=E('fb-counter');
-  if(ctr)ctr.innerHTML='<span>'+unpromoted+'</span> annotation'+(unpromoted!==1?'s':'')+' ready to send';
-  var panel=E('fb-promote-panel');
-  if(panel)panel.classList.toggle('visible',unpromoted>0);
+  var label='<span>'+unpromoted+'</span> annotation'+(unpromoted!==1?'s':'')+' ready to send';
+  document.querySelectorAll('.fb-counter-el').forEach(function(el){el.innerHTML=label;});
+  document.querySelectorAll('.fb-promote-root').forEach(function(p){p.classList.toggle('visible',unpromoted>0);});
 }
 
 async function fbTag(section,tag,sourceSnippet,promptType){
@@ -922,11 +921,14 @@ async function fbSaveComment(section,promptType){
   }catch(e){console.error('fbSaveComment error',e);}
 }
 
-async function fbPromote(){
-  var promptType=(E('fb-prompt-type')&&E('fb-prompt-type').value)||'synthesis';
-  var rating=parseInt((E('fb-rating')&&E('fb-rating').value)||'3');
-  var notes=(E('fb-notes')&&E('fb-notes').value&&E('fb-notes').value.trim())||'';
-  var btn=E('fb-promote-btn');
+async function fbPromote(btn){
+  var panel=btn?btn.closest('.fb-promote-root'):null;
+  var ptSel=panel?panel.querySelector('.fb-pt-sel'):null;
+  var ratInp=panel?panel.querySelector('.fb-rating-inp'):null;
+  var notesTa=panel?panel.querySelector('.fb-notes-ta'):null;
+  var promptType=(ptSel&&ptSel.value)||'synthesis';
+  var rating=parseInt((ratInp&&ratInp.value)||'3');
+  var notes=(notesTa&&notesTa.value&&notesTa.value.trim())||'';
   if(btn){btn.disabled=true;btn.textContent='Sending\u2026';}
   try{
     var resp=await fetch('/api/v1/feedback/promote',{
@@ -936,9 +938,9 @@ async function fbPromote(){
     });
     var data=await resp.json();
     if(btn){btn.disabled=false;btn.textContent='Send to Prompt Lab';}
-    Object.values(window._fbSession).forEach(function(f){f.promoted=true;});
+    Object.values(window._fbSession).forEach(function(f){if(f)f.promoted=true;});
     _fbUpdateCounter();
-    if(E('fb-notes'))E('fb-notes').value='';
+    if(notesTa)notesTa.value='';
     alert('\u2713 '+data.items_promoted+' annotation'+(data.items_promoted!==1?'s':'')+' sent to Prompt Lab.\n\nGo to Prompt Lab \u2192 Refine to generate an improved prompt.');
   }catch(e){
     if(btn){btn.disabled=false;btn.textContent='Send to Prompt Lab';}
@@ -969,11 +971,12 @@ function fbWrap(section,innerHtml,snippet,promptType){
 
 function fbPromotePanel(promptType){
   var pt=promptType||'synthesis';
-  return '<div class="fb-promote-panel" id="fb-promote-panel">'
+  var uid='fbp-'+Math.random().toString(36).slice(2,7);
+  return '<div class="fb-promote-panel fb-promote-root" data-uid="'+uid+'">'
     +'<h4>&#128228; Send feedback to Prompt Lab</h4>'
     +'<div class="fb-promote-row">'
     +'<label>Prompt type:</label>'
-    +'<select id="fb-prompt-type">'
+    +'<select class="fb-pt-sel">'
     +'<option value="synthesis"'+(pt==='synthesis'?' selected':'')+'>synthesis</option>'
     +'<option value="earnings_release"'+(pt==='earnings_release'?' selected':'')+'>earnings_release</option>'
     +'<option value="transcript"'+(pt==='transcript'?' selected':'')+'>transcript</option>'
@@ -982,14 +985,14 @@ function fbPromotePanel(promptType){
     +'<option value="briefing"'+(pt==='briefing'?' selected':'')+'>briefing</option>'
     +'</select>'
     +'<label>Overall quality (1\u20135):</label>'
-    +'<input type="number" id="fb-rating" min="1" max="5" value="3" style="width:52px">'
-    +'<div class="fb-counter" id="fb-counter"><span>0</span> annotations</div>'
+    +'<input type="number" class="fb-rating-inp" min="1" max="5" value="3" style="width:52px">'
+    +'<div class="fb-counter fb-counter-el"><span>0</span> annotations</div>'
     +'</div>'
     +'<div class="fb-promote-notes">'
-    +'<textarea id="fb-notes" placeholder="Optional: summarise the session"></textarea>'
+    +'<textarea class="fb-notes-ta" placeholder="Optional: summarise the session \u2014 e.g. \'Organic/reported confusion throughout\'"></textarea>'
     +'</div>'
     +'<div class="fb-promote-row">'
-    +'<button class="fb-save-btn" id="fb-promote-btn" onclick="fbPromote()">Send to Prompt Lab</button>'
+    +'<button class="fb-save-btn fb-promote-btn" onclick="fbPromote(this)">Send to Prompt Lab</button>'
     +'<span style="font-family:var(--sans);font-size:11px;color:var(--text4)">Feedback will appear in Prompt Lab \u2192 Refine</span>'
     +'</div>'
     +'</div>';
