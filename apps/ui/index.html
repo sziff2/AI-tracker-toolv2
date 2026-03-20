@@ -578,28 +578,56 @@ function renderCkThesis(d){
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // Latest assessment
-  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
-  // Assessment history
-  if(d.all_assessments?.length>1){
-    h+='<h2 style="margin-top:24px">Assessment History</h2>';
-    d.all_assessments.forEach(a=>{
-      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
-      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
-    });
-  }
-  // Thesis version history
-  if(d.thesis_history?.length>1){
-    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
-    d.thesis_history.forEach(tv=>{
-      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
-    });
+  // ── LLM Update button (IC Summary + three analysis fields) ──
+  h+='<div style="margin-top:16px;display:flex;align-items:center;gap:12px">';
+  h+='<button class="btn2" id="llm-update-btn-'+ticker+'" onclick="llmUpdateThesis(\''+ticker+'\')" style="font-size:12px;padding:6px 16px">✨ LLM Update</button>';
+  h+='<span id="llm-update-status-'+ticker+'" style="font-family:var(--sans);font-size:12px;color:var(--text4)"></span>';
+  h+='</div>';
+
+  // ── Recent Results Summary (most recent period, bias to new info) ──
+  var recentPeriods=Object.keys(d.analyses_by_period||{}).sort().reverse();
+  if(recentPeriods.length){
+    var rp=recentPeriods[0];
+    var rc=(d.analyses_by_period[rp]||{}).content||{};
+    var syn=rc.synthesis||rc.briefing||{};
+    if(syn.bottom_line||syn.management_message||syn.what_happened||syn.headline){
+      h+='<div class="cd" style="margin-top:16px;border-left-color:var(--blue)">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">';
+      h+='<div class="cd-t" style="margin:0">Recent Results Summary</div>';
+      h+='<span style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+esc(rp)+'</span>';
+      h+='</div>';
+      if(syn.headline)h+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:8px">'+esc(syn.headline)+'</div>';
+      if(syn.what_happened)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">What Happened</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.what_happened)+'</div></div>';
+      if(syn.management_message)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Management Message</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.management_message)+'</div></div>';
+      if(syn.thesis_status||syn.thesis_impact)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Thesis Impact</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.thesis_status||syn.thesis_impact||'')+'</div></div>';
+      if(syn.bottom_line)h+='<div style="padding:10px 14px;background:var(--bg3);border-radius:8px;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text)"><span style="color:var(--gold)">Bottom line: </span>'+esc(syn.bottom_line)+'</div>';
+      h+='</div>';
+    }
   }
   return h;
 }
 
 async function saveThesisField(ticker,field,value){
   try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
+}
+
+async function llmUpdateThesis(ticker){
+  var btn=E('llm-update-btn-'+ticker);
+  var status=E('llm-update-status-'+ticker);
+  if(!btn)return;
+  btn.disabled=true;btn.textContent='Generating…';
+  if(status)status.textContent='Calling Claude…';
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/llm-update-thesis',{method:'POST'});
+    if(!r.ok){var e=await r.json().catch(function(){return {};});throw new Error(e.detail||'Failed');}
+    var d=await r.json();
+    if(status)status.textContent='✓ Updated — reload to see changes';
+    setTimeout(function(){loadCockpit();},800);
+  }catch(e){
+    if(status)status.textContent='✕ '+e.message;
+  }finally{
+    btn.disabled=false;btn.textContent='✨ LLM Update';
+  }
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────
