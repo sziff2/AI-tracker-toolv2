@@ -181,7 +181,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 <!-- ═══ GLOBAL SEARCH BAR ═══ -->
 <div class="gs-bar">
-  <input class="gs-input" id="gs-input" type="text" placeholder="Search documents, metrics, statements, notes… (⌘K)" autocomplete="off"
+  <input class="gs-input" id="gs-input" type="text" placeholder="Search documents, metrics, statements, notes…" autocomplete="off"
     onkeydown="if(event.key==='Enter')runSearch();if(event.key==='Escape')closeSearch();">
   <select class="gs-ticker" id="gs-ticker">
     <option value="">All companies</option>
@@ -736,7 +736,7 @@ async function uploadAddDocs(ticker,period,count){
     // Show progress polling
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">📄 Uploaded '+count+' documents. Processing…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-top:12px"><div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:10px">📄 Uploaded '+count+' document'+(count!==1?'s':'')+' — starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
     }
     pollReprocess(d.job_id,ticker,period);
   }catch(e){listEl.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
@@ -750,7 +750,7 @@ async function reprocessPeriod(ticker,period){
     // Show progress bar in the results area
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">🔄 Reprocessing '+d.documents+' documents…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-top:12px"><div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:10px">🔄 Reprocessing '+d.documents+' document'+(d.documents!==1?'s':'')+' — starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
     }
     // Poll for progress
     pollReprocess(d.job_id,ticker,period);
