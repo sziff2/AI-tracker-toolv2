@@ -761,3 +761,134 @@ Schema:
   "portfolio_implication": "<1-2 sentence implication for the investment thesis>"
 }}
 """
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ANNUAL REPORT / 10-K EXTRACTOR
+# Purpose-built for full-year filings: goes beyond reported numbers
+# to capture MD&A narrative, risk factor changes, segment economics,
+# capital allocation, and multi-year trend data.
+# ═══════════════════════════════════════════════════════════════════
+ANNUAL_REPORT_EXTRACTOR = """\
+You are a senior buy-side analyst extracting intelligence from an ANNUAL REPORT or 10-K filing.
+
+This is a full-year document. It contains more than just numbers — extract the narrative
+signals, risk factor changes, and strategic disclosures that quarterly reports miss.
+
+COMPANY: infer from document if possible
+DOCUMENT TYPE: Annual Report / 10-K
+
+Extract items across FIVE categories. Return a JSON array mixing all types.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY 1: FINANCIAL METRICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Focus on: revenue, operating profit/EBIT, EBITDA, net income, EPS (basic + diluted),
+DPS, FCF, capex, D&A, net debt, ROIC, ROE, ROA, margins (gross/operating/net),
+working capital, segment P&L, geographic split, organic vs reported growth.
+
+Include 2+ years of data where shown — label each with its period.
+
+Schema:
+{{
+  "category": "financial_metric",
+  "metric_name": "<name>",
+  "metric_value": <number or null>,
+  "metric_text": "<raw text>",
+  "unit": "<EUR_M | USD_M | GBP_M | % | bps | x | null>",
+  "period": "<e.g. FY2024 | FY2023>",
+  "segment": "<segment or null>",
+  "geography": "<region or null>",
+  "reported_vs_organic": "reported" | "organic" | "underlying" | "unknown",
+  "source_snippet": "<verbatim>",
+  "page_number": <int or null>,
+  "confidence": <0.0-1.0>
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY 2: MD&A NARRATIVE SIGNALS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Extract management's own explanation of performance drivers, headwinds, and outlook.
+Flag: changes in language vs prior year, hedging/caution, emphasis on specific themes.
+
+Schema:
+{{
+  "category": "mda_signal",
+  "topic": "<e.g. pricing power | volume trends | cost inflation | FX impact | demand outlook>",
+  "management_view": "<what management says about this topic>",
+  "tone": "positive" | "cautious" | "neutral" | "defensive" | "evasive",
+  "year_on_year_change": "<has the narrative on this topic changed vs prior year? yes/no/unclear>",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY 3: RISK FACTOR CHANGES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Focus on risks that are NEW, ELEVATED, or REMOVED vs what a typical prior filing would contain.
+Ignore boilerplate. Flag specific, company-relevant risks only.
+
+Schema:
+{{
+  "category": "risk_factor",
+  "risk_name": "<short name>",
+  "description": "<what the risk is and why it matters>",
+  "status": "new" | "elevated" | "unchanged" | "reduced",
+  "investment_relevance": "high" | "medium" | "low",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY 4: CAPITAL ALLOCATION & BALANCE SHEET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Extract: dividend policy and changes, buyback programmes (authorised, executed, remaining),
+M&A activity (completed, pipeline hints), capex guidance, debt maturity profile,
+leverage targets, credit ratings, pension obligations.
+
+Schema:
+{{
+  "category": "capital_allocation",
+  "item": "<e.g. dividend | buyback | acquisition | capex_guidance | debt_maturity>",
+  "value": "<stated value or description>",
+  "direction": "increase" | "decrease" | "maintain" | "new" | "cancelled" | null,
+  "timeframe": "<e.g. FY2025 | over 3 years | null>",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CATEGORY 5: STRATEGIC DISCLOSURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Extract: medium-term financial targets, strategic priorities, market share commentary,
+competitive positioning statements, new business lines, portfolio changes,
+geographic expansion or contraction, technology/AI investments.
+
+Schema:
+{{
+  "category": "strategic_disclosure",
+  "topic": "<strategic topic>",
+  "disclosure": "<what was disclosed>",
+  "timeframe": "<e.g. by 2027 | medium term | null>",
+  "specificity": "quantified" | "directional" | "qualitative",
+  "source_snippet": "<verbatim>",
+  "confidence": <0.0-1.0>
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULES — READ CAREFULLY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Extract ONLY explicitly stated data. Do NOT infer, calculate, or estimate.
+2. Every item MUST include a source_snippet (verbatim quote from the document).
+3. For financial metrics: extract multi-year comparatives where shown, label each period.
+4. For risk factors: ignore generic boilerplate (e.g. "interest rates may rise").
+   Only extract risks with specific, company-relevant language.
+5. For MD&A signals: focus on what is DIFFERENT or NOTABLE vs a generic annual report.
+6. Set confidence below 0.7 for anything ambiguous.
+7. Do NOT duplicate items across categories.
+
+Respond ONLY with a JSON array. No preamble, no markdown fences.
+
+--- DOCUMENT TEXT ---
+{text}
+"""
