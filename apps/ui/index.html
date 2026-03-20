@@ -513,8 +513,23 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
+  setTimeout(autoResizeTextareas,80);
 }
 function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
+
+function autoResizeTextareas(){
+  document.querySelectorAll('textarea.thesis-auto').forEach(function(ta){
+    ta.style.height='auto';
+    ta.style.height=(ta.scrollHeight+4)+'px';
+    if(!ta._autoResizeBound){
+      ta._autoResizeBound=true;
+      ta.addEventListener('input',function(){
+        this.style.height='auto';
+        this.style.height=(this.scrollHeight+4)+'px';
+      });
+    }
+  });
+}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
@@ -554,28 +569,28 @@ function renderCkThesis(d){
   h+='</select></div>';
   h+='</div></div>';
 
-  // Three-column structured thesis section
+  // Three-column structured thesis section — auto-height textareas
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
   // What Would Make Us Wrong
   h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
+  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:80px" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
   // Disconfirming Evidence
   h+='<div class="cd" style="border-left-color:var(--amber);margin:0"><div class="cd-t" style="color:var(--amber)">Disconfirming Evidence</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
+  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:80px" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
   // Positive / Negative Surprises
   h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Positive / Negative Surprises</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
+  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px;resize:vertical;min-height:60px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
+  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--red);resize:vertical;min-height:60px" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
   h+='</div>';
 
   // Investment Thesis (editable)
   h+='<div class="g2" style="margin-top:12px">';
   h+='<div class="cd" style="margin:0"><div class="cd-t">Investment Thesis</div>';
-  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
+  h+='<textarea class="fi thesis-auto" style="font-size:13px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:100px" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
   h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">✎ Editable — changes versioned on save</div></div>';
   // Valuation Framework
   h+='<div class="cd" style="margin:0"><div class="cd-t">Valuation Framework</div>';
-  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
+  h+='<textarea class="fi thesis-auto" style="font-size:13px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:100px" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
   // ── LLM Update button (IC Summary + three analysis fields) ──
