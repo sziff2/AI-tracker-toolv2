@@ -110,6 +110,10 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
 
     full_text = "\n\n".join(p["text"] for p in pages)
 
+    # Store parsed pages on document object so metric_extractor can use
+    # real page boundaries for the pre-filter (avoids 3000-char fallback)
+    document._parsed_pages = pages
+
     # 2. Classify
     classification = classify_document(full_text)
 

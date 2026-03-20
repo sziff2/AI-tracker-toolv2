@@ -20,6 +20,7 @@ from prompts import (
     EARNINGS_RELEASE_EXTRACTOR, TRANSCRIPT_EXTRACTOR,
     BROKER_NOTE_EXTRACTOR, PRESENTATION_EXTRACTOR,
     ESG_ENVIRONMENTAL_EXTRACTOR, ESG_SOCIAL_EXTRACTOR, ESG_GOVERNANCE_EXTRACTOR,
+    ANNUAL_REPORT_EXTRACTOR,
 )
 from schemas import ExtractedKPI, GuidanceItem
 from services.llm_client import call_llm_json, call_llm_json_async, call_llm_json_parallel
@@ -31,8 +32,8 @@ REVIEW_THRESHOLD = 0.8
 DOCTYPE_PROMPTS = {
     "earnings_release": EARNINGS_RELEASE_EXTRACTOR,
     "10-Q": EARNINGS_RELEASE_EXTRACTOR,
-    "10-K": EARNINGS_RELEASE_EXTRACTOR,
-    "annual_report": EARNINGS_RELEASE_EXTRACTOR,
+    "10-K": ANNUAL_REPORT_EXTRACTOR,
+    "annual_report": ANNUAL_REPORT_EXTRACTOR,
     "transcript": TRANSCRIPT_EXTRACTOR,
     "broker_note": BROKER_NOTE_EXTRACTOR,
     "presentation": PRESENTATION_EXTRACTOR,
@@ -119,6 +120,32 @@ async def extract_by_document_type(
     """
     doc_type = document.document_type or "other"
     prompt_template = DOCTYPE_PROMPTS.get(doc_type, COMBINED_EXTRACTOR)
+
+    # ── Pre-filter: remove boilerplate BEFORE chunking ────────
+    # Removes exhibits, legal boilerplate, signatures, disclaimers
+    # before any LLM token is spent. Saves 30-60% on large docs.
+    FILTER_DOC_TYPES = {
+        "10-K", "annual_report", "proxy_statement",
+        "sustainability_report", "10-Q", "transcript", "broker_note",
+    }
+    if doc_type in FILTER_DOC_TYPES and len(text) > 15000:
+        try:
+            from services.document_filter import filter_document, get_high_value_text
+            # Use stored parsed pages if available (set by document_parser)
+            # Otherwise fall back to splitting raw text into 3000-char pseudo-pages
+            if hasattr(document, '_parsed_pages') and document._parsed_pages:
+                pages = document._parsed_pages
+            else:
+                page_size = 3000
+                raw_chunks = [text[i:i+page_size] for i in range(0, len(text), page_size)]
+                pages = [{"page": i + 1, "text": c} for i, c in enumerate(raw_chunks)]
+            filter_result = filter_document(pages, doc_type)
+            logger.info("Pre-filter [%s]: %s", doc_type, filter_result.summary())
+            filtered_text = get_high_value_text(filter_result, max_chars=200_000)
+            if filtered_text and len(filtered_text) > 500:
+                text = filtered_text
+        except Exception as e:
+            logger.warning("Pre-filter failed, using raw text: %s", str(e)[:150])
 
     chunks = _smart_chunk(text)
     logger.info("Smart chunking: %d chunks from %d chars (type: %s)", len(chunks), len(text), doc_type)
