@@ -95,13 +95,25 @@ DOC_TYPE_MAP = {
     "thesis_comparison":       ["earnings_release", "transcript"],
 }
 
-# Required fields for extraction schema compliance check
-EXTRACTION_REQUIRED_FIELDS = {
-    "metric_name":   str,
-    "source_snippet": str,
-    "confidence":    (int, float),
+# Required fields per prompt type — matches actual prompt output schemas
+# Each entry: (name_field, value_fields, required_fields)
+EXTRACTION_SCHEMA_BY_TYPE = {
+    # earnings / combined: metric_name + metric_value or metric_text
+    "extraction_earnings":     ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
+    "extraction_combined":     ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
+    # transcript: items have category (guidance/tone/qa_exchange) + source_snippet
+    "extraction_transcript":   ("category",       ["guidance_text", "description", "key_insight", "metric_name"], ["source_snippet", "confidence"]),
+    # broker: metric_or_topic + source_snippet
+    "extraction_broker":       ("metric_or_topic", ["description", "current_value"], ["source_snippet", "confidence"]),
+    # presentation: metric_or_topic + source_snippet
+    "extraction_presentation": ("metric_or_topic", ["value", "description"],        ["source_snippet", "confidence"]),
 }
-EXTRACTION_VALUE_FIELDS = ["metric_value", "metric_text"]   # at least one must be non-null
+# Fallback for unknown types
+EXTRACTION_REQUIRED_FIELDS = {
+    "source_snippet": str,
+    "confidence":     (int, float),
+}
+EXTRACTION_VALUE_FIELDS = ["metric_value", "metric_text"]
 
 # ─────────────────────────────────────────────────────────────────
 # Eval prompts
@@ -459,37 +471,55 @@ async def _get_ground_truth_snippets(
 # EXTRACTION EVALS
 # ─────────────────────────────────────────────────────────────────
 
-def _eval_schema_compliance(items: list[dict]) -> dict:
+def _eval_schema_compliance(items: list[dict], prompt_type: str = "") -> dict:
     """
     Pure Python — no LLM cost.
-    Check every item has required fields and at least one value field.
+    Check every item has the required fields for its prompt type.
+    Different prompt types have different schemas (transcript vs earnings vs broker etc.)
     """
     if not items:
         return {"score": 0.0, "reason": "No items extracted", "compliant": 0, "total": 0}
+
+    schema = EXTRACTION_SCHEMA_BY_TYPE.get(prompt_type)
 
     compliant = 0
     issues = []
     for i, item in enumerate(items):
         item_ok = True
-        for field, ftype in EXTRACTION_REQUIRED_FIELDS.items():
-            val = item.get(field)
-            if val is None or (isinstance(val, str) and not val.strip()):
-                issues.append(f"item[{i}] missing {field}")
+
+        if schema:
+            name_field, value_fields, required_fields = schema
+            # Check the name field
+            val = item.get(name_field)
+            if not val or (isinstance(val, str) and not val.strip()):
+                issues.append(f"item[{i}] missing {name_field}")
                 item_ok = False
-                break
-            if not isinstance(val, ftype):
-                issues.append(f"item[{i}].{field} wrong type ({type(val).__name__})")
-                item_ok = False
-                break
-        if item_ok:
-            # Check at least one value field is populated
-            has_value = any(
-                item.get(f) is not None and item.get(f) != ""
-                for f in EXTRACTION_VALUE_FIELDS
-            )
-            if not has_value:
-                issues.append(f"item[{i}] has no value (metric_value and metric_text both empty)")
-                item_ok = False
+            if item_ok:
+                # Check other required fields
+                for field in required_fields:
+                    v = item.get(field)
+                    if v is None or (isinstance(v, str) and not v.strip()):
+                        issues.append(f"item[{i}] missing {field}")
+                        item_ok = False
+                        break
+            if item_ok:
+                # Check at least one value field
+                has_value = any(
+                    item.get(f) is not None and item.get(f) != ""
+                    for f in value_fields
+                )
+                if not has_value:
+                    issues.append(f"item[{i}] no value in {value_fields}")
+                    item_ok = False
+        else:
+            # Fallback: just check source_snippet and confidence exist
+            for field, ftype in EXTRACTION_REQUIRED_FIELDS.items():
+                val = item.get(field)
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    issues.append(f"item[{i}] missing {field}")
+                    item_ok = False
+                    break
+
         if item_ok:
             compliant += 1
 
@@ -916,8 +946,8 @@ async def _run_extraction_experiment(
         # Eval both — schema and recall are free; hallucination costs one LLM call per variant
         _step("extraction", f"{prompt_type}: evaluating")
 
-        schema_a = _eval_schema_compliance(items_a)
-        schema_b = _eval_schema_compliance(items_b)
+        schema_a = _eval_schema_compliance(items_a, prompt_type)
+        schema_b = _eval_schema_compliance(items_b, prompt_type)
         recall_a = _eval_snippet_recall(items_a, ground_truth)
         recall_b = _eval_snippet_recall(items_b, ground_truth)
 
