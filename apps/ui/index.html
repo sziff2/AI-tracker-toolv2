@@ -174,9 +174,11 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div class="nav-sec">
     <div class="nav-lbl">Workspace</div>
     <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
+    <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
+    <div class="nav-it" id="nav-autorun" onclick="showPage('autorun')"><span class="nav-ico">🤖</span> AutoResearch</div>
     <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
     <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
   </div>
@@ -230,7 +232,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 <!-- ═══ COCKPIT ═══ -->
 <div id="page-cockpit">
-  <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="onCkSelect(this.value)"><option value="">— Select company —</option></select></div></div>
+  <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="loadCockpit()"><option value="">— Select company —</option></select></div></div>
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
@@ -243,6 +245,103 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="btn2" onclick="loadLab()">Refresh</button>
   </div>
   <div id="lab-content"></div>
+</div>
+
+<!-- ═══ AUTORUN ═══ -->
+<div id="page-autorun" style="display:none">
+  <h1>AutoResearch <span style="font-size:16px;color:var(--gold)">β</span></h1>
+  <p class="sub">Autonomous overnight prompt optimisation. Two independent pipelines — Extraction and Output — each with their own evals you can inspect and control before running.</p>
+
+  <div class="tabs" style="margin-bottom:24px">
+    <button class="tab on" id="ar-tab-extraction" onclick="arSetMode('extraction')">⚙ Extraction Pipeline</button>
+    <button class="tab" id="ar-tab-output" onclick="arSetMode('output')">📄 Output Pipeline</button>
+    <button class="tab" id="ar-tab-log" onclick="arSetMode('log')">📋 Activity Log</button>
+  </div>
+
+  <!-- ════ EXTRACTION ════ -->
+  <div id="ar-mode-extraction">
+    <div class="g2" style="gap:20px;align-items:start">
+      <div>
+        <div class="cd" style="margin-bottom:16px">
+          <div class="cd-t">Prompt Types in Scope</div>
+          <div style="margin-top:12px" id="ar-ext-types"></div>
+        </div>
+        <div class="cd" style="margin-bottom:16px">
+          <div class="cd-t">Run Duration</div>
+          <select class="fi" id="ar-ext-hours" style="margin-top:10px">
+            <option value="0.1">Quick test (~6 min, ~$0.12)</option>
+            <option value="1">1 hour (~$0.60)</option>
+            <option value="4">4 hours (~$2.50)</option>
+            <option value="8" selected>8 hours overnight (~$5)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="ar-ext-start" onclick="arStart('extraction')" style="flex:1">▶ Start</button>
+          <button class="btn2" id="ar-ext-stop" onclick="arStop('extraction')" style="display:none">⏹ Stop</button>
+        </div>
+        <div id="ar-ext-status" style="margin-top:12px;font-family:var(--sans);font-size:12px;color:var(--text3)">Idle</div>
+        <div id="ar-ext-stats" style="display:none;margin-top:16px">
+          <div class="g3">
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Experiments</div><div style="font-size:26px;font-weight:300;color:var(--gold);font-family:var(--serif)" id="ar-ext-stat-exp">—</div></div>
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Promotions</div><div style="font-size:26px;font-weight:300;color:var(--green);font-family:var(--serif)" id="ar-ext-stat-pro">—</div></div>
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Avg Δ Score</div><div style="font-size:26px;font-weight:300;color:var(--text2);font-family:var(--serif)" id="ar-ext-stat-delta">—</div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="cd-t" style="margin-bottom:12px">Evals — what gets measured</div>
+        <div id="ar-ext-evals"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ OUTPUT ════ -->
+  <div id="ar-mode-output" style="display:none">
+    <div class="g2" style="gap:20px;align-items:start">
+      <div>
+        <div class="cd" style="margin-bottom:16px">
+          <div class="cd-t">Prompt Types in Scope</div>
+          <div style="margin-top:12px" id="ar-out-types"></div>
+        </div>
+        <div class="cd" style="margin-bottom:16px">
+          <div class="cd-t">Run Duration</div>
+          <select class="fi" id="ar-out-hours" style="margin-top:10px">
+            <option value="0.1">Quick test (~6 min, ~$0.17)</option>
+            <option value="1">1 hour (~$0.85)</option>
+            <option value="4">4 hours (~$3.50)</option>
+            <option value="8" selected>8 hours overnight (~$8)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="ar-out-start" onclick="arStart('output')" style="flex:1">▶ Start</button>
+          <button class="btn2" id="ar-out-stop" onclick="arStop('output')" style="display:none">⏹ Stop</button>
+        </div>
+        <div id="ar-out-status" style="margin-top:12px;font-family:var(--sans);font-size:12px;color:var(--text3)">Idle</div>
+        <div id="ar-out-stats" style="display:none;margin-top:16px">
+          <div class="g3">
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Experiments</div><div style="font-size:26px;font-weight:300;color:var(--gold);font-family:var(--serif)" id="ar-out-stat-exp">—</div></div>
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Promotions</div><div style="font-size:26px;font-weight:300;color:var(--green);font-family:var(--serif)" id="ar-out-stat-pro">—</div></div>
+            <div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Avg Δ Score</div><div style="font-size:26px;font-weight:300;color:var(--text2);font-family:var(--serif)" id="ar-out-stat-delta">—</div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="cd-t" style="margin-bottom:12px">Evals — what gets measured</div>
+        <div id="ar-out-evals"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ LOG ════ -->
+  <div id="ar-mode-log" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="font-family:var(--sans);font-size:12px;color:var(--text3)">Combined log — both pipelines, newest first</span>
+      <button class="btn2" onclick="arRefreshStatus()">↻ Refresh</button>
+    </div>
+    <div id="ar-log-content" style="font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;max-height:560px;overflow-y:auto;line-height:2">
+      <span style="color:var(--text4)">No activity yet. Start either pipeline to begin.</span>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ DATA HUB ═══ -->
@@ -352,7 +451,7 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();}
+function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -361,19 +460,12 @@ function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
-  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company…';el.appendChild(o);el.value=cur;});
+  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});
   // Populate sidebar companies
   const sc=E('side-companies');if(sc){let h='';CC.forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.ticker.split(' ')[0])+'</span></div>';});sc.innerHTML=h;}}
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
 function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
-function onCkSelect(v){
-  if(v==='__new__'){
-    E('ck-company').value='';
-    showPage('new');
-    var cs=E('company-select');if(cs){cs.value='__new__';onCompanySelect();}
-  }else{loadCockpit();}
-}
 async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
 // ── Files ────────────────────────────────────────────────────
@@ -433,157 +525,88 @@ function renderCockpit(ticker,d){
 }
 function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
 
-// ── Thesis tab ───────────────────────────────────────────────
+// ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
   const ticker=E('ck-company').value;
-  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Select a company and add documents to get started.');
-  const t=d.thesis;
+  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
+  const t=d.thesis;let h='';
   const a=d.thesis_assessment||{};
-  const dir=a.thesis_direction||'—';
-  const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
-  let h='';
+  const dir=a.thesis_direction||'—';const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
 
-  // ── Staleness warning ────────────────────────────────────
-  if(t.staleness_warning){
-    const wBg=t.staleness_label==='very_stale'?'var(--redDim)':t.staleness_label==='stale'?'rgba(245,158,11,.10)':'rgba(107,122,141,.07)';
-    const wBorder=t.staleness_label==='very_stale'?'rgba(239,68,68,.35)':t.staleness_label==='stale'?'rgba(245,158,11,.35)':'rgba(107,122,141,.2)';
-    const wColor=t.staleness_label==='very_stale'?'var(--red)':t.staleness_label==='stale'?'var(--amber)':'var(--text3)';
-    h+='<div style="margin-bottom:14px;padding:10px 14px;background:'+wBg+';border:1px solid '+wBorder+';border-radius:8px;font-family:var(--sans);font-size:12px;color:'+wColor+'">'+esc(t.staleness_warning)+'</div>';
-  }
-
-  // ── IC Summary card ──────────────────────────────────────
+  // IC Summary strip
   h+='<div class="cd gold" style="padding:20px 24px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
-  h+='<div class="cd-t" style="margin:0">IC Summary</div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">IC Summary</div>';
   h+='<div style="font-family:var(--sans);font-size:11px;display:flex;gap:16px">';
   if(a.thesis_direction)h+='<span>Thesis: <span style="color:'+dirCls+';font-weight:600">'+esc(dir)+'</span></span>';
   if(a.confidence)h+='<span style="color:var(--text4)">Confidence: '+a.confidence+'</span>';
   h+='</div></div>';
+  // IC fields row
   h+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">';
+  // Recommendation
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Recommendation</div>';
   h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'recommendation\',this.value)">';
   ['','Buy','Hold','Trim','Exit','Under Review'].forEach(o=>{h+='<option value="'+o+'"'+(t.recommendation===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
   h+='</select></div>';
+  // Variant Perception
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Variant Perception</div>';
   h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.variant_perception||'')+'" placeholder="What do we see that consensus doesn\'t" onchange="saveThesisField(\''+ticker+'\',\'variant_perception\',this.value)"></div>';
+  // Key Risk
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Key Risk</div>';
   h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.key_risks||'')+'" placeholder="Primary bear case risk" onchange="saveThesisField(\''+ticker+'\',\'key_risks\',this.value)"></div>';
+  // Catalyst
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Catalyst</div>';
-  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.catalyst||'')+'" placeholder="e.g. Q3 results, spin-off" onchange="saveThesisField(\''+ticker+'\',\'catalyst\',this.value)"></div>';
+  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.catalyst||'')+'" placeholder="e.g. Q3 results, Spin-off" onchange="saveThesisField(\''+ticker+'\',\'catalyst\',this.value)"></div>';
+  // Conviction
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Conviction</div>';
   h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'conviction\',this.value)">';
   ['','High','Medium','Low'].forEach(o=>{h+='<option value="'+o+'"'+(t.conviction===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
   h+='</select></div>';
   h+='</div></div>';
 
-  // ── Three-column risk section ────────────────────────────
+  // Three-column structured thesis section
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
+  // What Would Make Us Wrong
   h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="Specific observations that would invalidate the thesis\u2026" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
+  // Disconfirming Evidence
   h+='<div class="cd" style="border-left-color:var(--amber);margin:0"><div class="cd-t" style="color:var(--amber)">Disconfirming Evidence</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="Data or events that have weakened the case since initiation\u2026" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
-  h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Surprises vs Thesis</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises\u2026" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises\u2026" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
+  // Positive / Negative Surprises
+  h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Positive / Negative Surprises</div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
   h+='</div>';
 
-  // ── Thesis + Valuation ───────────────────────────────────
+  // Investment Thesis (editable)
   h+='<div class="g2" style="margin-top:12px">';
   h+='<div class="cd" style="margin:0"><div class="cd-t">Investment Thesis</div>';
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
-  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">\u270e Editable \u2014 changes versioned on save</div></div>';
+  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">✎ Editable — changes versioned on save</div></div>';
+  // Valuation Framework
   h+='<div class="cd" style="margin:0"><div class="cd-t">Valuation Framework</div>';
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // ── Gathered Intelligence — rolling summary of all periods ─
-  const abp=d.analyses_by_period||{};
-  const allAssessments=d.all_assessments||[];
-  const hasPeriodData=Object.keys(abp).length>0||allAssessments.length>0;
-
-  if(hasPeriodData){
-    h+='<h2 style="margin-top:28px">Gathered Intelligence</h2>';
-    h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:12px">Synthesised findings across all periods, most recent first.</div>';
-
-    // Build merged period list from both assessments and analyses
-    const periodMap={};
-    // From analyses_by_period
-    Object.entries(abp).forEach(([p,o])=>{
-      if(!periodMap[p])periodMap[p]={period:p,direction:null,summary:null,bottom_line:null,surprises:[]};
-      const c=o.content;
-      if(c){
-        const s=c.synthesis||c.briefing||{};
-        periodMap[p].bottom_line=s.bottom_line||s.what_happened||null;
-        periodMap[p].thesis_impact=s.thesis_impact||s.thesis_status||null;
-        if(c.surprises?.length)periodMap[p].surprises=c.surprises;
-      }
+  // Latest assessment
+  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
+  // Assessment history
+  if(d.all_assessments?.length>1){
+    h+='<h2 style="margin-top:24px">Assessment History</h2>';
+    d.all_assessments.forEach(a=>{
+      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
+      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
     });
-    // From all_assessments — adds direction and LLM summary
-    allAssessments.forEach(a=>{
-      const p=a.period||'unknown';
-      if(!periodMap[p])periodMap[p]={period:p,direction:null,summary:null,bottom_line:null,surprises:[]};
-      if(a.thesis_direction)periodMap[p].direction=a.thesis_direction;
-      if(a.summary)periodMap[p].summary=a.summary;
-    });
-
-    const sortedPeriods=Object.keys(periodMap).sort().reverse();
-
-    if(sortedPeriods.length===0){
-      h+='<div style="padding:16px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis data yet. Run an analysis to start building the intelligence record.</div>';
-    } else {
-      sortedPeriods.forEach(p=>{
-        const row=periodMap[p];
-        const dCls=row.direction==='strengthened'?'var(--green)':row.direction==='weakened'?'var(--red)':'var(--amber)';
-        const dLabel=row.direction||'pending';
-        h+='<div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px">';
-        // Period header
-        h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-        h+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">'+esc(p)+'</div>';
-        if(row.direction){
-          const bdgBg=row.direction==='strengthened'?'var(--greenDim)':row.direction==='weakened'?'var(--redDim)':'rgba(245,158,11,.12)';
-          h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:'+dCls+';background:'+bdgBg+';padding:3px 8px;border-radius:4px">'+esc(dLabel)+'</span>';
-        }
-        h+='</div>';
-        // Bottom line from synthesis
-        if(row.bottom_line){
-          h+='<div style="font-family:var(--serif);font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:6px">'+esc(row.bottom_line)+'</div>';
-        }
-        // Assessment summary (from BDI comparator)
-        if(row.summary&&row.summary!==row.bottom_line){
-          h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:6px">'+esc(row.summary)+'</div>';
-        }
-        // Thesis impact
-        if(row.thesis_impact){
-          h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:4px"><span style="color:var(--text3);font-weight:600">Thesis: </span>'+esc(row.thesis_impact)+'</div>';
-        }
-        // Key surprises inline (max 2)
-        if(row.surprises&&row.surprises.length){
-          const shown=row.surprises.slice(0,2);
-          h+='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">';
-          shown.forEach(s=>{
-            const sc=s.direction==='positive'?'var(--green)':'var(--red)';
-            const sb=s.direction==='positive'?'var(--greenDim)':'var(--redDim)';
-            h+='<span style="font-family:var(--sans);font-size:10px;color:'+sc+';background:'+sb+';padding:2px 7px;border-radius:4px">'+(s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic||'')+'</span>';
-          });
-          h+='</div>';
-        }
-        h+='</div>';
-      });
-    }
   }
-
-  // ── Collapsible: Thesis version history ──────────────────
-  if(d.thesis_history&&d.thesis_history.length>1){
-    h+='<details style="margin-top:20px"><summary style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);cursor:pointer;padding:8px 0;list-style:none">&#9656; Thesis Version History ('+d.thesis_history.length+')</summary>';
-    h+='<div style="margin-top:8px">';
+  // Thesis version history
+  if(d.thesis_history?.length>1){
+    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
     d.thesis_history.forEach(tv=>{
-      h+='<div class="th-hist"><span style="color:var(--text4);min-width:80px">'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2);font-size:12px">'+esc((tv.core_thesis||'').slice(0,120))+(tv.core_thesis&&tv.core_thesis.length>120?'\u2026':'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
+      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
     });
-    h+='</div></details>';
   }
-
   return h;
 }
+
 async function saveThesisField(ticker,field,value){
   try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
 }
@@ -610,10 +633,9 @@ function renderCkKPIs(ticker,d){
 function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
   const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
-  if(!allPeriods.length)return '<div style="text-align:center;padding:40px 24px"><div style="font-size:36px;margin-bottom:16px">📂</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:24px">No results yet for this company.</div><button class="btn" data-tk="'+ticker+'" onclick="showNewPeriodForm(this.dataset.tk)" style="padding:12px 28px">+ Add New Period</button></div>';
+  if(!allPeriods.length)return '<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Upload documents from New Analysis.</div>';
   let h='<div class="ptabs" id="res-ptabs">';
   allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});
-  h+='<button class="ptab" data-tk="'+ticker+'" style="margin-left:auto;color:var(--gold);border-color:rgba(196,164,90,.4)" onclick="showNewPeriodForm(this.dataset.tk)">+ New Period</button>';
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
@@ -2690,95 +2712,266 @@ setInterval(function(){
   if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){gsPopulateTickers();}
 },1000);
 
-// ── New Period inline form ─────────────────────────────────────
-var _npUF=[],_npTicker='';
-function showNewPeriodForm(ticker){
-  _npTicker=ticker;_npUF=[];
-  var existing=document.getElementById('np-panel');if(existing)existing.remove();
-  var yr=new Date().getFullYear();
-  var yOpts='';for(var y=yr+1;y>=yr-5;y--){yOpts+='<option value="'+y+'"'+(y===yr?' selected':'')+'>'+y+'</option>';}
-  var p=document.createElement('div');
-  p.id='np-panel';
-  p.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;max-width:560px';
-  p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
-    +'<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)">New Period</div>'
-    +'<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNpPanel()">\u2715 Cancel</button>'
-    +'</div>'
-    +'<div style="display:flex;gap:8px;margin-bottom:14px">'
-    +'<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>'
-    +'<select class="fi" id="np-py" style="flex:1">'+yOpts+'</select>'
-    +'</div>'
-    +'<div id="np-file-list"></div>'
-    +'<button class="af" onclick="document.getElementById(\'np-hfi-inp\').click()"><span style="font-size:18px">+</span> Add documents</button>'
-    +'<input type="file" id="np-hfi-inp" accept=".pdf,.docx,.txt" style="display:none" multiple>'
-    +'<div id="np-error" class="err" style="display:none;margin-top:8px"></div>'
-    +'<button class="btn btn-full" id="np-btn" onclick="npSubmit()" style="margin-top:14px">Analyse &amp; Synthesise</button>'
-    +'<div class="ld" id="np-ld" style="display:none;margin-top:12px"></div>';
-  var container=document.getElementById('ck-results');
-  if(container)container.insertBefore(p,container.firstChild);
-  document.getElementById('np-hfi-inp').addEventListener('change',npHandleFiles);
-}
-function closeNpPanel(){var p=document.getElementById('np-panel');if(p)p.remove();_npUF=[];}
-function npGuessType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
-function npRenderFiles(){
-  var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-  var h='';
-  _npUF.forEach(function(f,i){
-    var s=(f.file.size/1024/1024).toFixed(1);
-    h+='<div class="fr"><span>\U0001f4c4</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';
-    Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});
-    h+='</select><button class="x" onclick="_npUF.splice('+i+',1);npRenderFiles()">&times;</button></div>';
-  });
-  var fl=document.getElementById('np-file-list');if(fl)fl.innerHTML=h;
-}
-function npHandleFiles(){
-  for(var f of this.files){_npUF.push({file:f,docType:npGuessType(f.name)});}
-  this.value='';npRenderFiles();
-}
-async function npSubmit(){
-  var pt=document.getElementById('np-pt'),py=document.getElementById('np-py');
-  if(!pt||!py)return;
-  var period=py.value+'_'+pt.value;
-  var errEl=document.getElementById('np-error');if(errEl)errEl.style.display='none';
-  if(!_npUF.length){if(errEl){errEl.innerHTML='Add at least one document.';errEl.style.display='block';}return;}
-  var btn=document.getElementById('np-btn'),ld=document.getElementById('np-ld');
-  if(btn){btn.disabled=true;btn.textContent='Uploading\u2026';}
-  var fd=new FormData();
-  fd.append('period_label',period);
-  fd.append('document_types',_npUF.map(function(f){return f.docType;}).join(','));
-  fd.append('titles',_npUF.map(function(f){return f.file.name;}).join(','));
-  _npUF.forEach(function(f){fd.append('files',f.file);});
-  var jobId;
-  try{
-    var r=await fetch('/api/v1/companies/'+enc(_npTicker)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||'Upload failed');}
-    jobId=(await r.json()).job_id;
-  }catch(e){
-    if(errEl){errEl.innerHTML=e.message;errEl.style.display='block';}
-    if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}
-    return;
+// ══════════════════════════════════════════════════════════════════
+// AUTORUN — Two-pipeline autonomous prompt optimisation
+// ══════════════════════════════════════════════════════════════════
+
+const AR_EVALS = {
+  extraction: [
+    {
+      id:'snippet_recall', name:'Snippet Recall', weight:'40%', colour:'var(--gold)',
+      how:'No LLM — pure string matching',
+      description:'Checks whether the new prompt recovers the same verbatim source_snippets already stored in ExtractedMetric rows for this document. Word-overlap matching: a snippet counts as recovered if ≥60% of its words appear in an extracted item\'s source_snippet.',
+      why:'source_snippet is ground truth — a verbatim quote from the document that was validated when first extracted. High recall means the prompt is finding the right evidence.'
+    },
+    {
+      id:'schema_compliance', name:'Schema Compliance', weight:'30%', colour:'var(--green)',
+      how:'No LLM — Python field validation',
+      description:'Checks every extracted item has all required fields (metric_name, source_snippet, confidence) populated and correctly typed, plus at least one of metric_value or metric_text. Score = compliant items / total items × 10.',
+      why:'Downstream services break silently when fields are missing. A prompt that returns well-structured JSON reliably is more valuable than one that sometimes returns perfect data.'
+    },
+    {
+      id:'hallucination_rate', name:'Hallucination Rate', weight:'30%', colour:'var(--red)',
+      how:'LLM judge — 1 call per variant',
+      description:'For each numeric metric_value in the output, checks whether that number appears in the source document. Score = 10 − (hallucinated / total × 10). Hard cap: if >20% of items hallucinate, score drops to 0 regardless.',
+      why:'An extraction prompt that invents numbers is worse than one that finds fewer metrics. This is the quality floor.'
+    }
+  ],
+  output: [
+    {
+      id:'specificity', name:'Specificity', weight:'25%', colour:'var(--gold)',
+      how:'LLM judge with anchored examples',
+      description:'Every factual claim should cite a precise number with units (e.g. "EBIT margin compressed 180bps to 14.2%"). Score 10 = all claims specific. Score 5 = mix of specific and vague. Score 0 = entirely vague, no numbers cited.',
+      why:'Vague language ("margins were lower") is useless for an analyst. The briefing should be directly quotable in a trade note.'
+    },
+    {
+      id:'thesis_linkage', name:'Thesis Linkage', weight:'20%', colour:'var(--gold)',
+      how:'LLM judge — actual company thesis injected from DB',
+      description:'Does the bottom line state whether the investment thesis is intact, strengthened, or weakened — with a specific reason? The judge receives the real stored thesis for the company, not a generic placeholder. Score 0 = thesis not mentioned at all.',
+      why:'A briefing that describes results but never says whether it matters for the thesis is incomplete. Facts serve the investment case.'
+    },
+    {
+      id:'management_scrutiny', name:'Management Scrutiny', weight:'20%', colour:'var(--amber)',
+      how:'LLM judge with anchored examples',
+      description:'Does the output distinguish what management claims from what the numbers show? Score 10 = flags evasion or defensiveness, credits confidence where earned. Score 5 = neutral reporting. Score 0 = uncritically repeats talking points as fact.',
+      why:'Buy-side analysts are paid to be sceptical. A briefing that parrots management adds no value over the press release.'
+    },
+    {
+      id:'actionability', name:'Actionability', weight:'20%', colour:'var(--green)',
+      how:'LLM judge with anchored examples',
+      description:'Does the output end with a clear steer? Score 10 = explicit add/hold/trim with a specific forward reason (e.g. "thesis intact, hold; watch Q3 FCF conversion"). Score 5 = "monitor closely". Score 0 = no conclusion at all.',
+      why:'The output should drive a decision. If it could have been written before reading the document, the prompt failed.'
+    },
+    {
+      id:'hallucination_check', name:'Hallucination Check', weight:'10%', colour:'var(--red)',
+      how:'LLM judge — hard cap if triggered',
+      description:'Does the output contain any number or assertion not supported by the source document? If hallucinations are found the overall score is capped at 4.0 regardless of rubric performance. This is a floor, not a dimension to optimise against.',
+      why:'A single invented figure in a briefing destroys trust. Zero tolerance.'
+    },
+    {
+      id:'conciseness', name:'Conciseness', weight:'5%', colour:'var(--text3)',
+      how:'LLM judge',
+      description:'Every sentence should earn its place. Score 10 = no padding, no repetition. Score 0 = padded with restatements and hedge words. This is a tiebreaker — low weight by design.',
+      why:'Senior analysts read fast. A brief that makes you work to find the point gets skipped.'
+    }
+  ]
+};
+
+const AR_PROMPT_TYPES = {
+  extraction: [
+    {id:'extraction_combined',     label:'Combined Extractor',  doc:'earnings_release, transcript, annual_report'},
+    {id:'extraction_earnings',     label:'Earnings Release',    doc:'earnings_release'},
+    {id:'extraction_transcript',   label:'Transcript',          doc:'transcript'},
+    {id:'extraction_broker',       label:'Broker Note',         doc:'broker_note'},
+    {id:'extraction_presentation', label:'Presentation',        doc:'presentation'},
+  ],
+  output: [
+    {id:'synthesis',         label:'Synthesis Briefing', doc:'earnings_release, transcript'},
+    {id:'briefing',          label:'One-Page Briefing',  doc:'earnings_release, transcript'},
+    {id:'ir_questions',      label:'IR Questions',       doc:'earnings_release, transcript'},
+    {id:'surprise',          label:'Surprise Detector',  doc:'earnings_release, transcript'},
+    {id:'thesis_comparison', label:'Thesis Comparison',  doc:'earnings_release, transcript'},
+  ]
+};
+
+let _arMode = 'extraction';
+let _arPollTimer = null;
+let _arInitDone = false;
+
+function initAutoRun() {
+  if (!_arInitDone) {
+    arRenderTypeToggles('extraction');
+    arRenderTypeToggles('output');
+    arRenderEvals('extraction');
+    arRenderEvals('output');
+    _arInitDone = true;
   }
-  if(ld)ld.style.display='block';
-  var poll=setInterval(async function(){
-    try{
-      var r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
-      var j=await r.json();
-      var pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-      if(ld)ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'\u2026 '+pct+'%</div>'
-        +'<div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">'
-        +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div>'
-        +'<div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' \u2192 ')+'</div>';
-      if(j.status==='completed'){
-        clearInterval(poll);_npUF=[];
-        if(ld)ld.innerHTML='<span style="color:var(--green)">\u2713 Analysis complete</span>';
-        setTimeout(function(){loadCockpit();},1200);
-      }else if(j.status==='failed'){
-        clearInterval(poll);if(ld)ld.style.display='none';
-        if(errEl){errEl.innerHTML=j.error_message||'Analysis failed';errEl.style.display='block';}
-        if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+  arRefreshStatus();
+  arStartPoll();
+}
+
+function arSetMode(mode) {
+  _arMode = mode;
+  ['extraction','output','log'].forEach(m => {
+    const el = E('ar-mode-'+m);
+    if(el) el.style.display = m===mode ? 'block' : 'none';
+    const tab = E('ar-tab-'+m);
+    if(tab) tab.classList.toggle('on', m===mode);
+  });
+  if(mode==='log') arRefreshStatus();
+}
+
+function arRenderTypeToggles(pipeline) {
+  const pfx = pipeline==='extraction' ? 'ext' : 'out';
+  const el = E('ar-'+pfx+'-types');
+  if(!el) return;
+  el.innerHTML = AR_PROMPT_TYPES[pipeline].map(t =>
+    `<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+      <input type="checkbox" value="${t.id}" checked style="accent-color:var(--gold);margin-top:2px;flex-shrink:0">
+      <div>
+        <div style="font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text)">${t.label}</div>
+        <div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">Docs: ${t.doc}</div>
+      </div>
+    </label>`
+  ).join('');
+}
+
+function arRenderEvals(pipeline) {
+  const pfx = pipeline==='extraction' ? 'ext' : 'out';
+  const el = E('ar-'+pfx+'-evals');
+  if(!el) return;
+  el.innerHTML = AR_EVALS[pipeline].map(ev =>
+    `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${ev.colour};border-radius:10px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">${ev.name}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:${ev.colour};background:rgba(255,255,255,.04);padding:2px 8px;border-radius:4px;font-weight:600">${ev.weight}</span>
+      </div>
+      <div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:6px;font-style:italic;letter-spacing:.3px">${ev.how}</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:7px">${ev.description}</div>
+      <div style="font-family:var(--sans);font-size:11px;color:var(--text3);line-height:1.55;border-top:1px solid var(--border);padding-top:7px"><strong style="color:var(--text4)">Why it matters:</strong> ${ev.why}</div>
+    </div>`
+  ).join('');
+}
+
+function arGetSelectedTypes(pipeline) {
+  const pfx = pipeline==='extraction' ? 'ext' : 'out';
+  const container = E('ar-'+pfx+'-types');
+  if(!container) return AR_PROMPT_TYPES[pipeline].map(t=>t.id);
+  return Array.from(container.querySelectorAll('input:checked')).map(i=>i.value);
+}
+
+async function arStart(pipeline) {
+  const pfx = pipeline==='extraction' ? 'ext' : 'out';
+  const hours = parseFloat(E('ar-'+pfx+'-hours').value);
+  const types = arGetSelectedTypes(pipeline);
+  if(!types.length){alert('Select at least one prompt type.');return;}
+  const label = pipeline==='extraction' ? 'Extraction' : 'Output';
+  if(!confirm(
+    `Start ${label} AutoRun for ${hours}h across ${types.length} prompt type${types.length>1?'s':''}?\n\n` +
+    `The loop will autonomously generate, test, and promote improved prompt variants.\n` +
+    `All changes are logged and visible in Prompt Lab.\n\n` +
+    `Before starting: make sure you have run "Seed Default Variants" in Prompt Lab.`
+  )) return;
+  try {
+    const r = await fetch('/api/v1/autorun/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({hours, prompt_types:types, pipeline})
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail||'Failed to start');
+    arRefreshStatus();
+    arStartPoll();
+  } catch(e){alert('Failed to start AutoRun: '+e.message);}
+}
+
+async function arStop(pipeline) {
+  if(!confirm('Request graceful stop? The loop will finish its current experiment then halt.')) return;
+  try {
+    await fetch('/api/v1/autorun/stop', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pipeline})
+    });
+    arRefreshStatus();
+  } catch(e){alert('Stop failed: '+e.message);}
+}
+
+async function arRefreshStatus() {
+  try {
+    const r = await fetch('/api/v1/autorun/status');
+    if(!r.ok) return;
+    const d = await r.json();
+    arRenderStatus(d);
+  } catch(e) {
+    const logEl = E('ar-log-content');
+    if(logEl) logEl.innerHTML = '<span style="color:var(--red)">Could not reach AutoRun API — check autorun router is registered in main.py and deployed.</span>';
+  }
+}
+
+function arRenderStatus(d) {
+  ['extraction','output'].forEach(pipeline => {
+    const pState = d[pipeline]||{};
+    const pfx = pipeline==='extraction' ? 'ext' : 'out';
+    const running = pState.running||false;
+    const startBtn = E('ar-'+pfx+'-start');
+    const stopBtn  = E('ar-'+pfx+'-stop');
+    const statusEl = E('ar-'+pfx+'-status');
+    const statsEl  = E('ar-'+pfx+'-stats');
+
+    if(startBtn){startBtn.disabled=running; startBtn.textContent=running?'⏸ Running…':'▶ Start';}
+    if(stopBtn) stopBtn.style.display=running?'inline-block':'none';
+
+    if(statusEl){
+      if(running){
+        const step=pState.current_step||pState.current_type||'running…';
+        statusEl.innerHTML=`<span style="color:var(--gold)">● Running — job ${esc(pState.job_id||'')}</span><br><span style="color:var(--text4);font-size:11px">${esc(step)}</span>`;
+      } else if(pState.job_id){
+        const info = pState.experiments_run>0
+          ? ` — ${pState.experiments_run} experiments, ${pState.promotions} promotions`
+          : '';
+        statusEl.innerHTML=`<span style="color:var(--green)">✓ Last run: ${esc(pState.job_id)}${info}</span>`;
+      } else {
+        statusEl.textContent='Idle';
       }
-    }catch(e){}
-  },3000);
+    }
+
+    if(statsEl && (pState.experiments_run>0||pState.running)){
+      statsEl.style.display='block';
+      const se=E('ar-'+pfx+'-stat-exp'), sp=E('ar-'+pfx+'-stat-pro'), sd=E('ar-'+pfx+'-stat-delta');
+      if(se) se.textContent=pState.experiments_run??'—';
+      if(sp) sp.textContent=pState.promotions??'—';
+      if(sd) sd.textContent=pState.avg_delta!=null?(pState.avg_delta>=0?'+':'')+pState.avg_delta.toFixed(2):'—';
+    }
+  });
+
+  // Combined log
+  const logEl=E('ar-log-content');
+  if(logEl){
+    const logs=(d.log||[]).slice(0,200);
+    if(logs.length){
+      logEl.innerHTML=logs.map(entry=>{
+        const ts=(entry.ts||'').substring(11,19);
+        const col=entry.level==='error'?'var(--red)'
+                 :entry.level==='warning'?'var(--amber)'
+                 :(entry.msg||'').startsWith('✓')?'var(--green)'
+                 :(entry.msg||'').startsWith('─')?'var(--gold)'
+                 :'var(--text2)';
+        const pipe=entry.pipeline?`<span style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-right:6px;background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(entry.pipeline)}</span>`:'';
+        const detail=entry.detail?` <span style="color:var(--text4)">${esc(entry.detail)}</span>`:'';
+        return `<div>${pipe}<span style="color:var(--text4)">${ts}</span>  <span style="color:${col}">${esc(entry.msg||'')}</span>${detail}</div>`;
+      }).join('');
+    } else {
+      logEl.innerHTML='<span style="color:var(--text4)">No activity yet. Start either pipeline to begin.</span>';
+    }
+  }
+}
+
+function arStartPoll(){
+  if(_arPollTimer) clearInterval(_arPollTimer);
+  _arPollTimer=setInterval(async()=>{
+    const page=E('page-autorun');
+    if(!page||page.style.display==='none'){clearInterval(_arPollTimer);_arPollTimer=null;return;}
+    await arRefreshStatus();
+  },4000);
 }
 </script>
 </body>
