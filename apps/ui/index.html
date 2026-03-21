@@ -191,61 +191,46 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 <div class="main">
 <div class="wrap">
 
+<!-- ═══ NEW ANALYSIS ═══ -->
+<div id="page-new" style="display:none">
+  <div id="form-section">
+    <h1>Upload documents</h1>
+    <p class="sub">Add your earnings release, transcript, broker notes, and presentations. Each is analysed with a tailored prompt, then synthesised into one opinionated briefing.</p>
+    <div class="g2">
+      <div><div class="fl">Company</div><select class="fi" id="company-select" onchange="onCompanySelect()"><option value="">— Select or type new —</option></select></div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1"><div class="fl">Period</div><select class="fi" id="period-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div>
+        <div style="flex:1"><div class="fl">Year</div><select class="fi" id="period-year"></select></div>
+      </div>
+    </div>
+    <div class="g2" id="new-co" style="display:none">
+      <div><div class="fl">Ticker</div><input class="fi" id="ticker" placeholder="e.g. ENI IM"></div>
+      <div><div class="fl">Company Name</div><input class="fi" id="co-name" placeholder="e.g. ENI S.p.A."></div>
+      <div><div class="fl">Sector</div><input class="fi" id="sector" placeholder="e.g. Oil & Gas"></div>
+      <div><div class="fl">Country</div><input class="fi" id="country" placeholder="e.g. Italy"></div>
+    </div>
+    <div class="col" onclick="toggleEl('thesis-sec','thesis-arr')"><span>Investment Thesis</span><span id="thesis-arr">▸</span></div>
+    <div class="col-c" id="thesis-sec">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn2" id="gen-thesis-btn" onclick="generateThesis()">✨ Auto-generate thesis</button></div>
+      <div><div class="fl">Core Thesis</div><textarea class="fi" id="th-core" placeholder="What is the investment case?"></textarea></div>
+      <div style="margin-top:12px"><div class="fl">Key Risks</div><textarea class="fi" id="th-risks" placeholder="What could go wrong?" style="min-height:60px"></textarea></div>
+      <div style="margin-top:12px"><div class="fl">Valuation Framework</div><textarea class="fi" id="th-val" placeholder="How do you value this?" style="min-height:60px"></textarea></div>
+    </div>
+    <div class="fl" style="margin-top:28px">Documents</div>
+    <div id="file-list"></div>
+    <button class="af" onclick="addFile()"><span style="font-size:18px">+</span> Add document</button>
+    <input type="file" id="hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>
+    <button class="btn btn-full" id="sub-btn" onclick="submitForm()">Analyse & Synthesise</button>
+    <div class="ld" id="loading" style="display:none"></div>
+    <div class="err" id="error" style="display:none"></div>
+    <div class="ok" id="status" style="display:none"></div>
+  </div>
+  <div id="result-section" style="display:none"></div>
+</div>
 
 <!-- ═══ COCKPIT ═══ -->
 <div id="page-cockpit">
-  <div style="display:flex;gap:12px;align-items:flex-end">
-    <div style="flex:1"><div class="fl">Company</div>
-      <select class="fi" id="ck-company" onchange="onCkCompanySelect()">
-        <option value="">— Select company —</option>
-        <option value="__new__">+ Add new company…</option>
-      </select>
-    </div>
-  </div>
-
-  <!-- New company onboarding panel -->
-  <div id="ck-new-co-panel" style="display:none;margin-top:20px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-      <div style="flex:1;height:1px;background:var(--border)"></div>
-      <span style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4)">New Company</span>
-      <div style="flex:1;height:1px;background:var(--border)"></div>
-    </div>
-    <div class="g2" style="margin-top:0">
-      <div><div class="fl">Ticker</div><input class="fi" id="ck-ticker" placeholder="e.g. ENI IM"></div>
-      <div><div class="fl">Company Name</div><input class="fi" id="ck-co-name" placeholder="e.g. ENI S.p.A."></div>
-      <div><div class="fl">Sector</div><input class="fi" id="ck-sector" placeholder="e.g. Oil &amp; Gas"></div>
-      <div><div class="fl">Country</div><input class="fi" id="ck-country" placeholder="e.g. Italy"></div>
-    </div>
-    <div style="margin-top:16px">
-      <div class="col" onclick="toggleEl('ck-thesis-sec','ck-thesis-arr')"><span>Investment Thesis <span style="color:var(--text4);font-size:11px;font-weight:400;letter-spacing:0;text-transform:none">(optional)</span></span><span id="ck-thesis-arr">▸</span></div>
-      <div class="col-c" id="ck-thesis-sec">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn2" id="ck-gen-thesis-btn" onclick="ckGenerateThesis()">✨ Auto-generate thesis</button></div>
-        <div><div class="fl">Core Thesis</div><textarea class="fi" id="ck-th-core" placeholder="What is the investment case?" style="min-height:70px"></textarea></div>
-        <div style="margin-top:12px"><div class="fl">Key Risks</div><textarea class="fi" id="ck-th-risks" placeholder="What could go wrong?" style="min-height:55px"></textarea></div>
-        <div style="margin-top:12px"><div class="fl">Valuation Framework</div><textarea class="fi" id="ck-th-val" placeholder="How do you value this?" style="min-height:55px"></textarea></div>
-      </div>
-    </div>
-    <div style="margin-top:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="fl" style="margin:0">Documents <span style="color:var(--text4);font-size:11px;font-weight:400;letter-spacing:0;text-transform:none">(optional)</span></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span style="font-family:var(--sans);font-size:11px;color:var(--text4)">Period</span>
-          <select class="fi" id="ck-period-type" style="width:80px;padding:7px 10px"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>
-          <select class="fi" id="ck-period-year" style="width:90px;padding:7px 10px"></select>
-        </div>
-      </div>
-      <div id="ck-file-list"></div>
-      <button class="af" onclick="ckAddFile()"><span style="font-size:18px">+</span> Add document</button>
-      <input type="file" id="ck-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>
-    </div>
-    <div style="display:flex;gap:12px;margin-top:20px">
-      <button class="btn" style="flex:1" id="ck-sub-btn" onclick="ckSubmitNew()">Add Company &amp; Analyse</button>
-      <button class="btn2" onclick="ckCancelNew()">Cancel</button>
-    </div>
-    <div class="ld" id="ck-loading" style="display:none"></div>
-    <div class="err" id="ck-error" style="display:none"></div>
-  </div>
-
+  <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="onCkSelect(this.value)"><option value="">— Select company —</option></select></div></div>
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
@@ -367,137 +352,31 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['cockpit','lab','data','portfolio','analytics','optimise'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();}
+function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
-function getPeriod(){return '';} // legacy — use ckGetPeriod()
+function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
-// (period-year dropdown moved to ck-period-year)
-
+// Populate year dropdown
+(function(){const sel=E('period-year');const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}})();
 
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
-  const el=E('ck-company');if(el){const cur=el.value;el.innerHTML='<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});const o2=document.createElement('option');o2.value='__new__';o2.textContent='+ Add new company…';el.appendChild(o2);el.value=cur;}
-  const sc=E('side-companies');if(sc){let h='';CC.forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(''+esc(c.ticker)+'')"><span class="tk">'+esc(c.ticker.split(' ')[0])+'</span></div>';});sc.innerHTML=h;}}
-function onCkCompanySelect(){
-  const v=E('ck-company').value;
-  if(v==='__new__'){
-    E('ck-new-co-panel').style.display='block';
-    E('ck-content').style.display='none';
-    ['ck-ticker','ck-co-name','ck-sector','ck-country','ck-th-core','ck-th-risks','ck-th-val'].forEach(function(x){var el=E(x);if(el)el.value='';});
-    E('ck-thesis-sec').classList.remove('open');E('ck-thesis-arr').textContent='▸';
-    E('ck-file-list').innerHTML='';ckUF=[];
-  } else if(v){
-    E('ck-new-co-panel').style.display='none';
-    E('ck-content').style.display='block';
-    loadCockpit();
-  } else {
-    E('ck-new-co-panel').style.display='none';
-    E('ck-content').style.display='block';
-    E('ck-content').innerHTML='';
-  }
-}
-function ckCancelNew(){
-  E('ck-company').value='';
-  E('ck-new-co-panel').style.display='none';
-  E('ck-content').style.display='block';
-  E('ck-content').innerHTML='';
-}
+  ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company…';el.appendChild(o);el.value=cur;});
+  // Populate sidebar companies
+  const sc=E('side-companies');if(sc){let h='';CC.forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.ticker.split(' ')[0])+'</span></div>';});sc.innerHTML=h;}}
+async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
-function sideSelectCo(ticker){
-  E('ck-company').value=ticker;
-  E('ck-new-co-panel').style.display='none';
-  E('ck-content').style.display='block';
-  showPage('cockpit');loadCockpit();loadDD();
-}
-
-// ── New-company panel helpers ──────────────────────────────
-var ckUF=[];
-function ckGetTicker(){return E('ck-ticker').value.trim().toUpperCase();}
-function ckGetPeriod(){return E('ck-period-year').value+'_'+E('ck-period-type').value;}
-function ckAddFile(){E('ck-hfi').click();}
-(function(){
-  var ckHfi=E('ck-hfi');if(!ckHfi)return;
-  ckHfi.addEventListener('change',function(){
-    var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-    function gType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
-    for(var f of this.files){ckUF.push({file:f,docType:gType(f.name)});}
-    this.value='';ckRenderFL();
-  });
-})();
-function ckRenderFL(){
-  var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-  var I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'};
-  var h='';
-  ckUF.forEach(function(f,i){
-    var s=(f.file.size/1024/1024).toFixed(1);
-    h+='<div class="fr"><span>'+(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="ckUF['+i+'].docType=this.value">';
-    Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});
-    h+='</select><button class="x" onclick="ckUF.splice('+i+',1);ckRenderFL()">&times;</button></div>';
-  });
-  E('ck-file-list').innerHTML=h;
-}
-async function ckGenerateThesis(){
-  var t=ckGetTicker();if(!t){alert('Enter a ticker first.');return;}
-  var btn=E('ck-gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';
-  try{
-    var n=E('ck-co-name').value.trim();
-    if(n){try{await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:E('ck-sector').value.trim()||null,country:E('ck-country').value.trim()||null,coverage_status:'active'})});}catch(e){}}
-    var r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});
-    if(!r.ok)throw new Error((await r.json().catch(function(){return{};})).detail||'Failed');
-    var d=await r.json();
-    E('ck-th-core').value=d.core_thesis||'';E('ck-th-risks').value=d.key_risks||'';E('ck-th-val').value=d.valuation_framework||'';
-    E('ck-thesis-sec').classList.add('open');E('ck-thesis-arr').textContent='▾';
-  }catch(e){alert('Failed: '+e.message);}
-  btn.textContent='✨ Auto-generate thesis';btn.disabled=false;
-}
-async function ckEnsureCo(t){
-  var n=E('ck-co-name').value.trim(),s=E('ck-sector').value.trim(),co=E('ck-country').value.trim();
-  try{var r=await fetch('/api/v1/companies/'+enc(t));if(r.ok)return true;}catch(e){}
-  if(!n){E('ck-error').innerHTML='Enter a company name.';E('ck-error').style.display='block';return false;}
-  try{var r2=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!r2.ok)throw new Error((await r2.json().catch(function(){return{};})).detail||'Failed');await loadDD();}catch(e){E('ck-error').innerHTML=e.message;E('ck-error').style.display='block';return false;}return true;
-}
-async function ckSaveThesis(t){
-  var c=E('ck-th-core').value.trim();if(!c)return;
-  try{await fetch('/api/v1/companies/'+enc(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:c,key_risks:E('ck-th-risks').value.trim()||null,valuation_framework:E('ck-th-val').value.trim()||null})});}catch(e){}
-}
-async function ckSubmitNew(){
-  var t=ckGetTicker(),p=ckGetPeriod();
-  E('ck-error').style.display='none';
-  if(!t){E('ck-error').innerHTML='Enter a ticker.';E('ck-error').style.display='block';return;}
-  if(!E('ck-co-name').value.trim()){E('ck-error').innerHTML='Enter a company name.';E('ck-error').style.display='block';return;}
-  var btn=E('ck-sub-btn'),ld=E('ck-loading');btn.disabled=true;btn.textContent='Creating…';
-  if(!await ckEnsureCo(t)){btn.disabled=false;btn.textContent='Add Company & Analyse';return;}
-  await ckSaveThesis(t);
-  if(!ckUF.length){
-    btn.disabled=false;btn.textContent='Add Company & Analyse';
-    E('ck-new-co-panel').style.display='none';E('ck-content').style.display='block';
-    E('ck-company').value=t;await loadDD();loadCockpit();return;
+function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
+function onCkSelect(v){
+  if(v==='__new__'){
+    // Route to existing New Analysis page, pre-selecting __new__ in its dropdown
+    E('ck-company').value='';  // reset cockpit dropdown so it doesn't stay on __new__
+    showPage('new');
+    // Set company-select to __new__ and trigger its handler
+    const cs=E('company-select');if(cs){cs.value='__new__';onCompanySelect();}
+  } else {
+    loadCockpit();
   }
-  btn.textContent='Uploading…';
-  var fd=new FormData();fd.append('period_label',p);
-  fd.append('document_types',ckUF.map(function(f){return f.docType;}).join(','));
-  fd.append('titles',ckUF.map(function(f){return f.file.name;}).join(','));
-  ckUF.forEach(function(f){fd.append('files',f.file);});
-  var jobId;
-  try{var r=await fetch('/api/v1/companies/'+enc(t)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||'Upload failed');}
-    jobId=(await r.json()).job_id;
-  }catch(e){E('ck-error').innerHTML=e.message;E('ck-error').style.display='block';btn.disabled=false;btn.textContent='Add Company & Analyse';return;}
-  ld.style.display='block';
-  var poll=setInterval(async function(){
-    try{var r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;var j=await r.json();
-      var pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-      ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
-      if(j.status==='completed'){clearInterval(poll);ld.style.display='none';
-        E('ck-new-co-panel').style.display='none';E('ck-content').style.display='block';
-        E('ck-company').value=t;ckUF=[];await loadDD();loadCockpit();
-        btn.disabled=false;btn.textContent='Add Company & Analyse';
-      }else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';
-        E('ck-error').innerHTML=j.error_message||'Analysis failed';E('ck-error').style.display='block';
-        btn.disabled=false;btn.textContent='Add Company & Analyse';
-      }
-    }catch(e){}
-  },3000);
 }
 async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
@@ -667,27 +546,15 @@ function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
   const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
   if(!allPeriods.length){
-    var h='<div style="text-align:center;padding:40px 24px"><div style="font-size:32px;margin-bottom:12px">📂</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:20px">No results yet for this company.</div></div>';
-    h+='<div style="max-width:460px;margin:0 auto"><div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px">';
-    h+='<div class="fl">Add First Period</div>';
-    h+='<div style="display:flex;gap:8px;margin-top:8px">';
-    h+='<select class="fi" id="res-new-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>';
-    h+='<select class="fi" id="res-new-py" style="flex:1"></select>';
-    h+='</div>';
-    h+='<div id="res-new-file-list" style="margin-top:10px"></div>';
-    h+='<button class="af" style="margin-top:8px" onclick="resNewAddFile(\''+ticker+'\')"><span style="font-size:18px">+</span> Add documents</button>';
-    h+='<input type="file" id="res-new-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="resNewHandleFiles(this,\''+ticker+'\')">';
-    h+='<div id="res-new-error" class="err" style="display:none;margin-top:8px"></div>';
-    h+='<button class="btn btn-full" id="res-new-btn" onclick="resNewSubmit(\''+ticker+'\')" style="margin-top:14px">Analyse &amp; Synthesise</button>';
-    h+='<div class="ld" id="res-new-ld" style="display:none"></div>';
-    h+='</div></div>';
-    // Populate year dropdown after render
-    setTimeout(function(){var sel=E('res-new-py');if(!sel||sel.options.length>1)return;var yr=new Date().getFullYear();for(var y=yr+1;y>=yr-5;y--){var o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}},50);
-    return h;
+    return '<div style="text-align:center;padding:40px 24px">' +
+      '<div style="font-size:36px;margin-bottom:16px">📂</div>' +
+      '<div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:24px">No results yet. Add a new period to get started.</div>' +
+      '<button class="btn" onclick="showNewPeriodForm(''+ticker+'')" style="padding:12px 28px">+ Add New Period</button>' +
+    '</div>';
   }
   let h='<div class="ptabs" id="res-ptabs">';
-  allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(''+esc(p)+'',this)">'+esc(p)+'</button>';});
-  h+='<button class="ptab" style="margin-left:auto;color:var(--gold);border-color:rgba(196,164,90,.4)" onclick="showNewPeriodPanel(''+ticker+'')">+ New Period</button>';
+  allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});
+  h+='<button class="ptab" style="margin-left:auto;color:var(--gold);border-color:rgba(196,164,90,.4)" onclick="showNewPeriodForm(\''+ticker+'\')">+ New Period</button>';
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
@@ -2764,119 +2631,89 @@ setInterval(function(){
   if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){gsPopulateTickers();}
 },1000);
 
-// ── New Period panel (inline in Results tab) ─────────────────
-var _resNewUF=[];
-function showNewPeriodPanel(ticker){
-  var ck=E('ck-content');if(!ck)return;
+// ── New Period inline form (shown in Results tab) ─────────────
+var _npUF=[], _npTicker='';
+function showNewPeriodForm(ticker){
+  _npTicker=ticker; _npUF=[];
+  // Insert panel at the very top of ck-results tab content
+  var container=E('ck-results');if(!container)return;
   var yr=new Date().getFullYear();
   var yOpts='';for(var y=yr+1;y>=yr-5;y--){yOpts+='<option value="'+y+'"'+(y===yr?' selected':'')+'>'+y+'</option>';}
-  var h='<div style="margin:8px 0 24px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:560px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
-  h+='<div class="fl" style="margin:0">New Period</div>';
-  h+='<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="loadCockpit()">Cancel</button></div>';
-  h+='<div style="display:flex;gap:8px;margin-bottom:12px">';
-  h+='<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>';
-  h+='<select class="fi" id="np-py" style="flex:1">'+yOpts+'</select>';
-  h+='</div>';
-  h+='<div id="np-file-list"></div>';
-  h+='<button class="af" onclick="npAddFile()"><span style="font-size:18px">+</span> Add documents</button>';
-  h+='<input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="npHandleFiles(this)">';
-  h+='<div id="np-error" class="err" style="display:none;margin-top:8px"></div>';
-  h+='<button class="btn btn-full" id="np-btn" onclick="npSubmit(\''+ticker+'\')" style="margin-top:14px">Analyse &amp; Synthesise</button>';
-  h+='<div class="ld" id="np-ld" style="display:none"></div>';
-  h+='</div>';
-  // Prepend panel to ck-content
-  ck.innerHTML=h+ck.innerHTML;
-  _resNewUF=[];
+  var panel='<div id="np-panel" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;max-width:560px">';
+  panel+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">';
+  panel+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)">New Period</div>';
+  panel+='<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNewPeriodForm()">✕ Cancel</button>';
+  panel+='</div>';
+  panel+='<div style="display:flex;gap:8px;margin-bottom:14px">';
+  panel+='<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>';
+  panel+='<select class="fi" id="np-py" style="flex:1">'+yOpts+'</select>';
+  panel+='</div>';
+  panel+='<div id="np-file-list"></div>';
+  panel+='<button class="af" onclick="document.getElementById(\'np-hfi\').click()"><span style="font-size:18px">+</span> Add documents</button>';
+  panel+='<input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>';
+  panel+='<div id="np-error" class="err" style="display:none;margin-top:8px"></div>';
+  panel+='<button class="btn btn-full" id="np-btn" onclick="npSubmit()" style="margin-top:14px">Analyse &amp; Synthesise</button>';
+  panel+='<div class="ld" id="np-ld" style="display:none;margin-top:12px"></div>';
+  panel+='</div>';
+  // Prepend to existing content
+  container.innerHTML=panel+container.innerHTML;
+  // Wire file input
+  document.getElementById('np-hfi').addEventListener('change',function(){
+    var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
+    function gType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
+    for(var f of this.files){_npUF.push({file:f,docType:gType(f.name)});}
+    this.value='';
+    var T2=T;var h='';
+    _npUF.forEach(function(f,i){var s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';Object.keys(T2).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T2[k]+'</option>';});h+='</select><button class="x" onclick="_npUF.splice('+i+',1);document.getElementById(\'np-file-list\').innerHTML=\'\'">&times;</button></div>';});
+    var fl=document.getElementById('np-file-list');if(fl)fl.innerHTML=h;
+  });
 }
-function npAddFile(){var el=E('np-hfi');if(el)el.click();}
-function npGuessType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
-function npRenderFiles(){
-  var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-  var h='';_resNewUF.forEach(function(f,i){var s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_resNewUF['+i+'].docType=this.value">';Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+( k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="_resNewUF.splice('+i+',1);npRenderFiles()">&times;</button></div>';});
-  var el=E('np-file-list');if(el)el.innerHTML=h;
-}
-(function(){document.addEventListener('change',function(ev){if(ev.target&&ev.target.id==='np-hfi'){for(var f of ev.target.files){_resNewUF.push({file:f,docType:npGuessType(f.name)});}ev.target.value='';npRenderFiles();}});})();
-function npHandleFiles(inp){for(var f of inp.files){_resNewUF.push({file:f,docType:npGuessType(f.name)});}inp.value='';npRenderFiles();}
-async function npSubmit(ticker){
+function closeNewPeriodForm(){var p=E('np-panel');if(p)p.remove();_npUF=[];}
+async function npSubmit(){
   var pt=E('np-pt'),py=E('np-py');
-  if(!pt||!py){alert('Period selectors not found.');return;}
-  var p=py.value+'_'+pt.value;
+  if(!pt||!py)return;
+  var period=py.value+'_'+pt.value;
   var errEl=E('np-error');if(errEl)errEl.style.display='none';
-  if(!_resNewUF.length){if(errEl){errEl.innerHTML='Add at least one document.';errEl.style.display='block';}return;}
+  if(!_npUF.length){if(errEl){errEl.innerHTML='Add at least one document.';errEl.style.display='block';}return;}
   var btn=E('np-btn'),ld=E('np-ld');
   if(btn){btn.disabled=true;btn.textContent='Uploading…';}
-  var fd=new FormData();fd.append('period_label',p);
-  fd.append('document_types',_resNewUF.map(function(f){return f.docType;}).join(','));
-  fd.append('titles',_resNewUF.map(function(f){return f.file.name;}).join(','));
-  _resNewUF.forEach(function(f){fd.append('files',f.file);});
+  var fd=new FormData();
+  fd.append('period_label',period);
+  fd.append('document_types',_npUF.map(function(f){return f.docType;}).join(','));
+  fd.append('titles',_npUF.map(function(f){return f.file.name;}).join(','));
+  _npUF.forEach(function(f){fd.append('files',f.file);});
   var jobId;
-  try{var r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(_npTicker)+'/documents/batch-upload',{method:'POST',body:fd});
     if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||'Upload failed');}
     jobId=(await r.json()).job_id;
-  }catch(e){if(errEl){errEl.innerHTML=e.message;errEl.style.display='block';}if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}return;}
+  }catch(e){
+    if(errEl){errEl.innerHTML=e.message;errEl.style.display='block';}
+    if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+    return;
+  }
   if(ld)ld.style.display='block';
   var poll=setInterval(async function(){
-    try{var r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;var j=await r.json();
+    try{
+      var r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
+      var j=await r.json();
       var pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-      if(ld)ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
-      if(j.status==='completed'){clearInterval(poll);_resNewUF=[];
-        if(ld)ld.innerHTML='<span style="color:var(--green)">✓ Done</span>';
-        setTimeout(function(){loadCockpit();E('ck-content').scrollTop=0;// switch to results tab
-          setTimeout(function(){var rTab=document.querySelector('.tab:nth-child(3)');if(rTab){rTab.click();}},300);},800);
-      }else if(j.status==='failed'){clearInterval(poll);if(ld)ld.style.display='none';
-        if(errEl){errEl.innerHTML=j.error_message||'Failed';errEl.style.display='block';}
+      if(ld)ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>'
+        +'<div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">'
+        +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div>'
+        +'<div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
+      if(j.status==='completed'){
+        clearInterval(poll);_npUF=[];
+        if(ld)ld.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
+        setTimeout(function(){loadCockpit();},1200);
+      }else if(j.status==='failed'){
+        clearInterval(poll);if(ld)ld.style.display='none';
+        if(errEl){errEl.innerHTML=j.error_message||'Analysis failed';errEl.style.display='block';}
         if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}
       }
     }catch(e){}
   },3000);
 }
-
-// resNew helpers (used in empty state)
-function resNewAddFile(ticker){var el=E('res-new-hfi');if(el)el.click();}
-function resNewHandleFiles(inp,ticker){
-  var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-  var files=[],h='';
-  for(var f of inp.files){files.push({file:f,docType:npGuessType(f.name)});}
-  inp.value='';
-  files.forEach(function(f,i){h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><select id="res-new-t-'+i+'">';Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select></div>';});
-  var rl=E('res-new-file-list');if(rl)rl.innerHTML=h;
-  window._resEmptyFiles=files;
-}
-async function resNewSubmit(ticker){
-  var pt=E('res-new-pt'),py=E('res-new-py');if(!pt||!py)return;
-  var p=py.value+'_'+pt.value;
-  var files=window._resEmptyFiles||[];
-  if(!files.length){var el=E('res-new-error');if(el){el.innerHTML='Add at least one document.';el.style.display='block';}return;}
-  // Re-read types from selectors
-  files.forEach(function(f,i){var sel=E('res-new-t-'+i);if(sel)f.docType=sel.value;});
-  var btn=E('res-new-btn'),ld=E('res-new-ld');if(btn){btn.disabled=true;btn.textContent='Uploading…';}
-  var fd=new FormData();fd.append('period_label',p);
-  fd.append('document_types',files.map(function(f){return f.docType;}).join(','));
-  fd.append('titles',files.map(function(f){return f.file.name;}).join(','));
-  files.forEach(function(f){fd.append('files',f.file);});
-  try{var r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||'Upload failed');}
-    var jobId=(await r.json()).job_id;
-    if(ld)ld.style.display='block';
-    var poll=setInterval(async function(){
-      try{var jr=await fetch('/api/v1/jobs/'+jobId);if(!jr.ok)return;var j=await jr.json();
-        var pct=j.progress_pct||0,step=j.current_step||'processing';
-        if(ld)ld.innerHTML='<div style="margin-bottom:6px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div>';
-        if(j.status==='completed'){clearInterval(poll);window._resEmptyFiles=null;
-          if(ld)ld.innerHTML='<span style="color:var(--green)">✓ Done</span>';
-          setTimeout(function(){loadCockpit();setTimeout(function(){var rTab=document.querySelector('.tab:nth-child(3)');if(rTab)rTab.click();},300);},800);
-        }else if(j.status==='failed'){clearInterval(poll);if(ld)ld.style.display='none';
-          var el2=E('res-new-error');if(el2){el2.innerHTML=j.error_message||'Failed';el2.style.display='block';}
-          if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}
-        }
-      }catch(e){}
-    },3000);
-  }catch(e){var el3=E('res-new-error');if(el3){el3.innerHTML=e.message;el3.style.display='block';}if(btn){btn.disabled=false;btn.textContent='Analyse & Synthesise';}}
-}
-
-// Populate ck-period-year on load
-(function(){var sel=E('ck-period-year');if(!sel)return;var yr=new Date().getFullYear();for(var y=yr+1;y>=yr-5;y--){var o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}})();
 </script>
 </body>
 </html>
