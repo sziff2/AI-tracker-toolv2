@@ -790,10 +790,10 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     Run a comprehensive competitive advantage analysis using all available data
     for the company: thesis, metrics, documents, ESG, execution track record.
     """
-    from services.llm_client import call_llm_json
+    from services.llm_client import call_llm_json_async
     from prompts import MOAT_ANALYSIS
     from apps.api.models import (
-        ExtractedMetric, ESGData, DocumentSection,
+        ExtractedMetric, ESGData,
         ManagementStatement, ExecutionScorecard,
     )
 
@@ -812,29 +812,40 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     if thesis:
         thesis_text = f"Core thesis: {thesis.core_thesis or 'N/A'}\nKey risks: {thesis.key_risks or 'N/A'}\nValuation: {thesis.valuation_framework or 'N/A'}"
 
-    # Gather metrics (latest periods)
+    # Gather metrics (latest periods, high-confidence only, capped)
     metrics_q = await db.execute(
-        select(ExtractedMetric).where(ExtractedMetric.company_id == company.id)
-        .order_by(ExtractedMetric.period_label.desc()).limit(100)
+        select(ExtractedMetric).where(
+            ExtractedMetric.company_id == company.id,
+            ExtractedMetric.metric_value.isnot(None),
+            ExtractedMetric.confidence >= 0.65,
+        )
+        .order_by(ExtractedMetric.period_label.desc(), ExtractedMetric.confidence.desc())
+        .limit(60)
     )
     metrics = metrics_q.scalars().all()
     metrics_text = "\n".join(
         f"{m.metric_name}: {m.metric_value} {m.unit or ''} ({m.period_label})"
-        for m in metrics if m.metric_value is not None
-    )[:5000] or "No financial metrics available."
+        for m in metrics
+    )[:3000] or "No financial metrics available."
 
-    # Gather document commentary (from sections)
-    sections_q = await db.execute(
-        select(DocumentSection).where(
-            DocumentSection.document_id.in_(
-                select(Document.id).where(Document.company_id == company.id)
-            )
-        ).order_by(DocumentSection.id.desc()).limit(20)
+    # Gather commentary from Document.parsed_text directly (more reliable than sections)
+    commentary_docs_q = await db.execute(
+        select(Document).where(
+            Document.company_id == company.id,
+            Document.parsed_text.isnot(None),
+            Document.parsed_text != "",
+            Document.doc_type.in_(["transcript", "earnings_release", "annual_report"]),
+        )
+        .order_by(Document.period_label.desc())
+        .limit(3)
     )
-    sections = sections_q.scalars().all()
-    commentary_text = "\n\n".join(
-        s.text_content[:500] for s in sections if s.text_content
-    )[:8000] or "No document commentary available."
+    commentary_docs = commentary_docs_q.scalars().all()
+    commentary_parts = []
+    for doc in commentary_docs:
+        snippet = (doc.parsed_text or "")[:2000]
+        if snippet:
+            commentary_parts.append(f"[{doc.period_label} — {doc.doc_type}]\n{snippet}")
+    commentary_text = "\n\n".join(commentary_parts)[:6000] or "No document commentary available."
 
     # Gather ESG data
     esg_text = "No ESG data available."
@@ -845,42 +856,47 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
         esg_dict = _json.loads(esg_row.data) if isinstance(esg_row.data, str) else esg_row.data
         filled = {k: v for k, v in esg_dict.items() if v}
         if filled:
-            esg_text = "\n".join(f"{k}: {v}" for k, v in filled.items())
+            esg_text = "\n".join(f"{k}: {v}" for k, v in list(filled.items())[:30])
         if esg_row.ai_summary:
-            esg_text += f"\n\nAI Summary: {esg_row.ai_summary}"
+            esg_text += f"\n\nAI Summary: {esg_row.ai_summary[:500]}"
+    esg_text = esg_text[:2000]
 
-    # Gather execution track record
+    # Gather execution track record (wrapped — tables may not exist yet)
     execution_text = "No execution data available."
-    scorecard_q = await db.execute(
-        select(ExecutionScorecard).where(
-            ExecutionScorecard.company_id == company.id,
-            ExecutionScorecard.period == "all_time",
+    try:
+        scorecard_q = await db.execute(
+            select(ExecutionScorecard).where(
+                ExecutionScorecard.company_id == company.id,
+                ExecutionScorecard.period == "all_time",
+            )
         )
-    )
-    scorecard = scorecard_q.scalar_one_or_none()
-    if scorecard:
-        execution_text = f"Execution score: {scorecard.overall_score}\n"
-        execution_text += f"Guidance bias: {scorecard.guidance_bias or 'N/A'}\n"
-        execution_text += f"Reliability: {scorecard.execution_reliability or 'N/A'}\n"
-        execution_text += f"Strategic consistency: {scorecard.strategic_consistency or 'N/A'}\n"
-        execution_text += f"Delivered: {scorecard.delivered_count}, Missed: {scorecard.missed_count}\n"
-        if scorecard.ai_assessment:
-            execution_text += f"Assessment: {scorecard.ai_assessment}"
+        scorecard = scorecard_q.scalar_one_or_none()
+        if scorecard:
+            execution_text = f"Execution score: {scorecard.overall_score}\n"
+            execution_text += f"Guidance bias: {scorecard.guidance_bias or 'N/A'}\n"
+            execution_text += f"Reliability: {scorecard.execution_reliability or 'N/A'}\n"
+            execution_text += f"Strategic consistency: {scorecard.strategic_consistency or 'N/A'}\n"
+            execution_text += f"Delivered: {scorecard.delivered_count}, Missed: {scorecard.missed_count}\n"
+            if scorecard.ai_assessment:
+                execution_text += f"Assessment: {scorecard.ai_assessment[:400]}"
 
-    # Statements summary
-    stmts_q = await db.execute(
-        select(ManagementStatement).where(
-            ManagementStatement.company_id == company.id
-        ).order_by(ManagementStatement.statement_date.desc()).limit(20)
-    )
-    stmts = stmts_q.scalars().all()
-    if stmts:
-        execution_text += "\n\nRecent statements:\n"
-        for s in stmts[:10]:
-            score_str = f" [Score: {s.score}]" if s.score is not None else ""
-            execution_text += f"- ({s.statement_date}) {s.statement_text}{score_str}\n"
+        stmts_q = await db.execute(
+            select(ManagementStatement).where(
+                ManagementStatement.company_id == company.id
+            ).order_by(ManagementStatement.statement_date.desc()).limit(10)
+        )
+        stmts = stmts_q.scalars().all()
+        if stmts:
+            execution_text += "\n\nRecent statements:\n"
+            for s in stmts[:10]:
+                score_str = f" [Score: {s.score}]" if s.score is not None else ""
+                execution_text += f"- ({s.statement_date}) {s.statement_text[:150]}{score_str}\n"
+    except Exception:
+        pass  # execution data is optional
 
-    # Run LLM analysis
+    execution_text = execution_text[:2000]
+
+    # Run LLM analysis (async, 8192 tokens to avoid truncation)
     prompt = MOAT_ANALYSIS.format(
         company=company.name, ticker=company.ticker,
         sector=company.sector or "N/A",
@@ -890,8 +906,11 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     )
 
     try:
-        result = call_llm_json(prompt, max_tokens=4096)
+        result = await call_llm_json_async(prompt, max_tokens=8192)
     except Exception as e:
-        raise HTTPException(502, f"Analysis failed: {str(e)[:200]}")
+        raise HTTPException(502, f"Moat analysis failed: {str(e)[:300]}")
+
+    if not isinstance(result, dict):
+        raise HTTPException(502, "Moat analysis returned unexpected format — retry.")
 
     return result
