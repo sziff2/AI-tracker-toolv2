@@ -372,9 +372,7 @@ function onCkSelect(v){
     E('ck-company').value='';
     showPage('new');
     var cs=E('company-select');if(cs){cs.value='__new__';onCompanySelect();}
-  }else{
-    loadCockpit();
-  }
+  }else{loadCockpit();}
 }
 async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
@@ -435,88 +433,157 @@ function renderCockpit(ticker,d){
 }
 function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
 
-// ── Thesis tab (with IC Summary) ─────────────────────────────
+// ── Thesis tab ───────────────────────────────────────────────
 function renderCkThesis(d){
   const ticker=E('ck-company').value;
-  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
-  const t=d.thesis;let h='';
+  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Select a company and add documents to get started.');
+  const t=d.thesis;
   const a=d.thesis_assessment||{};
-  const dir=a.thesis_direction||'—';const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
+  const dir=a.thesis_direction||'—';
+  const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
+  let h='';
 
-  // IC Summary strip
+  // ── Staleness warning ────────────────────────────────────
+  if(t.staleness_warning){
+    const wBg=t.staleness_label==='very_stale'?'var(--redDim)':t.staleness_label==='stale'?'rgba(245,158,11,.10)':'rgba(107,122,141,.07)';
+    const wBorder=t.staleness_label==='very_stale'?'rgba(239,68,68,.35)':t.staleness_label==='stale'?'rgba(245,158,11,.35)':'rgba(107,122,141,.2)';
+    const wColor=t.staleness_label==='very_stale'?'var(--red)':t.staleness_label==='stale'?'var(--amber)':'var(--text3)';
+    h+='<div style="margin-bottom:14px;padding:10px 14px;background:'+wBg+';border:1px solid '+wBorder+';border-radius:8px;font-family:var(--sans);font-size:12px;color:'+wColor+'">'+esc(t.staleness_warning)+'</div>';
+  }
+
+  // ── IC Summary card ──────────────────────────────────────
   h+='<div class="cd gold" style="padding:20px 24px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">IC Summary</div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+  h+='<div class="cd-t" style="margin:0">IC Summary</div>';
   h+='<div style="font-family:var(--sans);font-size:11px;display:flex;gap:16px">';
   if(a.thesis_direction)h+='<span>Thesis: <span style="color:'+dirCls+';font-weight:600">'+esc(dir)+'</span></span>';
   if(a.confidence)h+='<span style="color:var(--text4)">Confidence: '+a.confidence+'</span>';
   h+='</div></div>';
-  // IC fields row
   h+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">';
-  // Recommendation
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Recommendation</div>';
   h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'recommendation\',this.value)">';
   ['','Buy','Hold','Trim','Exit','Under Review'].forEach(o=>{h+='<option value="'+o+'"'+(t.recommendation===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
   h+='</select></div>';
-  // Variant Perception
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Variant Perception</div>';
   h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.variant_perception||'')+'" placeholder="What do we see that consensus doesn\'t" onchange="saveThesisField(\''+ticker+'\',\'variant_perception\',this.value)"></div>';
-  // Key Risk
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Key Risk</div>';
   h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.key_risks||'')+'" placeholder="Primary bear case risk" onchange="saveThesisField(\''+ticker+'\',\'key_risks\',this.value)"></div>';
-  // Catalyst
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Catalyst</div>';
-  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.catalyst||'')+'" placeholder="e.g. Q3 results, Spin-off" onchange="saveThesisField(\''+ticker+'\',\'catalyst\',this.value)"></div>';
-  // Conviction
+  h+='<input class="fi" style="font-size:12px;padding:7px 10px" value="'+esc(t.catalyst||'')+'" placeholder="e.g. Q3 results, spin-off" onchange="saveThesisField(\''+ticker+'\',\'catalyst\',this.value)"></div>';
   h+='<div><div style="font-family:var(--sans);font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Conviction</div>';
   h+='<select class="fi" style="font-size:12px;padding:7px 10px" onchange="saveThesisField(\''+ticker+'\',\'conviction\',this.value)">';
   ['','High','Medium','Low'].forEach(o=>{h+='<option value="'+o+'"'+(t.conviction===o?' selected':'')+'>'+( o||'— Select —')+'</option>';});
   h+='</select></div>';
   h+='</div></div>';
 
-  // Three-column structured thesis section
+  // ── Three-column risk section ────────────────────────────
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
-  // What Would Make Us Wrong
   h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
-  // Disconfirming Evidence
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="Specific observations that would invalidate the thesis\u2026" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
   h+='<div class="cd" style="border-left-color:var(--amber);margin:0"><div class="cd-t" style="color:var(--amber)">Disconfirming Evidence</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
-  // Positive / Negative Surprises
-  h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Positive / Negative Surprises</div>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
-  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="Data or events that have weakened the case since initiation\u2026" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
+  h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Surprises vs Thesis</div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises\u2026" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises\u2026" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
   h+='</div>';
 
-  // Investment Thesis (editable)
+  // ── Thesis + Valuation ───────────────────────────────────
   h+='<div class="g2" style="margin-top:12px">';
   h+='<div class="cd" style="margin:0"><div class="cd-t">Investment Thesis</div>';
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
-  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">✎ Editable — changes versioned on save</div></div>';
-  // Valuation Framework
+  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">\u270e Editable \u2014 changes versioned on save</div></div>';
   h+='<div class="cd" style="margin:0"><div class="cd-t">Valuation Framework</div>';
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // Latest assessment
-  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
-  // Assessment history
-  if(d.all_assessments?.length>1){
-    h+='<h2 style="margin-top:24px">Assessment History</h2>';
-    d.all_assessments.forEach(a=>{
-      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
-      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
+  // ── Gathered Intelligence — rolling summary of all periods ─
+  const abp=d.analyses_by_period||{};
+  const allAssessments=d.all_assessments||[];
+  const hasPeriodData=Object.keys(abp).length>0||allAssessments.length>0;
+
+  if(hasPeriodData){
+    h+='<h2 style="margin-top:28px">Gathered Intelligence</h2>';
+    h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:12px">Synthesised findings across all periods, most recent first.</div>';
+
+    // Build merged period list from both assessments and analyses
+    const periodMap={};
+    // From analyses_by_period
+    Object.entries(abp).forEach(([p,o])=>{
+      if(!periodMap[p])periodMap[p]={period:p,direction:null,summary:null,bottom_line:null,surprises:[]};
+      const c=o.content;
+      if(c){
+        const s=c.synthesis||c.briefing||{};
+        periodMap[p].bottom_line=s.bottom_line||s.what_happened||null;
+        periodMap[p].thesis_impact=s.thesis_impact||s.thesis_status||null;
+        if(c.surprises?.length)periodMap[p].surprises=c.surprises;
+      }
     });
+    // From all_assessments — adds direction and LLM summary
+    allAssessments.forEach(a=>{
+      const p=a.period||'unknown';
+      if(!periodMap[p])periodMap[p]={period:p,direction:null,summary:null,bottom_line:null,surprises:[]};
+      if(a.thesis_direction)periodMap[p].direction=a.thesis_direction;
+      if(a.summary)periodMap[p].summary=a.summary;
+    });
+
+    const sortedPeriods=Object.keys(periodMap).sort().reverse();
+
+    if(sortedPeriods.length===0){
+      h+='<div style="padding:16px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis data yet. Run an analysis to start building the intelligence record.</div>';
+    } else {
+      sortedPeriods.forEach(p=>{
+        const row=periodMap[p];
+        const dCls=row.direction==='strengthened'?'var(--green)':row.direction==='weakened'?'var(--red)':'var(--amber)';
+        const dLabel=row.direction||'pending';
+        h+='<div style="padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px">';
+        // Period header
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+        h+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">'+esc(p)+'</div>';
+        if(row.direction){
+          const bdgBg=row.direction==='strengthened'?'var(--greenDim)':row.direction==='weakened'?'var(--redDim)':'rgba(245,158,11,.12)';
+          h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:'+dCls+';background:'+bdgBg+';padding:3px 8px;border-radius:4px">'+esc(dLabel)+'</span>';
+        }
+        h+='</div>';
+        // Bottom line from synthesis
+        if(row.bottom_line){
+          h+='<div style="font-family:var(--serif);font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:6px">'+esc(row.bottom_line)+'</div>';
+        }
+        // Assessment summary (from BDI comparator)
+        if(row.summary&&row.summary!==row.bottom_line){
+          h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:6px">'+esc(row.summary)+'</div>';
+        }
+        // Thesis impact
+        if(row.thesis_impact){
+          h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:4px"><span style="color:var(--text3);font-weight:600">Thesis: </span>'+esc(row.thesis_impact)+'</div>';
+        }
+        // Key surprises inline (max 2)
+        if(row.surprises&&row.surprises.length){
+          const shown=row.surprises.slice(0,2);
+          h+='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">';
+          shown.forEach(s=>{
+            const sc=s.direction==='positive'?'var(--green)':'var(--red)';
+            const sb=s.direction==='positive'?'var(--greenDim)':'var(--redDim)';
+            h+='<span style="font-family:var(--sans);font-size:10px;color:'+sc+';background:'+sb+';padding:2px 7px;border-radius:4px">'+(s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic||'')+'</span>';
+          });
+          h+='</div>';
+        }
+        h+='</div>';
+      });
+    }
   }
-  // Thesis version history
-  if(d.thesis_history?.length>1){
-    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
+
+  // ── Collapsible: Thesis version history ──────────────────
+  if(d.thesis_history&&d.thesis_history.length>1){
+    h+='<details style="margin-top:20px"><summary style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);cursor:pointer;padding:8px 0;list-style:none">&#9656; Thesis Version History ('+d.thesis_history.length+')</summary>';
+    h+='<div style="margin-top:8px">';
     d.thesis_history.forEach(tv=>{
-      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
+      h+='<div class="th-hist"><span style="color:var(--text4);min-width:80px">'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2);font-size:12px">'+esc((tv.core_thesis||'').slice(0,120))+(tv.core_thesis&&tv.core_thesis.length>120?'\u2026':'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
     });
+    h+='</div></details>';
   }
+
   return h;
 }
-
 async function saveThesisField(ticker,field,value){
   try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
 }
@@ -2635,7 +2702,7 @@ function showNewPeriodForm(ticker){
   p.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;max-width:560px';
   p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
     +'<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)">New Period</div>'
-    +'<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNpPanel()">✕ Cancel</button>'
+    +'<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNpPanel()">\u2715 Cancel</button>'
     +'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:14px">'
     +'<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>'
@@ -2658,7 +2725,7 @@ function npRenderFiles(){
   var h='';
   _npUF.forEach(function(f,i){
     var s=(f.file.size/1024/1024).toFixed(1);
-    h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';
+    h+='<div class="fr"><span>\U0001f4c4</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';
     Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});
     h+='</select><button class="x" onclick="_npUF.splice('+i+',1);npRenderFiles()">&times;</button></div>';
   });
