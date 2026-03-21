@@ -141,47 +141,13 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .gs-close{margin-left:auto;background:none;border:none;color:var(--text4);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px}
 .gs-close:hover{color:var(--red)}
 .wrap{padding-top:76px!important}
-
-/* ── Inline Feedback System ─────────────────────────────────── */
-.fb-wrap{position:relative}
-.fb-wrap:hover .fb-bar{opacity:1;pointer-events:auto}
-.fb-bar{position:absolute;top:4px;right:4px;display:flex;gap:3px;align-items:center;opacity:0;pointer-events:none;transition:opacity .15s;z-index:10}
-.fb-btn{padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);font-family:var(--sans);font-size:11px;cursor:pointer;white-space:nowrap;line-height:1.6;transition:background .12s,border-color .12s}
-.fb-btn:hover{background:#2a2a3a}
-.fb-btn.fb-correct{color:#4ade80}.fb-btn.fb-correct.active{background:rgba(74,222,128,.18);border-color:#4ade80}
-.fb-btn.fb-imprecise{color:#facc15}.fb-btn.fb-imprecise.active{background:rgba(250,204,21,.18);border-color:#facc15}
-.fb-btn.fb-wrong{color:#f87171}.fb-btn.fb-wrong.active{background:rgba(248,113,113,.18);border-color:#f87171}
-.fb-btn.fb-missing{color:#a78bfa}.fb-btn.fb-missing.active{background:rgba(167,139,250,.18);border-color:#a78bfa}
-.fb-btn.fb-comment{color:var(--text3);font-size:12px}
-.fb-comment-box{margin-top:6px;display:none;background:var(--bg2);border:1px solid var(--gold);border-radius:6px;padding:8px;gap:6px}
-.fb-comment-box.open{display:flex;flex-direction:column}
-.fb-comment-box textarea{width:100%;min-height:52px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:5px 8px;resize:vertical;box-sizing:border-box}
-.fb-comment-box textarea:focus{outline:none;border-color:var(--gold)}
-.fb-comment-box-row{display:flex;gap:6px;align-items:center}
-.fb-save-btn{padding:4px 12px;background:var(--gold);color:var(--bg);border:none;border-radius:4px;font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer}
-.fb-save-btn:hover{opacity:.85}
-.fb-tag-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;margin-left:6px;vertical-align:middle}
-.fb-tag-badge.correct{background:rgba(74,222,128,.18);color:#4ade80}
-.fb-tag-badge.wrong{background:rgba(248,113,113,.18);color:#f87171}
-.fb-tag-badge.imprecise{background:rgba(250,204,21,.18);color:#facc15}
-.fb-tag-badge.missing{background:rgba(167,139,250,.18);color:#a78bfa}
-.fb-promote-panel{margin-top:12px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;display:none;flex-direction:column;gap:10px}
-.fb-promote-panel.visible{display:flex}
-.fb-promote-panel h4{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin:0}
-.fb-promote-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.fb-promote-row label{font-family:var(--sans);font-size:12px;color:var(--text3)}
-.fb-promote-row select,.fb-promote-row input[type=number]{background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:4px 8px}
-.fb-promote-notes{width:100%}
-.fb-promote-notes textarea{width:100%;min-height:44px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--sans);font-size:12px;padding:5px 8px;resize:vertical;box-sizing:border-box}
-.fb-counter{font-family:var(--sans);font-size:12px;color:var(--text4);padding:6px 10px;background:var(--bg3);border-radius:6px;border:1px solid var(--border)}
-.fb-counter span{color:var(--gold);font-weight:600}
 </style>
 </head>
 <body>
 
 <!-- ═══ GLOBAL SEARCH BAR ═══ -->
 <div class="gs-bar">
-  <input class="gs-input" id="gs-input" type="text" placeholder="Search documents, metrics, statements, notes…" autocomplete="off"
+  <input class="gs-input" id="gs-input" type="text" placeholder="Search documents, metrics, statements, notes… (⌘K)" autocomplete="off"
     onkeydown="if(event.key==='Enter')runSearch();if(event.key==='Escape')closeSearch();">
   <select class="gs-ticker" id="gs-ticker">
     <option value="">All companies</option>
@@ -207,17 +173,13 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
   <div class="nav-sec">
     <div class="nav-lbl">Workspace</div>
-    <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
     <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
+    <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
+    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
+    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
     <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
     <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
-  </div>
-
-  <div class="nav-sec">
-    <div class="nav-lbl">Dev Tools</div>
-    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
-    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
   </div>
 
   <div class="nav-sec">
@@ -431,61 +393,10 @@ async function submitForm(){
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/batch-upload',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
   else{const f=UF[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
-  if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}
-  ld.style.display='block';
-  var _pipelineStart=Date.now();
-  var _docCount=UF.length||1;
-  ld.innerHTML='<div style="font-family:var(--sans);padding:24px 0;text-align:center"><div style="font-size:13px;font-weight:600;color:var(--gold);margin-bottom:12px">Starting pipeline\u2026</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
+  if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}ld.style.display='block';
   const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-    var STEPS=['upload','parse','extract','compare','surprises','briefing','ir_questions','synthesis'];
-    var stepLabels={'upload':'Upload','parse':'Parse','extract':'Extract KPIs','compare':'Thesis Compare','surprises':'Surprises','briefing':'Briefing','ir_questions':'IR Questions','synthesis':'Synthesise'};
-    var stepIcons={'upload':'\ud83d\udce4','parse':'\ud83d\udcc4','extract':'\ud83d\udcca','compare':'\ud83d\udd0d','surprises':'\u26a1','briefing':'\ud83d\udcdd','ir_questions':'\u2753','synthesis':'\u2728'};
-    var stepDetail={
-      'upload':'Uploading document'+(_docCount>1?'s ('+_docCount+' files)':'')+' to the server\u2026',
-      'parse':'Reading the PDF — extracting text from all pages, identifying tables, classifying document type\u2026',
-      'extract':'Running '+(_docCount>1?_docCount+' type-specific':'a')+' extractor'+(_docCount>1?'s in parallel':'')+' — pulling every KPI, margin, guidance figure and source snippet from the document\u2026',
-      'compare':'Comparing the extracted numbers and management commentary against your investment thesis to check if key assumptions still hold\u2026',
-      'surprises':'Scanning for beats and misses — checking every reported figure against prior guidance and management targets\u2026',
-      'briefing':'Writing the one-page analyst briefing — synthesising the numbers, management tone, and thesis impact into a clear view\u2026',
-      'ir_questions':'Drafting targeted IR questions based on gaps in the data, surprises, and areas where management was evasive\u2026',
-      'synthesis':'Cross-referencing all documents — earnings release, transcript, broker notes, presentation — into a single opinionated research update\u2026',
-      'saving':'Saving briefing, metrics, and IR questions to the research database\u2026',
-      'generating questions':'Finalising the IR question list for the next investor call\u2026',
-      'processing_documents':'Coordinating parallel extraction across '+_docCount+' document'+(_docCount>1?'s':'')+'\u2026',
-      'reprocessing':'Clearing previous outputs and rerunning the full pipeline with the latest extractors\u2026',
-      'processing':'Pipeline running\u2026',
-      'done':'Wrapping up and saving results\u2026'
-    };
-    var elapsed=Math.round((Date.now()-_pipelineStart)/1000);
-    var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
-    var detail=stepDetail[step]||('Running: '+step.split('_').join(' ')+'\u2026');
-    var ldh='<div style="font-family:var(--sans);padding:20px 0">';
-    ldh+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
-    ldh+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.split('_').join(' '))+'\u2026</div>';
-    ldh+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
-    ldh+='</div>';
-    ldh+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:12px">';
-    ldh+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:4px;transition:width .6s"></div></div>';
-    ldh+='<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5;min-height:36px">'+esc(detail)+'</div>';
-    ldh+='<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center">';
-    for(var si=0;si<STEPS.length;si++){
-      var sn=STEPS[si];
-      var done=steps.indexOf(sn)>=0;
-      var active=step===sn||step.indexOf(sn)>=0;
-      var bg=done?'var(--greenDim)':active?'var(--goldDim)':'var(--bg2)';
-      var bdr=done?'rgba(34,197,94,.4)':active?'rgba(196,164,90,.5)':'var(--border)';
-      var clr=done?'var(--green)':active?'var(--gold)':'var(--text4)';
-      var icon=done?'\u2713':(stepIcons[sn]||'\u00b7');
-      ldh+='<div style="display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
-      ldh+='<span style="font-size:12px">'+icon+'</span>';
-      ldh+='<span style="font-size:11px;font-weight:600;color:'+clr+'">'+esc(stepLabels[sn]||sn)+'</span>';
-      ldh+='</div>';
-    }
-    ldh+='</div>';
-    if(steps.length>0){ldh+='<div style="text-align:center;margin-top:10px;font-size:11px;color:var(--text4)">'+steps.length+' of '+STEPS.length+' steps complete</div>';}
-    ldh+='</div>';
-    ld.innerHTML=ldh;
-    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';fbSetContext(t,p);c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result,t,p):renderSingleHTML(j.result,t,p))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
+    ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:8px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
+    if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
   }catch(e){}},3000);
 }
@@ -513,29 +424,21 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
-  setTimeout(autoResizeTextareas,80);
 }
 function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
-
-function autoResizeTextareas(){
-  document.querySelectorAll('textarea.thesis-auto').forEach(function(ta){
-    ta.style.height='auto';
-    ta.style.height=(ta.scrollHeight+4)+'px';
-    if(!ta._autoResizeBound){
-      ta._autoResizeBound=true;
-      ta.addEventListener('input',function(){
-        this.style.height='auto';
-        this.style.height=(this.scrollHeight+4)+'px';
-      });
-    }
-  });
-}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d){
   const ticker=E('ck-company').value;
   if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
   const t=d.thesis;let h='';
+  // ── Thesis staleness warning ──────────────────────────────
+  if(t.staleness_warning){
+    const wBg=t.staleness_label==='very_stale'?'var(--redDim)':t.staleness_label==='stale'?'rgba(245,158,11,.1)':'rgba(107,122,141,.08)';
+    const wBorder=t.staleness_label==='very_stale'?'rgba(239,68,68,.35)':t.staleness_label==='stale'?'rgba(245,158,11,.35)':'rgba(107,122,141,.25)';
+    const wColor=t.staleness_label==='very_stale'?'var(--red)':t.staleness_label==='stale'?'var(--amber)':'var(--text3)';
+    h+='<div style="margin-bottom:12px;padding:10px 14px;background:'+wBg+';border:1px solid '+wBorder+';border-radius:8px;font-family:var(--sans);font-size:12px;color:'+wColor+'">'+esc(t.staleness_warning)+'</div>';
+  }
   const a=d.thesis_assessment||{};
   const dir=a.thesis_direction||'—';const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
 
@@ -569,80 +472,52 @@ function renderCkThesis(d){
   h+='</select></div>';
   h+='</div></div>';
 
-  // Three-column structured thesis section — auto-height textareas
+  // Three-column structured thesis section
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
   // What Would Make Us Wrong
   h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
-  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:80px" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
   // Disconfirming Evidence
   h+='<div class="cd" style="border-left-color:var(--amber);margin:0"><div class="cd-t" style="color:var(--amber)">Disconfirming Evidence</div>';
-  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:80px" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:80px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="What data or events have weakened the case since initiation…" onchange="saveThesisField(\''+ticker+'\',\'disconfirming_evidence\',this.value)">'+esc(t.disconfirming_evidence||'')+'</textarea></div>';
   // Positive / Negative Surprises
   h+='<div class="cd" style="border-left-color:var(--green);margin:0"><div class="cd-t">Positive / Negative Surprises</div>';
-  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px;resize:vertical;min-height:60px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
-  h+='<textarea class="fi thesis-auto" style="font-size:12px;border:none;background:transparent;padding:0;color:var(--red);resize:vertical;min-height:60px" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--green);margin-bottom:8px" placeholder="Positive surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'positive_surprises\',this.value)">'+esc(t.positive_surprises||'')+'</textarea>';
+  h+='<textarea class="fi" style="font-size:12px;min-height:35px;border:none;background:transparent;padding:0;color:var(--red)" placeholder="Negative surprises vs initial thesis…" onchange="saveThesisField(\''+ticker+'\',\'negative_surprises\',this.value)">'+esc(t.negative_surprises||'')+'</textarea></div>';
   h+='</div>';
 
   // Investment Thesis (editable)
   h+='<div class="g2" style="margin-top:12px">';
   h+='<div class="cd" style="margin:0"><div class="cd-t">Investment Thesis</div>';
-  h+='<textarea class="fi thesis-auto" style="font-size:13px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:100px" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
+  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'core_thesis\',this.value)">'+esc(t.core_thesis||'')+'</textarea>';
   h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-top:8px">✎ Editable — changes versioned on save</div></div>';
   // Valuation Framework
   h+='<div class="cd" style="margin:0"><div class="cd-t">Valuation Framework</div>';
-  h+='<textarea class="fi thesis-auto" style="font-size:13px;border:none;background:transparent;padding:0;color:var(--text2);resize:vertical;min-height:100px" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
+  h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // ── LLM Update button (IC Summary + three analysis fields) ──
-  h+='<div style="margin-top:16px;display:flex;align-items:center;gap:12px">';
-  h+='<button class="btn2" id="llm-update-btn-'+ticker+'" onclick="llmUpdateThesis(\''+ticker+'\')" style="font-size:12px;padding:6px 16px">✨ LLM Update</button>';
-  h+='<span id="llm-update-status-'+ticker+'" style="font-family:var(--sans);font-size:12px;color:var(--text4)"></span>';
-  h+='</div>';
-
-  // ── Recent Results Summary (most recent period, bias to new info) ──
-  var recentPeriods=Object.keys(d.analyses_by_period||{}).sort().reverse();
-  if(recentPeriods.length){
-    var rp=recentPeriods[0];
-    var rc=(d.analyses_by_period[rp]||{}).content||{};
-    var syn=rc.synthesis||rc.briefing||{};
-    if(syn.bottom_line||syn.management_message||syn.what_happened||syn.headline){
-      h+='<div class="cd" style="margin-top:16px;border-left-color:var(--blue)">';
-      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">';
-      h+='<div class="cd-t" style="margin:0">Recent Results Summary</div>';
-      h+='<span style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+esc(rp)+'</span>';
-      h+='</div>';
-      if(syn.headline)h+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:8px">'+esc(syn.headline)+'</div>';
-      if(syn.what_happened)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">What Happened</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.what_happened)+'</div></div>';
-      if(syn.management_message)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Management Message</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.management_message)+'</div></div>';
-      if(syn.thesis_status||syn.thesis_impact)h+='<div style="margin-bottom:10px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">Thesis Impact</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.5">'+esc(syn.thesis_status||syn.thesis_impact||'')+'</div></div>';
-      if(syn.bottom_line)h+='<div style="padding:10px 14px;background:var(--bg3);border-radius:8px;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text)"><span style="color:var(--gold)">Bottom line: </span>'+esc(syn.bottom_line)+'</div>';
-      h+='</div>';
-    }
+  // Latest assessment
+  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
+  // Assessment history
+  if(d.all_assessments?.length>1){
+    h+='<h2 style="margin-top:24px">Assessment History</h2>';
+    d.all_assessments.forEach(a=>{
+      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
+      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
+    });
+  }
+  // Thesis version history
+  if(d.thesis_history?.length>1){
+    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
+    d.thesis_history.forEach(tv=>{
+      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
+    });
   }
   return h;
 }
 
 async function saveThesisField(ticker,field,value){
   try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
-}
-
-async function llmUpdateThesis(ticker){
-  var btn=E('llm-update-btn-'+ticker);
-  var status=E('llm-update-status-'+ticker);
-  if(!btn)return;
-  btn.disabled=true;btn.textContent='Generating…';
-  if(status)status.textContent='Calling Claude…';
-  try{
-    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/llm-update-thesis',{method:'POST'});
-    if(!r.ok){var e=await r.json().catch(function(){return {};});throw new Error(e.detail||'Failed');}
-    var d=await r.json();
-    if(status)status.textContent='✓ Updated — reload to see changes';
-    setTimeout(function(){loadCockpit();},800);
-  }catch(e){
-    if(status)status.textContent='✕ '+e.message;
-  }finally{
-    btn.disabled=false;btn.textContent='✨ LLM Update';
-  }
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────
@@ -673,7 +548,6 @@ function renderCkResults(ticker,d){
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
-    if(i===0){(function(pp,tt){setTimeout(function(){fbSetContext(tt,pp);},150);})(p,ticker);}
     // Period header with reprocess and delete buttons
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     // Documents used for this period
@@ -696,10 +570,10 @@ function renderCkResults(ticker,d){
     if(analysis?.content){
       h+='<h2>Analysis Output</h2>';
       const c=analysis.content;
-      if(c.synthesis){h+=renderBatchHTML(c,ticker,p);}
-      else if(c.briefing){h+=renderSingleHTML(c,ticker,p);}
-      else{if(c.surprises&&c.surprises.length){var sHtml2='';c.surprises.forEach(function(s,si){sHtml2+=fbWrap('surprise:'+si,'<div style="padding:6px 0">'+esc((s.direction==='positive'?'↑':'↓')+' '+s.metric_or_topic)+': '+esc(s.description)+'</div>',s.description,'surprise');});h+=card('','Surprises',sHtml2);}
-      if(c.ir_questions&&c.ir_questions.length){var irHtml2='';c.ir_questions.forEach(function(q,qi){irHtml2+=fbWrap('ir_question:'+qi,'<div style="padding:6px 0">'+esc(q.question||q.topic||'')+'</div>',q.question||'','synthesis');});h+=card('','IR Questions',irHtml2);}}
+      if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}
+      else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}
+      if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
+      if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
     } else if(!pdocs.length){
       h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';
     }
@@ -715,11 +589,9 @@ function renderCkResults(ticker,d){
   return h;
 }
 function showResPeriod(p,btn){
-  document.querySelectorAll('[id^="res-"]').forEach(function(el){if(el.id!=='res-ptabs')el.style.display='none';});
-  var target=E('res-'+p);if(target)target.style.display='block';
-  E('res-ptabs').querySelectorAll('.ptab').forEach(function(b){b.classList.remove('on');});btn.classList.add('on');
-  var ticker=E('ck-company').value;
-  if(ticker&&p)fbSetContext(ticker,p);
+  document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
+  const target=E('res-'+p);if(target)target.style.display='block';
+  E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
@@ -779,7 +651,7 @@ async function uploadAddDocs(ticker,period,count){
     // Show progress polling
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-top:12px"><div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:10px">📄 Uploaded '+count+' document'+(count!==1?'s':'')+' — starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">📄 Uploaded '+count+' documents. Processing…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
     }
     pollReprocess(d.job_id,ticker,period);
   }catch(e){listEl.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
@@ -793,81 +665,27 @@ async function reprocessPeriod(ticker,period){
     // Show progress bar in the results area
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;margin-top:12px"><div style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--gold);margin-bottom:10px">🔄 Reprocessing '+d.documents+' document'+(d.documents!==1?'s':'')+' — starting pipeline…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:2%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px"></div></div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">🔄 Reprocessing '+d.documents+' documents…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
     }
     // Poll for progress
     pollReprocess(d.job_id,ticker,period);
   }catch(e){alert('Reprocess failed: '+e.message);}
 }
 function pollReprocess(jobId,ticker,period){
-  var _rpStart=Date.now();
-  var STEPS=['upload','parse','extract','compare','surprises','briefing','ir_questions','synthesis'];
-  var stepLabels={'upload':'Upload','parse':'Parse','extract':'Extract KPIs','compare':'Thesis Compare','surprises':'Surprises','briefing':'Briefing','ir_questions':'IR Questions','synthesis':'Synthesise'};
-  var stepIcons={'upload':'\ud83d\udce4','parse':'\ud83d\udcc4','extract':'\ud83d\udcca','compare':'\ud83d\udd0d','surprises':'\u26a1','briefing':'\ud83d\udcdd','ir_questions':'\u2753','synthesis':'\u2728'};
-  var stepDetail={
-    'upload':'Uploading documents to the server\u2026',
-    'parse':'Reading the PDF \u2014 extracting text from all pages, identifying tables, classifying document type\u2026',
-    'extract':'Running type-specific extractors \u2014 pulling every KPI, margin, guidance figure and source snippet\u2026',
-    'compare':'Comparing extracted metrics against your investment thesis to check if key assumptions still hold\u2026',
-    'surprises':'Scanning for beats and misses \u2014 checking every reported figure against prior guidance and targets\u2026',
-    'briefing':'Writing the one-page analyst briefing \u2014 synthesising numbers, management tone and thesis impact\u2026',
-    'ir_questions':'Drafting targeted IR questions based on gaps, surprises and areas where management was evasive\u2026',
-    'synthesis':'Cross-referencing all documents into a single opinionated research update\u2026',
-    'saving':'Saving briefing, metrics and IR questions to the research database\u2026',
-    'generating questions':'Finalising the IR question list for the next investor call\u2026',
-    'processing_documents':'Coordinating parallel extraction across documents\u2026',
-    'reprocessing':'Clearing previous outputs and rerunning the full pipeline with the latest extractors\u2026',
-    'processing':'Pipeline running\u2026',
-    'done':'Wrapping up and saving results\u2026'
-  };
   const poll=setInterval(async()=>{
     try{
       const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
       const j=await r.json();
-      const pct=j.progress_pct||0;
-      const step=j.current_step||'processing';
-      const steps=j.steps_completed||[];
-      const prog=E('reprocess-progress');
-      if(!prog)return;
-      var elapsed=Math.round((Date.now()-_rpStart)/1000);
-      var elapsedStr=elapsed<60?elapsed+'s':(Math.floor(elapsed/60)+'m '+(elapsed%60)+'s');
-      var detail=stepDetail[step]||('Running: '+step.split('_').join(' ')+'\u2026');
-      var h='<div style="font-family:var(--sans);padding:4px 0">';
-      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
-      h+='<div style="font-size:14px;font-weight:700;color:var(--gold)">'+esc(stepLabels[step]||step.split('_').join(' '))+'\u2026</div>';
-      h+='<div style="font-size:12px;color:var(--text4)">'+pct+'% &nbsp;\u00b7&nbsp; '+elapsedStr+'</div>';
-      h+='</div>';
-      h+='<div style="width:100%;height:7px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:10px">';
-      h+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:4px;transition:width .6s"></div></div>';
-      h+='<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5;min-height:32px">'+esc(detail)+'</div>';
-      h+='<div style="display:flex;gap:5px;flex-wrap:wrap">';
-      for(var si=0;si<STEPS.length;si++){
-        var sn=STEPS[si];
-        var done=steps.indexOf(sn)>=0;
-        var active=step===sn||step.indexOf(sn)>=0;
-        var bg=done?'var(--greenDim)':active?'var(--goldDim)':'var(--bg2)';
-        var bdr=done?'rgba(34,197,94,.4)':active?'rgba(196,164,90,.5)':'var(--border)';
-        var clr=done?'var(--green)':active?'var(--gold)':'var(--text4)';
-        var icon=done?'\u2713':(stepIcons[sn]||'\u00b7');
-        h+='<div style="display:flex;align-items:center;gap:4px;padding:4px 9px;border-radius:6px;border:1px solid '+bdr+';background:'+bg+'">';
-        h+='<span style="font-size:11px">'+icon+'</span>';
-        h+='<span style="font-size:11px;font-weight:600;color:'+clr+'">'+esc(stepLabels[sn]||sn)+'</span>';
-        h+='</div>';
-      }
-      h+='</div>';
-      if(steps.length>0){h+='<div style="margin-top:8px;font-size:11px;color:var(--text4)">'+steps.length+' of '+STEPS.length+' steps complete</div>';}
-      h+='</div>';
+      const bar=E('reprocess-bar');const step=E('reprocess-step');
+      if(bar)bar.style.width=(j.progress_pct||0)+'%';
+      if(step)step.textContent=(j.current_step||'Processing…')+' — '+(j.progress_pct||0)+'%';
       if(j.status==='completed'){
         clearInterval(poll);
-        h='<div style="font-family:var(--sans);padding:12px 0;text-align:center"><span style="font-size:14px;color:var(--green)">\u2713 Analysis complete \u2014 loading results\u2026</span></div>';
-        prog.innerHTML=h;
-        setTimeout(function(){loadCockpit();},1500);
+        if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
+        setTimeout(()=>loadCockpit(),1500);
       }else if(j.status==='failed'){
         clearInterval(poll);
-        h='<div style="font-family:var(--sans);padding:12px 0"><span style="color:var(--red)">\u2715 Failed: '+(j.error_message||'Unknown error').substring(0,200)+'</span></div>';
-        prog.innerHTML=h;
-      }else{
-        prog.innerHTML=h;
+        if(step)step.innerHTML='<span style="color:var(--red)">✕ Failed: '+(j.error||'Unknown error').substring(0,100)+'</span>';
       }
     }catch(e){}
   },3000);
@@ -952,189 +770,6 @@ async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value
 // ── Renderers for new analysis results ──────────────────────
 
 // ═══ PROBABILISTIC / BAYESIAN OUTPUT RENDERERS ════════════════════════
-
-// ═══ INLINE FEEDBACK SYSTEM ════════════════════════════════════════
-window._fbSession = {};
-window._fbTicker  = '';
-window._fbPeriod  = '';
-
-function _fbKey(section){ return window._fbTicker+'|'+window._fbPeriod+'|'+section; }
-
-function fbSetContext(ticker, period){
-  window._fbTicker = ticker;
-  window._fbPeriod = period;
-  fetch('/api/v1/feedback?ticker='+enc(ticker)+'&period_label='+enc(period))
-    .then(function(r){return r.json();}).then(function(items){
-      items.forEach(function(f){
-        var key=_fbKey(f.section);
-        window._fbSession[key]={tag:f.tag,comment:f.comment,id:f.id,promoted:f.promoted};
-        _fbApplyBadge(f.section,f.tag);
-      });
-      _fbUpdateCounter();
-    }).catch(function(){});
-}
-
-function _fbApplyBadge(section,tag){
-  var wrap=document.querySelector('[data-fb-section="'+section.replace(/"/g,'\\"')+'"]');
-  if(!wrap)return;
-  wrap.querySelectorAll('.fb-btn[data-tag]').forEach(function(b){
-    b.classList.toggle('active',b.dataset.tag===tag);
-  });
-  var badge=wrap.querySelector('.fb-tag-badge');
-  if(!badge){
-    var title=wrap.querySelector('.cd-t');
-    if(title){badge=document.createElement('span');badge.className='fb-tag-badge';title.appendChild(badge);}
-  }
-  if(badge){badge.className='fb-tag-badge '+tag;badge.textContent=tag;}
-}
-
-function _fbUpdateCounter(){
-  var unpromoted=Object.values(window._fbSession).filter(function(f){return f.tag&&!f.promoted;}).length;
-  var label='<span>'+unpromoted+'</span> annotation'+(unpromoted!==1?'s':'')+' ready to send';
-  document.querySelectorAll('.fb-counter-el').forEach(function(el){el.innerHTML=label;});
-  document.querySelectorAll('.fb-promote-root').forEach(function(p){p.classList.toggle('visible',unpromoted>0);});
-}
-
-async function fbTag(section,tag,sourceSnippet,promptType){
-  var key=_fbKey(section);
-  var existing=window._fbSession[key];
-  if(existing&&existing.tag===tag){
-    window._fbSession[key]=Object.assign({},existing,{tag:null});
-    _fbApplyBadge(section,'');
-    _fbUpdateCounter();
-    return;
-  }
-  try{
-    var resp=await fetch('/api/v1/feedback',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticker:window._fbTicker,period_label:window._fbPeriod,section:section,tag:tag,
-        source_snippet:sourceSnippet||null,prompt_type:promptType||null,
-        comment:existing&&existing.comment?existing.comment:null,author:null})
-    });
-    var data=await resp.json();
-    window._fbSession[key]={tag:tag,comment:existing&&existing.comment?existing.comment:null,id:data.id,promoted:false};
-    _fbApplyBadge(section,tag);
-    _fbUpdateCounter();
-  }catch(e){console.error('fbTag error',e);}
-}
-
-function fbToggleComment(section){
-  var wrap=document.querySelector('[data-fb-section="'+section.replace(/"/g,'\\"')+'"]');
-  if(!wrap)return;
-  var box=wrap.querySelector('.fb-comment-box');
-  if(box)box.classList.toggle('open');
-}
-
-async function fbSaveComment(section,promptType){
-  var wrap=document.querySelector('[data-fb-section="'+section.replace(/"/g,'\\"')+'"]');
-  if(!wrap)return;
-  var ta=wrap.querySelector('.fb-comment-box textarea');
-  var comment=ta?ta.value.trim():'';
-  if(!comment)return;
-  var key=_fbKey(section);
-  var existing=window._fbSession[key];
-  try{
-    var resp=await fetch('/api/v1/feedback',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticker:window._fbTicker,period_label:window._fbPeriod,section:section,
-        tag:existing&&existing.tag?existing.tag:'imprecise',comment:comment,
-        prompt_type:promptType||null,author:null})
-    });
-    var data=await resp.json();
-    window._fbSession[key]={tag:existing&&existing.tag?existing.tag:'imprecise',comment:comment,id:data.id,promoted:false};
-    _fbApplyBadge(section,existing&&existing.tag?existing.tag:'imprecise');
-    _fbUpdateCounter();
-    var box=wrap.querySelector('.fb-comment-box');
-    if(box)box.classList.remove('open');
-  }catch(e){console.error('fbSaveComment error',e);}
-}
-
-async function fbPromote(btn){
-  var panel=btn?btn.closest('.fb-promote-root'):null;
-  var ptSel=panel?panel.querySelector('.fb-pt-sel'):null;
-  var ratInp=panel?panel.querySelector('.fb-rating-inp'):null;
-  var notesTa=panel?panel.querySelector('.fb-notes-ta'):null;
-  var promptType=(ptSel&&ptSel.value)||'synthesis';
-  var rating=parseInt((ratInp&&ratInp.value)||'3');
-  var notes=(notesTa&&notesTa.value&&notesTa.value.trim())||'';
-  if(btn){btn.disabled=true;btn.textContent='Sending\u2026';}
-  try{
-    var resp=await fetch('/api/v1/feedback/promote',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticker:window._fbTicker,period_label:window._fbPeriod,
-        prompt_type:promptType,overall_rating:rating,session_notes:notes||null})
-    });
-    var data=await resp.json();
-    if(btn){btn.disabled=false;btn.textContent='Send to Prompt Lab';}
-    Object.values(window._fbSession).forEach(function(f){if(f)f.promoted=true;});
-    _fbUpdateCounter();
-    if(notesTa)notesTa.value='';
-    alert('\u2713 '+data.items_promoted+' annotation'+(data.items_promoted!==1?'s':'')+' sent to Prompt Lab.\n\nGo to Prompt Lab \u2192 Refine to generate an improved prompt.');
-  }catch(e){
-    if(btn){btn.disabled=false;btn.textContent='Send to Prompt Lab';}
-    alert('Promote failed: '+e.message);
-  }
-}
-
-function fbBar(section,snippet,promptType){
-  var snip=(snippet||'').replace(/'/g,"\\'").replace(/\\/g,'\\\\').substring(0,120);
-  var pt=(promptType||'').replace(/'/g,"\\'");
-  var sec=section.replace(/'/g,"\\'");
-  return '<div class="fb-bar">'
-    +'<button class="fb-btn fb-correct" data-tag="correct" onclick="fbTag(\''+sec+'\',\'correct\',\''+snip+'\',\''+pt+'\')">&#10003;</button>'
-    +'<button class="fb-btn fb-imprecise" data-tag="imprecise" onclick="fbTag(\''+sec+'\',\'imprecise\',\''+snip+'\',\''+pt+'\')">~</button>'
-    +'<button class="fb-btn fb-wrong" data-tag="wrong" onclick="fbTag(\''+sec+'\',\'wrong\',\''+snip+'\',\''+pt+'\')">&#10007;</button>'
-    +'<button class="fb-btn fb-missing" data-tag="missing" onclick="fbTag(\''+sec+'\',\'missing\',\''+snip+'\',\''+pt+'\')">+?</button>'
-    +'<button class="fb-btn fb-comment" onclick="fbToggleComment(\''+sec+'\')">&#128172;</button>'
-    +'</div>'
-    +'<div class="fb-comment-box">'
-    +'<textarea placeholder="What\'s wrong or missing?"></textarea>'
-    +'<div class="fb-comment-box-row"><button class="fb-save-btn" onclick="fbSaveComment(\''+sec+'\',\''+pt+'\')">Save note</button></div>'
-    +'</div>';
-}
-
-function fbWrap(section,innerHtml,snippet,promptType){
-  return '<div class="fb-wrap" data-fb-section="'+esc(section)+'">'+innerHtml+fbBar(section,snippet,promptType)+'</div>';
-}
-
-function fbPromotePanel(promptType){
-  var pt=promptType||'synthesis';
-  var uid='fbp-'+Math.random().toString(36).slice(2,7);
-  return '<div class="fb-promote-panel fb-promote-root" data-uid="'+uid+'">'
-    +'<h4>&#128228; Send feedback to Prompt Lab</h4>'
-    +'<div class="fb-promote-row">'
-    +'<label>Prompt type:</label>'
-    +'<select class="fb-pt-sel">'
-    +'<option value="synthesis"'+(pt==='synthesis'?' selected':'')+'>synthesis</option>'
-    +'<option value="earnings_release"'+(pt==='earnings_release'?' selected':'')+'>earnings_release</option>'
-    +'<option value="transcript"'+(pt==='transcript'?' selected':'')+'>transcript</option>'
-    +'<option value="surprise"'+(pt==='surprise'?' selected':'')+'>surprise</option>'
-    +'<option value="thesis_comparison"'+(pt==='thesis_comparison'?' selected':'')+'>thesis_comparison</option>'
-    +'<option value="briefing"'+(pt==='briefing'?' selected':'')+'>briefing</option>'
-    +'</select>'
-    +'<label>Overall quality &nbsp;<span style="font-size:10px;color:var(--text4)">(1=poor → 5=excellent)</span>:</label>'
-    +'<input type="number" class="fb-rating-inp" min="1" max="5" value="3" style="width:52px">'
-    +'<div class="fb-counter fb-counter-el"><span>0</span> annotations</div>'
-    +'</div>'
-    +'<div class="fb-promote-notes">'
-    +'<textarea class="fb-notes-ta" placeholder="Optional: summarise the session \u2014 e.g. \'Organic/reported confusion throughout\'"></textarea>'
-    +'</div>'
-    +'<div class="fb-promote-row">'
-    +'<button class="fb-save-btn fb-promote-btn" onclick="fbPromote(this)">Send to Prompt Lab</button>'
-    +'<span style="font-family:var(--sans);font-size:11px;color:var(--text4)">Feedback will appear in Prompt Lab \u2192 Refine</span>'
-    +'</div>'
-    +'</div>';
-}
-
-function fbMetricRow(metricName){
-  var sec='metric:'+metricName.toLowerCase().replace(/\s+/g,'_');
-  return '<span style="display:inline-flex;gap:2px;margin-left:4px;vertical-align:middle">'
-    +'<button class="fb-btn fb-correct" style="padding:1px 5px;font-size:10px" data-tag="correct" onclick="fbTag(\''+sec+'\',\'correct\',\'\',\'earnings_release\')">&#10003;</button>'
-    +'<button class="fb-btn fb-wrong" style="padding:1px 5px;font-size:10px" data-tag="wrong" onclick="fbTag(\''+sec+'\',\'wrong\',\'\',\'earnings_release\')">&#10007;</button>'
-    +'<button class="fb-btn fb-imprecise" style="padding:1px 5px;font-size:10px" data-tag="imprecise" onclick="fbTag(\''+sec+'\',\'imprecise\',\'\',\'earnings_release\')">~</button>'
-    +'</span>';
-}
-
 function renderProbabilisticHTML(prob){
   if(!prob)return '';
   var h='';
@@ -1228,8 +863,8 @@ function renderProbabilisticHTML(prob){
   }
   return h;
 }
-function renderBatchHTML(d,ticker,period){var company=d.company,synthesis=d.synthesis,surprises=d.surprises,ir_questions=d.ir_questions;var periodLabel=period||d.period||'';var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(periodLabel)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=fbWrap('briefing:headline',card('gold','Headline',esc(synthesis.headline)),synthesis.headline,'synthesis');if(synthesis.what_happened)h+=fbWrap('briefing:what_happened',card('','What Happened',esc(synthesis.what_happened)),synthesis.what_happened,'synthesis');if(synthesis.management_message)h+=fbWrap('briefing:management_message',card('','Management Message',esc(synthesis.management_message)),synthesis.management_message,'synthesis');if(synthesis.thesis_impact)h+=fbWrap('briefing:thesis_impact',card('','Thesis Impact',esc(synthesis.thesis_impact)),synthesis.thesis_impact,'thesis_comparison');if(synthesis.bottom_line)h+=fbWrap('briefing:bottom_line',card('gold','Bottom Line',esc(synthesis.bottom_line)),synthesis.bottom_line,'synthesis');if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises&&surprises.length){var sHtml='';for(var si=0;si<surprises.length;si++){var s=surprises[si];sHtml+=fbWrap('surprise:'+si,'<div style="padding:6px 0;border-bottom:1px solid var(--border)"><span style="color:'+(s.direction==='positive'?'var(--green)':'var(--red)')+'">'+( s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic)+'</span><div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-top:3px">'+esc(s.description)+'</div>'+(s.source_snippet?'<div style="font-family:var(--sans);font-size:10px;color:var(--text4);font-style:italic;margin-top:2px">"'+esc(s.source_snippet.substring(0,100))+'..."</div>':'')+'</div>',s.description,'surprise');}h+=card('','Surprises',sHtml);}if(ir_questions&&ir_questions.length){var irHtml='';for(var ii=0;ii<ir_questions.length;ii++){var q=ir_questions[ii];irHtml+=fbWrap('ir_question:'+ii,'<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="font-family:var(--sans);font-size:13px;color:var(--text);font-weight:500">'+esc(q.question||q.topic||'')+'</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">'+esc(q.rationale||'')+'</div></div>',q.question||'','synthesis');}h+=card('','IR Questions',irHtml);}h+=fbPromotePanel('synthesis');return h;}
-function renderSingleHTML(d,ticker,period){var company=d.company,briefing=d.briefing,pipeline_status=d.pipeline_status,extraction_error=d.extraction_error;var periodLabel=period||d.period||'';var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(periodLabel)+'</div><div class="gl"></div>';if(pipeline_status&&pipeline_status.length){var errs=pipeline_status.filter(function(s){return s.status==='error';});if(errs.length)h+=card('blue','Pipeline Issues',errs.map(function(e){return esc(e.step)+': '+esc(e.detail);}).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing&&briefing.what_happened){h+=fbWrap('briefing:what_happened',card('','What Happened',esc(briefing.what_happened)),briefing.what_happened,'briefing');if(briefing.what_changed)h+=fbWrap('briefing:what_changed',card('','What Changed',esc(briefing.what_changed)),briefing.what_changed,'briefing');if(briefing.thesis_status)h+=fbWrap('briefing:thesis_status',card('','Thesis Status',esc(briefing.thesis_status)),briefing.thesis_status,'thesis_comparison');h+=fbWrap('briefing:bottom_line',card('gold','Bottom Line',esc(briefing.bottom_line)),briefing.bottom_line,'briefing');if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');h+=fbPromotePanel('briefing');return h;}
+function renderBatchHTML(d){var company=d.company,period=d.period,synthesis=d.synthesis,surprises=d.surprises,ir_questions=d.ir_questions;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(synthesis&&!synthesis.error){if(synthesis.headline)h+=card('gold','Headline',esc(synthesis.headline));if(synthesis.what_happened)h+=card('','What Happened',esc(synthesis.what_happened));if(synthesis.management_message)h+=card('','Management Message',esc(synthesis.management_message));if(synthesis.bottom_line)h+=card('gold','Bottom Line',esc(synthesis.bottom_line));if(synthesis.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(synthesis.probabilistic);}}if(surprises&&surprises.length)h+=card('','Surprises',surprises.map(function(s){return(s.direction==='positive'?'\u2191':'\u2193')+' '+esc(s.metric_or_topic)+': '+esc(s.description);}).join('\n\n'));if(ir_questions&&ir_questions.length)h+=card('','IR Questions',ir_questions.map(function(q,i){return(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question);}).join('\n\n'));return h;}
+function renderSingleHTML(d){var company=d.company,period=d.period,briefing=d.briefing,pipeline_status=d.pipeline_status,extraction_error=d.extraction_error;var h='<div style="font-size:24px;font-weight:300;color:#f0f1f4;margin-bottom:4px">'+esc(company&&company.name?company.name:'')+' \u2014 '+esc(period)+'</div><div class="gl"></div>';if(pipeline_status&&pipeline_status.length){var errs=pipeline_status.filter(function(s){return s.status==='error';});if(errs.length)h+=card('blue','Pipeline Issues',errs.map(function(e){return esc(e.step)+': '+esc(e.detail);}).join('\n\n'));}if(extraction_error)h+=card('blue','Extraction Error',esc(extraction_error));if(briefing&&briefing.what_happened){h+=card('','What Happened',esc(briefing.what_happened));if(briefing.thesis_status)h+=card('','Thesis Status',esc(briefing.thesis_status));h+=card('gold','Bottom Line',esc(briefing.bottom_line));if(briefing.probabilistic){h+='<div style="margin:20px 0 4px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3)">Probabilistic Assessment</div>';h+=renderProbabilisticHTML(briefing.probabilistic);}}else h+=card('blue','No Output','Analysis completed but no content generated.');return h;}
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
@@ -1754,76 +1389,15 @@ async function loadLab(){
 
 function renderLab(variants,experiments,stats){
   const c=E('lab-content');let h='';
-
-  // ── Stats strip ──────────────────────────────────────────────
-  h+='<div class="ck-strip">';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Variants</div><div class="ck-stat-val">'+variants.length+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Experiments</div><div class="ck-stat-val">'+experiments.length+'</div></div>';
-  h+='<div class="ck-stat"><div class="ck-stat-label">Auto-promote at</div><div class="ck-stat-val">'+stats.auto_promote_threshold+' wins</div></div>';
-  h+='</div>';
-
-  // ── Feedback → Refine panel (always shown) ───────────────────
-  const feedbackExps=experiments.filter(function(e){return e.winner==='tie'&&e.feedback;});
-  const promptTypes=['synthesis','briefing','earnings_release','transcript','surprise','thesis_comparison'];
-  h+='<div class="cd gold" style="margin-bottom:24px">';
-  h+='<div class="cd-t">&#10024; Refine Prompts from Feedback</div>';
-  h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">';
-  h+='Feedback you\'ve sent from the Results tab appears here. Select a prompt type and click <strong>LLM Refine</strong> to generate an improved prompt based on your annotations.';
-  h+='</div>';
-  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-  promptTypes.forEach(function(type){
-    const count=experiments.filter(function(e){return e.prompt_type===type&&e.feedback;}).length;
-    const hasVariant=variants.some(function(v){return v.prompt_type===type;});
-    const clr=count>0?'var(--gold)':'var(--text4)';
-    h+='<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
-    h+='<button class="btn2" style="border-color:'+clr+';color:'+clr+'" onclick="refineType(\''+type+'\')">';
-    h+='&#10024; '+esc(type);
-    if(count>0)h+=' <span style="font-size:10px;background:var(--goldDim);padding:1px 5px;border-radius:3px">'+count+' note'+(count!==1?'s':'')+'</span>';
-    h+='</button>';
-    if(!hasVariant)h+='<span style="font-size:10px;color:var(--text4)">Seed first</span>';
-    h+='</div>';
-  });
-  h+='</div>';
-  if(!variants.length){
-    h+='<div style="margin-top:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;font-family:var(--sans);font-size:12px;color:var(--amber)">';
-    h+='&#9888; No prompt variants seeded yet. Click <strong>Seed Defaults</strong> above first, then you can refine.';
-    h+='</div>';
-  }
-  h+='</div>';
-
-  // ── Variants by type ─────────────────────────────────────────
-  const byType={};
-  variants.forEach(function(v){if(!byType[v.prompt_type])byType[v.prompt_type]=[];byType[v.prompt_type].push(v);});
-  if(Object.keys(byType).length){
-    h+='<h2>Prompt Variants</h2>';
-    Object.keys(byType).sort().forEach(function(type){
-      h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin:16px 0 8px">'+esc(type)+'</div>';
-      byType[type].forEach(function(v){
-        const wr=v.win_rate;
-        const wrCls=wr>=60?'up':wr<=40&&v.total_runs>2?'down':'neutral';
-        h+='<div class="cd" style="border-left-color:'+(v.is_active?'var(--gold)':'var(--border)')+';margin-bottom:8px">';
-        h+='<div style="display:flex;justify-content:space-between;align-items:center">';
-        h+='<div><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+(v.is_active?'var(--gold)':'var(--text)')+'">'+esc(v.variant_name)+'</span>';
-        if(v.is_active)h+=' <span style="font-size:10px;color:var(--gold);background:var(--bg3);padding:2px 8px;border-radius:4px">ACTIVE</span>';
-        h+=' <span style="font-size:11px;color:var(--text4)">gen '+v.generation+'</span></div>';
-        h+='<div style="display:flex;gap:12px;font-family:var(--sans);font-size:12px;align-items:center">';
-        h+='<span style="color:var(--green)">W:'+v.win_count+'</span>';
-        h+='<span style="color:var(--red)">L:'+v.loss_count+'</span>';
-        h+='<span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span>';
-        h+='<span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>';
-        if(!v.is_active)h+='<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>';
-        h+='</div></div>';
-        h+='<div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>';
-        if(v.notes)h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>';
-        h+='</div>';
-      });
-      h+='<div style="display:flex;gap:8px;margin:4px 0 20px">';
-      h+='<button class="btn2" onclick="refineType(\''+type+'\')">&#10024; LLM Refine</button>';
-      h+='<button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button>';
-      h+='</div>';
+  h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Variants</div><div class="ck-stat-val">'+variants.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Experiments</div><div class="ck-stat-val">'+experiments.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Auto-promote at</div><div class="ck-stat-val">'+stats.auto_promote_threshold+' wins</div></div></div>';
+  const byType={};variants.forEach(v=>{if(!byType[v.prompt_type])byType[v.prompt_type]=[];byType[v.prompt_type].push(v);});
+  Object.keys(byType).sort().forEach(type=>{
+    h+='<h2>'+esc(type)+'</h2>';
+    byType[type].forEach(v=>{const wr=v.win_rate;const wrCls=wr>=60?'up':wr<=40&&v.total_runs>2?'down':'neutral';
+      h+='<div class="cd" style="border-left-color:'+(v.is_active?'var(--gold)':'var(--border)')+'"><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+(v.is_active?'var(--gold)':'var(--text)')+'">'+esc(v.variant_name)+'</span>'+(v.is_active?' <span style="font-size:10px;color:var(--gold);background:var(--bg3);padding:2px 8px;border-radius:4px">ACTIVE</span>':'')+' <span style="font-size:11px;color:var(--text4)">gen '+v.generation+'</span></div><div style="display:flex;gap:12px;font-family:var(--sans);font-size:12px"><span style="color:var(--green)">W:'+v.win_count+'</span><span style="color:var(--red)">L:'+v.loss_count+'</span><span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span><span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>'+(v.is_active?'':'<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>')+'</div></div><div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>'+(v.notes?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>':'')+'</div>';
     });
-  }
-
+    h+='<div style="display:flex;gap:8px;margin:8px 0 24px"><button class="btn2" onclick="refineType(\''+type+'\')">✨ LLM Refine</button><button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button></div>';
+  });
   h+='<h2 style="margin-top:32px">Run A/B Experiment</h2>';
   h+='<div class="form-row"><select class="fi" id="lab-type" style="max-width:200px">';Object.keys(byType).sort().forEach(t=>{h+='<option value="'+t+'">'+t+'</option>';});h+='</select><input class="fi" id="lab-ticker" placeholder="Ticker" style="max-width:140px"><input class="fi" id="lab-period" placeholder="Period" style="max-width:120px"></div>';
   h+='<div style="margin-top:8px"><div class="fl">Test Input</div><textarea class="fi" id="lab-input" style="min-height:100px" placeholder="Paste document text…"></textarea></div>';
@@ -1833,33 +1407,15 @@ function renderLab(variants,experiments,stats){
 }
 
 async function activateVariant(id){if(!confirm('Promote as active default?'))return;try{await fetch('/api/v1/experiments/variants/'+id+'/activate',{method:'POST'});loadLab();}catch(e){alert(e.message);}}
-async function refineType(type){
-  if(!confirm('Generate an improved '+type+' prompt using your feedback annotations?'))return;
-  try{
-    const r=await fetch('/api/v1/experiments/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type})});
-    if(!r.ok){
-      const e=await r.json().catch(function(){return {};});
-      const msg=e.detail||'Failed';
-      if(msg.includes('Need at least 3')){
-        alert('Not enough feedback yet for '+type+'.\n\nAnnotate more results in the Research tab (\u2713 ~ \u2717 buttons), then Send to Prompt Lab.');
-      } else {
-        alert(msg);
-      }
-      return;
-    }
-    const d=await r.json();
-    alert('\u2713 Improved prompt created: '+d.new_variant_name+' (generation '+d.generation+')\n\nReview it in the variants list below, then click Promote to make it active.');
-    loadLab();
-  }catch(e){alert(e.message);}
-}
+async function refineType(type){if(!confirm('LLM refine '+type+'? Needs 3+ judged experiments.'))return;try{const r=await fetch('/api/v1/experiments/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Created '+d.new_variant_name+' (gen '+d.generation+')');loadLab();}catch(e){alert(e.message);}}
 function newVariant(type){const name=prompt('Variant name:');if(!name)return;const text=prompt('Full prompt text (must contain {text}):');if(!text)return;fetch('/api/v1/experiments/variants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,variant_name:name,prompt_text:text})}).then(()=>loadLab()).catch(e=>alert(e.message));}
 
 async function runExperiment(){
   const type=E('lab-type').value,ticker=E('lab-ticker').value.trim(),period=E('lab-period').value.trim(),input=E('lab-input').value.trim();
   if(!input){alert('Paste test input.');return;}const res=E('lab-result');res.innerHTML='<div class="ld">Running both variants…</div>';
-  try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(function(){return {};});const msg=e.detail||(e.message)||'HTTP '+r.status+' — check that (1) a v1_default active variant exists and (2) at least one candidate variant exists for this prompt type. Run: Seed Defaults first.';res.innerHTML='<div class="err" style="white-space:pre-wrap">'+esc(msg)+'</div>';return;}const d=await r.json();
+  try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();
     let h='<div class="g2" style="margin-top:0"><div class="cd" style="border-left-color:var(--gold)"><div class="cd-t">A: '+esc(d.variant_a.name)+' (active)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_a,null,2))+'</div></div><div class="cd" style="border-left-color:var(--green)"><div class="cd-t">B: '+esc(d.variant_b.name)+' (challenger)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_b,null,2))+'</div></div></div>';
-    h+='<div style="margin-top:16px;padding:16px;background:var(--bg2);border-radius:10px"><div class="fl">Judge</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">Rate each output 1–5 &nbsp;·&nbsp; <span style="color:var(--red)">1 = poor</span> &nbsp;·&nbsp; <span style="color:var(--gold)">3 = acceptable</span> &nbsp;·&nbsp; <span style="color:var(--green)">5 = excellent</span></div><div class="form-row"><select id="lab-winner"><option value="">Pick winner…</option><option value="a">A wins</option><option value="b">B wins</option><option value="tie">Tie</option></select><input id="lab-ra" type="number" min="1" max="5" placeholder="Rate A (1=poor, 5=best)" style="max-width:150px"><input id="lab-rb" type="number" min="1" max="5" placeholder="Rate B (1=poor, 5=best)" style="max-width:150px"></div><div class="form-row" style="margin-top:6px"><input id="lab-fb" placeholder="Why is the winner better?"><button onclick="judgeExp(\''+d.experiment_id+'\')">Submit</button></div></div>';
+    h+='<div style="margin-top:16px;padding:16px;background:var(--bg2);border-radius:10px"><div class="fl">Judge</div><div class="form-row"><select id="lab-winner"><option value="">Pick winner…</option><option value="a">A wins</option><option value="b">B wins</option><option value="tie">Tie</option></select><input id="lab-ra" type="number" min="1" max="5" placeholder="Rate A 1-5" style="max-width:100px"><input id="lab-rb" type="number" min="1" max="5" placeholder="Rate B 1-5" style="max-width:100px"></div><div class="form-row" style="margin-top:6px"><input id="lab-fb" placeholder="Why is the winner better?"><button onclick="judgeExp(\''+d.experiment_id+'\')">Submit</button></div></div>';
     res.innerHTML=h;
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
