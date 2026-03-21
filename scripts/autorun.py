@@ -151,12 +151,17 @@ Respond ONLY with a JSON object. No preamble, no markdown fences.
 OUTPUT_HALLUC_PROMPT = """\
 You are a strict fact-checker for investment research briefings.
 
-Identify any claim, number, or assertion in the OUTPUT that is NOT supported by the SOURCE DOCUMENT.
+Identify any claim in the OUTPUT where a SPECIFIC NUMBER appears that cannot be found
+anywhere in the SOURCE DOCUMENT.
 
 Rules:
-- Hallucinated = a specific number or named fact that does not appear in the source.
-- Vague language ("margins declined") without a number is NOT a hallucination — just weak.
-- Inferences from stated numbers (e.g. calculating a percentage change) are NOT hallucinations.
+- Only flag items where a specific numeric figure (e.g. "14.2%", "€2.3bn", "180bps") 
+  appears in the output but is NOT present in the source document.
+- Paraphrasing, summarising, or rewording text is NOT a hallucination.
+- Vague directional language ("margins declined", "revenue grew") is NOT a hallucination.
+- Reasonable calculations from stated numbers (e.g. deriving a ratio) are NOT hallucinations.
+- Named entities (companies, people) mentioned in the source are NOT hallucinations.
+- Only flag clear numeric fabrications — invented figures that don't appear in the source.
 
 SOURCE DOCUMENT (truncated):
 ---
@@ -171,8 +176,8 @@ OUTPUT TO CHECK:
 Respond ONLY with a JSON object. No preamble, no markdown fences.
 {{
   "hallucinations_found": true | false,
-  "count": <integer>,
-  "examples": ["<specific hallucinated claim>"],
+  "count": <integer — number of invented numeric figures only>,
+  "examples": ["<specific invented number and context>"],
   "verdict": "<one sentence>"
 }}"""
 
@@ -685,7 +690,7 @@ async def _eval_output(
     halluc_count = int(halluc_result.get("count", 0))
     hallucinations_found = halluc_result.get("hallucinations_found", False) and halluc_count > 0
 
-    final_score = min(rubric_score, 4.0) if hallucinations_found else rubric_score
+    final_score = min(rubric_score, 6.0) if hallucinations_found else rubric_score
 
     return {
         "score": final_score,
