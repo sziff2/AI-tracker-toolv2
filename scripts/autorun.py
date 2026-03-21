@@ -103,8 +103,9 @@ EXTRACTION_SCHEMA_BY_TYPE = {
     "extraction_combined":     ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
     # transcript: items have category (guidance/tone/qa_exchange) + source_snippet
     "extraction_transcript":   ("category",       ["guidance_text", "description", "key_insight", "metric_name"], ["source_snippet", "confidence"]),
-    # broker: metric_or_topic + source_snippet
-    "extraction_broker":       ("metric_or_topic", ["description", "current_value"], ["source_snippet", "confidence"]),
+    # broker: the v1_default prompt returns a flat summary object (company_name, analyst_rating etc.)
+    # Use None for name_field to skip that check, just require source_snippet
+    "extraction_broker":       (None,              ["description", "analyst_rating", "metric_or_topic", "current_value"], ["source_snippet"]),
     # presentation: metric_or_topic + source_snippet
     "extraction_presentation": ("metric_or_topic", ["value", "description"],        ["source_snippet", "confidence"]),
 }
@@ -492,11 +493,12 @@ def _eval_schema_compliance(items: list[dict], prompt_type: str = "") -> dict:
 
         if schema:
             name_field, value_fields, required_fields = schema
-            # Check the name field exists and is non-empty
-            val = item.get(name_field)
-            if not val or (isinstance(val, str) and not val.strip()):
-                issues.append(f"item[{i}] missing {name_field}")
-                item_ok = False
+            # Check the name field exists and is non-empty (if specified)
+            if name_field is not None:
+                val = item.get(name_field)
+                if not val or (isinstance(val, str) and not val.strip()):
+                    issues.append(f"item[{i}] missing {name_field}")
+                    item_ok = False
             if item_ok:
                 # Check source_snippet exists (confidence is optional — LLMs sometimes omit it)
                 snippet = item.get("source_snippet")
