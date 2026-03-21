@@ -244,8 +244,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <button class="btn2" onclick="ckShowNewCo()" id="ck-add-co-btn" style="width:100%;padding:10px 14px">+ Add new company</button>
     </div>
   </div>
-
-  <!-- Inline new-company panel -->
   <div id="ck-new-co-panel" style="display:none;margin-top:16px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">New Company</span>
@@ -277,7 +275,6 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="ld" id="ck-new-loading" style="display:none"></div>
     <div class="err" id="ck-new-error" style="display:none"></div>
   </div>
-
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
@@ -480,7 +477,6 @@ async function ckSubmitNewCo(){
   }catch(e){errEl.textContent=e.message;errEl.style.display='block';ldEl.style.display='none';}
   btn.disabled=false;btn.textContent='Analyse &amp; Synthesise';
 }
-// ── New Period (Results tab) ──────────────────────────────────
 var NP_FILES=[];
 function ckShowNewPeriod(ticker){
   const panel=E('ck-new-period-panel');if(!panel)return;
@@ -630,23 +626,88 @@ function renderCkThesis(d){
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // Latest assessment
-  if(d.thesis_assessment?.summary){h+=card('blue','Latest Assessment','Direction: '+(a.thesis_direction||'—').toUpperCase()+'\nConfidence: '+(a.confidence||'—')+'\n\n'+esc(a.summary||''));}
-  // Assessment history
-  if(d.all_assessments?.length>1){
-    h+='<h2 style="margin-top:24px">Assessment History</h2>';
-    d.all_assessments.forEach(a=>{
-      const cls=a.thesis_direction==='strengthened'?'up':a.thesis_direction==='weakened'?'down':'neutral';
-      h+='<div class="th-hist"><span>'+esc(a.period||'')+(a.created_at?' · '+a.created_at.split('T')[0]:'')+'</span><span class="badge '+cls+'">'+esc(a.thesis_direction||'—').toUpperCase()+'</span></div>';
+  // Period-weighted evidence summary
+  // Build from all_assessments + analyses_by_period, most recent periods weighted higher
+  const allAssessments = (d.all_assessments || []).slice().sort((x,y) => (y.period||'').localeCompare(x.period||''));
+  const abp = d.analyses_by_period || {};
+  const abpPeriods = Object.keys(abp).sort().reverse();
+
+  if(allAssessments.length > 0 || abpPeriods.length > 0) {
+    // Collect evidence by period in recency order
+    const periodsSet = [...new Set([
+      ...allAssessments.map(x=>x.period).filter(Boolean),
+      ...abpPeriods
+    ])].sort().reverse();
+
+    // Build weighted evidence lines
+    // Weights: most recent = 1.0, each prior period decays by 0.25 (min 0.25)
+    let evidenceLines = [];
+    periodsSet.forEach((period, idx) => {
+      const weight = Math.max(1.0 - idx * 0.25, 0.25);
+      const isRecent = idx === 0;
+      const assessment = allAssessments.find(x => x.period === period);
+      const analysis = abp[period];
+
+      // Direction badge
+      const dir = assessment?.thesis_direction || null;
+      const dirColour = dir === 'strengthened' ? 'var(--green)' : dir === 'weakened' ? 'var(--red)' : 'var(--amber)';
+      const dirLabel = dir ? dir.toUpperCase() : null;
+
+      // Best available bottom line for this period
+      let bottomLine = '';
+      if(analysis?.content) {
+        const c = analysis.content;
+        bottomLine = c.synthesis?.bottom_line || c.briefing?.bottom_line || c.synthesis?.thesis_impact || '';
+      }
+      if(!bottomLine && assessment?.summary) bottomLine = assessment.summary;
+
+      if(!bottomLine && !dir) return; // skip periods with no data
+
+      const weightLabel = isRecent ? 'Most recent' : idx === 1 ? 'Prior period' : idx + ' periods ago';
+      const opacity = isRecent ? '1' : Math.max(weight, 0.5).toString();
+
+      evidenceLines.push({ period, dir, dirColour, dirLabel, bottomLine, weightLabel, isRecent, opacity, weight });
     });
+
+    if(evidenceLines.length) {
+      // Overall direction: weighted vote
+      let strengthenedWeight = 0, weakenedWeight = 0, neutralWeight = 0;
+      evidenceLines.forEach(e => {
+        if(e.dir === 'strengthened') strengthenedWeight += e.weight;
+        else if(e.dir === 'weakened') weakenedWeight += e.weight;
+        else if(e.dir) neutralWeight += e.weight;
+      });
+      const totalWeight = strengthenedWeight + weakenedWeight + neutralWeight;
+      let overallDir = '—', overallColour = 'var(--text3)';
+      if(totalWeight > 0) {
+        if(strengthenedWeight >= weakenedWeight && strengthenedWeight >= neutralWeight) { overallDir = 'STRENGTHENING'; overallColour = 'var(--green)'; }
+        else if(weakenedWeight > strengthenedWeight && weakenedWeight >= neutralWeight) { overallDir = 'WEAKENING'; overallColour = 'var(--red)'; }
+        else { overallDir = 'MIXED / NEUTRAL'; overallColour = 'var(--amber)'; }
+      }
+
+      h += '<div class="cd gold" style="margin-top:12px;padding:20px 24px">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+      h += '<div class="cd-t" style="margin:0">Thesis Evidence — Across All Periods</div>';
+      h += '<span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+overallColour+'">'+overallDir+'</span>';
+      h += '</div>';
+      h += '<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:14px">Evidence weighted by recency — most recent period carries full weight, each prior period weighted progressively lower.</div>';
+
+      evidenceLines.forEach(e => {
+        h += '<div style="margin-bottom:14px;opacity:'+e.opacity+';border-left:2px solid '+(e.dir ? e.dirColour : 'var(--border)')+';padding-left:14px">';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
+        h += '<span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">'+esc(e.period)+'</span>';
+        if(e.dirLabel) h += '<span style="font-family:var(--sans);font-size:10px;font-weight:600;color:'+e.dirColour+';background:rgba(255,255,255,.05);padding:1px 7px;border-radius:4px">'+e.dirLabel+'</span>';
+        h += '<span style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-left:auto">'+esc(e.weightLabel)+'</span>';
+        h += '</div>';
+        if(e.bottomLine) h += '<div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65">'+esc(e.bottomLine)+'</div>';
+        h += '</div>';
+      });
+
+      h += '</div>';
+    }
   }
-  // Thesis version history
-  if(d.thesis_history?.length>1){
-    h+='<h2 style="margin-top:24px">Thesis Versions</h2>';
-    d.thesis_history.forEach(tv=>{
-      h+='<div class="th-hist"><span>'+esc(tv.thesis_date||'')+'</span><span style="flex:1;margin-left:12px;color:var(--text2)">'+esc(tv.core_thesis||'')+'</span>'+(tv.active?'<span class="badge up">ACTIVE</span>':'<span style="color:var(--text4);font-size:10px">superseded</span>')+'</div>';
-    });
-  }
+
+  // Assessment History and Thesis Version history intentionally hidden
   return h;
 }
 
@@ -678,54 +739,28 @@ function renderCkResults(ticker,d){
   const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
   let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:0">';
   h+='<div class="ptabs" id="res-ptabs" style="margin-bottom:0;flex:1">';
-  if(allPeriods.length){
-    allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});
-  } else {
-    h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';
-  }
-  h+='</div>';
-  h+='<button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button>';
-  h+='</div>';
-  // New Period inline panel
+  if(allPeriods.length){allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});}
+  else{h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';}
+  h+='</div><button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Upload New Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">✕ Cancel</button></div>';
   h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year"></select></div></div>';
   h+='<div style="margin-top:14px"><div class="fl">Documents</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
   h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button></div>';
-  h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div>';
-  h+='</div>';
-  if(!allPeriods.length){
-    return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
-  }
+  h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div></div>';
+  if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     const pdocs=dbp[p]||[];
-    if(pdocs.length){
-      h+='<h2>Documents Used</h2>';
-      pdocs.forEach(doc=>{
-        const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
-        h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';
-      });
-    }
+    if(pdocs.length){h+='<h2>Documents Used</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
     const analysis=abp[p];
-    if(analysis?.content){
-      h+='<h2>Analysis Output</h2>';
-      const c=analysis.content;
-      if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}
-      else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}
-      if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));
-      if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));
-    } else if(!pdocs.length){
-      h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';
-    }
-    h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2>';
-    h+='<div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div>';
-    h+='<div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div>';
-    h+='</div>';
+    if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));}
+    else if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';}
+    h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2><div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
   });
   return h;
 }
@@ -733,7 +768,6 @@ function showResPeriod(p,btn){
   document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
   const target=E('res-'+p);if(target)target.style.display='block';
   E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
-  ckHideNewPeriod();
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
@@ -2766,7 +2800,7 @@ setInterval(function(){
 // ══════════════════════════════════════════════════════════════════
 // AUTORUN
 // ══════════════════════════════════════════════════════════════════
-const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'40%',colour:'var(--gold)',how:'No LLM — pure string matching',description:'Checks whether the new prompt recovers the same verbatim source_snippets already stored in ExtractedMetric rows. Word-overlap matching: a snippet counts as recovered if ≥60% of its words appear in an extracted item\'s source_snippet.',why:'source_snippet is ground truth — a verbatim quote validated when first extracted. High recall means the prompt is finding the right evidence.'},{id:'schema_compliance',name:'Schema Compliance',weight:'30%',colour:'var(--green)',how:'No LLM — Python field validation',description:'Checks every extracted item has required fields (metric_name, source_snippet, confidence) populated and correctly typed, plus at least one of metric_value or metric_text.',why:'Downstream services break silently when fields are missing. Reliable structure is more valuable than occasional perfect data.'},{id:'hallucination_rate',name:'Hallucination Rate',weight:'30%',colour:'var(--red)',how:'LLM judge — 1 call per variant',description:'For each numeric metric_value, checks whether that number appears in the source document. Hard cap: >20% hallucination rate drops score to 0.',why:'An extraction prompt that invents numbers is worse than one that finds fewer metrics.'}],output:[{id:'specificity',name:'Specificity',weight:'25%',colour:'var(--gold)',how:'LLM judge with anchored examples',description:'Every factual claim should cite a precise number with units. Score 10 = all claims specific. Score 0 = entirely vague.',why:'Vague language is useless for an analyst. The briefing should be directly quotable in a trade note.'},{id:'thesis_linkage',name:'Thesis Linkage',weight:'20%',colour:'var(--gold)',how:'LLM judge — actual company thesis injected from DB',description:'Does the bottom line state whether the investment thesis is intact, strengthened, or weakened? The judge receives the real stored thesis.',why:'Facts serve the investment case. A briefing that ignores the thesis is incomplete.'},{id:'management_scrutiny',name:'Management Scrutiny',weight:'20%',colour:'var(--amber)',how:'LLM judge with anchored examples',description:'Does the output distinguish what management claims from what the numbers show? Score 0 = parrots talking points.',why:'Buy-side analysts are paid to be sceptical.'},{id:'actionability',name:'Actionability',weight:'20%',colour:'var(--green)',how:'LLM judge with anchored examples',description:'Does the output end with a clear steer? Score 10 = explicit add/hold/trim with a specific forward reason. Score 0 = no conclusion.',why:'The output should drive a decision.'},{id:'hallucination_check',name:'Hallucination Check',weight:'10%',colour:'var(--red)',how:'LLM judge — hard cap if triggered',description:'Any number or assertion not supported by the source? If hallucinations found, overall score capped at 4.0.',why:'A single invented figure destroys trust.'},{id:'conciseness',name:'Conciseness',weight:'5%',colour:'var(--text3)',how:'LLM judge',description:'Every sentence should earn its place. Tiebreaker — low weight by design.',why:'Senior analysts read fast.'}]};
+const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'40%',colour:'var(--gold)',how:'No LLM — pure string matching',description:'Checks whether the new prompt recovers the same verbatim source_snippets already stored in ExtractedMetric rows. Word-overlap matching: a snippet counts as recovered if ≥60% of its words appear in an extracted item\'s source_snippet.',why:'source_snippet is ground truth — a verbatim quote validated when first extracted. High recall means the prompt is finding the right evidence.'},{id:'schema_compliance',name:'Schema Compliance',weight:'30%',colour:'var(--green)',how:'No LLM — Python field validation',description:'Checks every extracted item has required fields (metric_name, source_snippet, confidence) populated and correctly typed, plus at least one of metric_value or metric_text.',why:'Downstream services break silently when fields are missing. Reliable structure is more valuable than occasional perfect data.'},{id:'hallucination_rate',name:'Hallucination Rate',weight:'30%',colour:'var(--red)',how:'LLM judge — 1 call per variant',description:'For each numeric metric_value, checks whether that number appears in the source document. Hard cap: >20% hallucination rate drops score to 0.',why:'An extraction prompt that invents numbers is worse than one that finds fewer metrics.'}],output:[{id:'specificity',name:'Specificity',weight:'25%',colour:'var(--gold)',how:'LLM judge with anchored examples',description:'Every factual claim should cite a precise number with units. Score 10 = all claims specific. Score 0 = entirely vague.',why:'Vague language is useless for an analyst.'},{id:'thesis_linkage',name:'Thesis Linkage',weight:'20%',colour:'var(--gold)',how:'LLM judge — actual company thesis injected from DB',description:'Does the bottom line state whether the investment thesis is intact, strengthened, or weakened? The judge receives the real stored thesis.',why:'Facts serve the investment case. A briefing that ignores the thesis is incomplete.'},{id:'management_scrutiny',name:'Management Scrutiny',weight:'20%',colour:'var(--amber)',how:'LLM judge with anchored examples',description:'Does the output distinguish what management claims from what the numbers show?',why:'Buy-side analysts are paid to be sceptical.'},{id:'actionability',name:'Actionability',weight:'20%',colour:'var(--green)',how:'LLM judge with anchored examples',description:'Does the output end with a clear steer? Score 10 = explicit add/hold/trim with a specific forward reason. Score 0 = no conclusion.',why:'The output should drive a decision.'},{id:'hallucination_check',name:'Hallucination Check',weight:'10%',colour:'var(--red)',how:'LLM judge — hard cap if triggered',description:'Any number or assertion not supported by the source? If hallucinations found, overall score capped at 4.0.',why:'A single invented figure destroys trust.'},{id:'conciseness',name:'Conciseness',weight:'5%',colour:'var(--text3)',how:'LLM judge',description:'Every sentence should earn its place. Tiebreaker — low weight by design.',why:'Senior analysts read fast.'}]};
 const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
 let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
 function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
