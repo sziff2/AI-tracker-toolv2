@@ -61,7 +61,7 @@ MIN_IMPROVEMENT      = 0.5    # score delta to trigger promotion
 SLEEP_BETWEEN_TYPES  = 20     # seconds between prompt types in a round
 SLEEP_BETWEEN_ROUNDS = 90     # seconds between full sweeps
 MAX_TOKENS_REFINE    = 8192
-MAX_TOKENS_RUN       = 3000
+MAX_TOKENS_RUN       = 8192
 MAX_TOKENS_HALLUC    = 1024
 MAX_TOKENS_RUBRIC    = 1500
 DOC_CHAR_LIMIT       = 14000
@@ -797,18 +797,45 @@ def _run_prompt_raw(prompt_text: str, doc_text: str) -> str:
 
 
 def _parse_extraction_output(raw: str) -> list[dict]:
-    """Try to parse JSON array from extraction output."""
+    """Parse JSON array from extraction output. Handles truncation gracefully."""
     try:
         cleaned = raw.strip()
         if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0]
+            cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         result = json.loads(cleaned)
         if isinstance(result, list):
-            return result
+            return [r for r in result if isinstance(r, dict)]
         if isinstance(result, dict):
             return [result]
     except Exception:
         pass
+
+    # JSON truncated — salvage complete objects using regex
+    try:
+        objects = []
+        # Find all complete {...} blocks (non-nested quick approach)
+        depth = 0
+        start = None
+        for i, ch in enumerate(raw):
+            if ch == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and start is not None:
+                    try:
+                        obj = json.loads(raw[start:i+1])
+                        if isinstance(obj, dict):
+                            objects.append(obj)
+                    except Exception:
+                        pass
+                    start = None
+        if objects:
+            return objects
+    except Exception:
+        pass
+
     return []
 
 
