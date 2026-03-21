@@ -942,6 +942,11 @@ async def _run_extraction_experiment(
         items_a = _parse_extraction_output(raw_a)
         items_b = _parse_extraction_output(raw_b)
 
+        # Debug: if items are empty, log the first 200 chars of raw output
+        if not items_a:
+            _log("extraction", "warning", f"{prompt_type}: parse failed — empty items",
+                 f"raw_a[:200]={repr(raw_a[:200])}")
+
         # Eval both — schema and recall are free; hallucination costs one LLM call per variant
         _step("extraction", f"{prompt_type}: evaluating")
 
