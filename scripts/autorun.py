@@ -49,7 +49,7 @@ from services.llm_client import call_llm, call_llm_json
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [AUTORUN/%(pipeline)s] %(levelname)s %(message)s",
+    format="%(asctime)s [AUTORUN] %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("autorun")
@@ -355,9 +355,8 @@ def _log(pipeline: str, level: str, msg: str, detail: str = ""):
     _state["log"].insert(0, entry)
     if len(_state["log"]) > 500:
         _state["log"] = _state["log"][:500]
-    extra = {"pipeline": pipeline.upper()}
     getattr(logger, level.lower(), logger.info)(
-        msg + (" — " + detail if detail else ""), extra=extra
+        f"[{pipeline.upper()}] {msg}" + (" — " + detail if detail else "")
     )
 
 
