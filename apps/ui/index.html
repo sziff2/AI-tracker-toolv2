@@ -174,12 +174,16 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div class="nav-sec">
     <div class="nav-lbl">Workspace</div>
     <div class="nav-it on" id="nav-cockpit" onclick="showPage('cockpit')"><span class="nav-ico">📊</span> Research</div>
-    <div class="nav-it" id="nav-new" onclick="showPage('new')"><span class="nav-ico">📄</span> New Analysis</div>
-    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-portfolio" onclick="showPage('portfolio')"><span class="nav-ico">💼</span> Portfolio</div>
-    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
     <div class="nav-it" id="nav-analytics" onclick="showPage('analytics')"><span class="nav-ico">📈</span> Analytics &amp; Risk</div>
     <div class="nav-it" id="nav-optimise" onclick="showPage('optimise')"><span class="nav-ico">⚡</span> Portfolio Optimisation</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Data &amp; LLM Management</div>
+    <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
+    <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
+    <div class="nav-it" id="nav-autorun" onclick="showPage('autorun')"><span class="nav-ico">🤖</span> AutoResearch</div>
   </div>
 
   <div class="nav-sec">
@@ -231,7 +235,49 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 <!-- ═══ COCKPIT ═══ -->
 <div id="page-cockpit">
-  <div class="g2" style="margin-top:0"><div><div class="fl">Company</div><select class="fi" id="ck-company" onchange="loadCockpit()"><option value="">— Select company —</option></select></div></div>
+  <div class="g2" style="margin-top:0;align-items:end">
+    <div>
+      <div class="fl">Company</div>
+      <select class="fi" id="ck-company" onchange="ckCompanyChange()"><option value="">— Select company —</option></select>
+    </div>
+    <div>
+      <button class="btn2" onclick="ckShowNewCo()" id="ck-add-co-btn" style="width:100%;padding:10px 14px">+ Add new company</button>
+    </div>
+  </div>
+
+  <!-- Inline new-company panel -->
+  <div id="ck-new-co-panel" style="display:none;margin-top:16px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">New Company</span>
+      <button class="btn2" onclick="ckHideNewCo()" style="padding:4px 10px;font-size:11px">✕ Cancel</button>
+    </div>
+    <div class="g2" style="margin-top:0">
+      <div><div class="fl">Ticker</div><input class="fi" id="ck-new-ticker" placeholder="e.g. ENI IM"></div>
+      <div><div class="fl">Company Name</div><input class="fi" id="ck-new-name" placeholder="e.g. ENI S.p.A."></div>
+      <div><div class="fl">Sector</div><input class="fi" id="ck-new-sector" placeholder="e.g. Oil &amp; Gas"></div>
+      <div><div class="fl">Country</div><input class="fi" id="ck-new-country" placeholder="e.g. Italy"></div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="fl">Upload Documents</div>
+      <div id="ck-new-file-list" style="margin-top:8px"></div>
+      <button class="af" onclick="ckNewAddFile()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button>
+      <input type="file" id="ck-new-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>
+    </div>
+    <div style="margin-top:16px">
+      <div class="col" onclick="toggleEl('ck-new-thesis-sec','ck-new-thesis-arr')"><span>Investment Thesis (optional)</span><span id="ck-new-thesis-arr">▸</span></div>
+      <div class="col-c" id="ck-new-thesis-sec">
+        <div style="margin-top:8px"><div class="fl">Core Thesis</div><textarea class="fi" id="ck-new-th-core" placeholder="What is the investment case?" style="min-height:60px"></textarea></div>
+        <div style="margin-top:10px"><div class="fl">Key Risks</div><textarea class="fi" id="ck-new-th-risks" placeholder="What could go wrong?" style="min-height:50px"></textarea></div>
+        <div style="margin-top:10px"><div class="fl">Valuation</div><textarea class="fi" id="ck-new-th-val" placeholder="How do you value this?" style="min-height:50px"></textarea></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn" id="ck-new-submit" onclick="ckSubmitNewCo()" style="flex:1">Analyse &amp; Synthesise</button>
+    </div>
+    <div class="ld" id="ck-new-loading" style="display:none"></div>
+    <div class="err" id="ck-new-error" style="display:none"></div>
+  </div>
+
   <div id="ck-content" style="margin-top:24px"></div>
 </div>
 
@@ -244,6 +290,45 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="btn2" onclick="loadLab()">Refresh</button>
   </div>
   <div id="lab-content"></div>
+</div>
+
+<!-- ═══ AUTORUN ═══ -->
+<div id="page-autorun" style="display:none">
+  <h1>AutoResearch <span style="font-size:16px;color:var(--gold)">β</span></h1>
+  <p class="sub">Autonomous overnight prompt optimisation. Two independent pipelines — Extraction and Output — each with their own evals you can inspect and control before running.</p>
+  <div class="tabs" style="margin-bottom:24px">
+    <button class="tab on" id="ar-tab-extraction" onclick="arSetMode('extraction')">⚙ Extraction Pipeline</button>
+    <button class="tab" id="ar-tab-output" onclick="arSetMode('output')">📄 Output Pipeline</button>
+    <button class="tab" id="ar-tab-log" onclick="arSetMode('log')">📋 Activity Log</button>
+  </div>
+  <div id="ar-mode-extraction">
+    <div class="g2" style="gap:20px;align-items:start">
+      <div>
+        <div class="cd" style="margin-bottom:16px"><div class="cd-t">Prompt Types in Scope</div><div style="margin-top:12px" id="ar-ext-types"></div></div>
+        <div class="cd" style="margin-bottom:16px"><div class="cd-t">Run Duration</div><select class="fi" id="ar-ext-hours" style="margin-top:10px"><option value="0.1">Quick test (~6 min, ~$0.12)</option><option value="1">1 hour (~$0.60)</option><option value="4">4 hours (~$2.50)</option><option value="8" selected>8 hours overnight (~$5)</option></select></div>
+        <div style="display:flex;gap:8px"><button class="btn" id="ar-ext-start" onclick="arStart('extraction')" style="flex:1">▶ Start</button><button class="btn2" id="ar-ext-stop" onclick="arStop('extraction')" style="display:none">⏹ Stop</button></div>
+        <div id="ar-ext-status" style="margin-top:12px;font-family:var(--sans);font-size:12px;color:var(--text3)">Idle</div>
+        <div id="ar-ext-stats" style="display:none;margin-top:16px"><div class="g3"><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Experiments</div><div style="font-size:26px;font-weight:300;color:var(--gold);font-family:var(--serif)" id="ar-ext-stat-exp">—</div></div><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Promotions</div><div style="font-size:26px;font-weight:300;color:var(--green);font-family:var(--serif)" id="ar-ext-stat-pro">—</div></div><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Avg Δ Score</div><div style="font-size:26px;font-weight:300;color:var(--text2);font-family:var(--serif)" id="ar-ext-stat-delta">—</div></div></div></div>
+      </div>
+      <div><div class="cd-t" style="margin-bottom:12px">Evals — what gets measured</div><div id="ar-ext-evals"></div></div>
+    </div>
+  </div>
+  <div id="ar-mode-output" style="display:none">
+    <div class="g2" style="gap:20px;align-items:start">
+      <div>
+        <div class="cd" style="margin-bottom:16px"><div class="cd-t">Prompt Types in Scope</div><div style="margin-top:12px" id="ar-out-types"></div></div>
+        <div class="cd" style="margin-bottom:16px"><div class="cd-t">Run Duration</div><select class="fi" id="ar-out-hours" style="margin-top:10px"><option value="0.1">Quick test (~6 min, ~$0.17)</option><option value="1">1 hour (~$0.85)</option><option value="4">4 hours (~$3.50)</option><option value="8" selected>8 hours overnight (~$8)</option></select></div>
+        <div style="display:flex;gap:8px"><button class="btn" id="ar-out-start" onclick="arStart('output')" style="flex:1">▶ Start</button><button class="btn2" id="ar-out-stop" onclick="arStop('output')" style="display:none">⏹ Stop</button></div>
+        <div id="ar-out-status" style="margin-top:12px;font-family:var(--sans);font-size:12px;color:var(--text3)">Idle</div>
+        <div id="ar-out-stats" style="display:none;margin-top:16px"><div class="g3"><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Experiments</div><div style="font-size:26px;font-weight:300;color:var(--gold);font-family:var(--serif)" id="ar-out-stat-exp">—</div></div><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Promotions</div><div style="font-size:26px;font-weight:300;color:var(--green);font-family:var(--serif)" id="ar-out-stat-pro">—</div></div><div class="cd" style="text-align:center;padding:14px"><div class="cd-t">Avg Δ Score</div><div style="font-size:26px;font-weight:300;color:var(--text2);font-family:var(--serif)" id="ar-out-stat-delta">—</div></div></div></div>
+      </div>
+      <div><div class="cd-t" style="margin-bottom:12px">Evals — what gets measured</div><div id="ar-out-evals"></div></div>
+    </div>
+  </div>
+  <div id="ar-mode-log" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-family:var(--sans);font-size:12px;color:var(--text3)">Combined log — both pipelines, newest first</span><button class="btn2" onclick="arRefreshStatus()">↻ Refresh</button></div>
+    <div id="ar-log-content" style="font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;max-height:560px;overflow-y:auto;line-height:2"><span style="color:var(--text4)">No activity yet.</span></div>
+  </div>
 </div>
 
 <!-- ═══ DATA HUB ═══ -->
@@ -353,7 +438,7 @@ function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();}
+function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -363,8 +448,64 @@ function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
   ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});
-  // Populate sidebar companies
   const sc=E('side-companies');if(sc){let h='';CC.forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.ticker.split(' ')[0])+'</span></div>';});sc.innerHTML=h;}}
+function ckCompanyChange(){ckHideNewCo();loadCockpit();}
+function ckShowNewCo(){E('ck-new-co-panel').style.display='block';E('ck-add-co-btn').style.display='none';E('ck-company').value='';E('ck-content').innerHTML='';['ck-new-ticker','ck-new-name','ck-new-sector','ck-new-country','ck-new-th-core','ck-new-th-risks','ck-new-th-val'].forEach(x=>{if(E(x))E(x).value='';});CK_NEW_FILES=[];ckNewRenderFL();}
+function ckHideNewCo(){const p=E('ck-new-co-panel');if(p)p.style.display='none';const b=E('ck-add-co-btn');if(b)b.style.display='block';}
+var CK_NEW_FILES=[];
+function ckNewAddFile(){E('ck-new-hfi').click();}
+const _ckNewHfi=E('ck-new-hfi');if(_ckNewHfi)_ckNewHfi.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';CK_NEW_FILES.push({file:f,docType:dt});}this.value='';ckNewRenderFL();});
+function ckNewRenderFL(){const c=E('ck-new-file-list');if(!c)return;const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};let h='';CK_NEW_FILES.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="CK_NEW_FILES['+i+'].docType=this.value">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="CK_NEW_FILES.splice('+i+',1);ckNewRenderFL()">&times;</button></div>';});c.innerHTML=h;}
+async function ckSubmitNewCo(){
+  const t=E('ck-new-ticker').value.trim().toUpperCase(),n=E('ck-new-name').value.trim(),s=E('ck-new-sector').value.trim(),co=E('ck-new-country').value.trim();
+  const errEl=E('ck-new-error'),ldEl=E('ck-new-loading'),btn=E('ck-new-submit');
+  if(!t){errEl.textContent='Enter a ticker.';errEl.style.display='block';return;}
+  if(!n){errEl.textContent='Enter a company name.';errEl.style.display='block';return;}
+  errEl.style.display='none';btn.disabled=true;btn.textContent='Creating…';ldEl.style.display='block';ldEl.innerHTML='Creating company…';
+  try{
+    const rc=await fetch('/api/v1/companies/'+enc(t));
+    if(!rc.ok){const rp=await fetch('/api/v1/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t,name:n,sector:s||null,country:co||null,coverage_status:'active'})});if(!rp.ok)throw new Error((await rp.json().catch(()=>({}))).detail||'Failed to create company');}
+    const thCore=E('ck-new-th-core').value.trim();
+    if(thCore){await fetch('/api/v1/companies/'+enc(t)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:thCore,key_risks:E('ck-new-th-risks').value.trim()||null,valuation_framework:E('ck-new-th-val').value.trim()||null})});}
+    if(CK_NEW_FILES.length){
+      const yr=new Date().getFullYear();const p=yr+'_Q4';
+      ldEl.innerHTML='Uploading documents…';
+      const fd=new FormData();fd.append('period_label',p);fd.append('document_types',CK_NEW_FILES.map(f=>f.docType).join(','));fd.append('titles',CK_NEW_FILES.map(f=>f.file.name).join(','));CK_NEW_FILES.forEach(f=>fd.append('files',f.file));
+      const ru=await fetch('/api/v1/companies/'+enc(t)+'/documents/batch-upload',{method:'POST',body:fd});
+      if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
+      const jobId=(await ru.json()).job_id;
+      await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+jobId);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
+    }
+    ldEl.style.display='none';await loadDD();ckHideNewCo();E('ck-company').value=t;loadCockpit();
+  }catch(e){errEl.textContent=e.message;errEl.style.display='block';ldEl.style.display='none';}
+  btn.disabled=false;btn.textContent='Analyse &amp; Synthesise';
+}
+// ── New Period (Results tab) ──────────────────────────────────
+var NP_FILES=[];
+function ckShowNewPeriod(ticker){
+  const panel=E('ck-new-period-panel');if(!panel)return;
+  panel.style.display='block';NP_FILES=[];npRenderFL();
+  const sel=E('np-year');if(sel&&!sel.options.length){const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}}
+  const hfi=E('np-hfi');if(hfi&&!hfi._npBound){hfi._npBound=true;hfi.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';NP_FILES.push({file:f,docType:dt});}this.value='';npRenderFL();});}
+}
+function ckHideNewPeriod(){const p=E('ck-new-period-panel');if(p)p.style.display='none';NP_FILES=[];}
+function npRenderFL(){const c=E('np-file-list');if(!c)return;const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report:'📋',sustainability_report:'♻️',other:'📄'};let h='';NP_FILES.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="NP_FILES['+i+'].docType=this.value">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="NP_FILES.splice('+i+',1);npRenderFL()">&times;</button></div>';});c.innerHTML=h;}
+async function ckSubmitNewPeriod(ticker){
+  const pt=E('np-type')?.value,yr=E('np-year')?.value,errEl=E('np-error'),ldEl=E('np-loading'),btn=E('np-submit');
+  if(!pt||!yr){errEl.textContent='Select period type and year.';errEl.style.display='block';return;}
+  const period=yr+'_'+pt;
+  if(!NP_FILES.length){errEl.textContent='Add at least one document.';errEl.style.display='block';return;}
+  errEl.style.display='none';btn.disabled=true;btn.textContent='Uploading…';ldEl.style.display='block';ldEl.innerHTML='Uploading documents…';
+  try{
+    const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));NP_FILES.forEach(f=>fd.append('files',f.file));
+    const ru=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
+    if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
+    const jobId=(await ru.json()).job_id;
+    await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+jobId);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
+    ldEl.style.display='none';ckHideNewPeriod();loadCockpit();
+  }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
+  btn.disabled=false;btn.textContent='Upload &amp; Analyse';ldEl.style.display='none';
+}
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
 function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
@@ -545,38 +686,20 @@ function renderCkResults(ticker,d){
   h+='</div>';
   h+='<button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button>';
   h+='</div>';
-
-  // ── New Period inline panel ──────────────────────────────────
+  // New Period inline panel
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
-  h+='<span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Upload New Period</span>';
-  h+='<button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">✕ Cancel</button>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Upload New Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">✕ Cancel</button></div>';
+  h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year"></select></div></div>';
+  h+='<div style="margin-top:14px"><div class="fl">Documents</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button></div>';
+  h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div>';
   h+='</div>';
-  h+='<div class="g2" style="margin-top:0">';
-  h+='<div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div>';
-  h+='<div><div class="fl">Year</div><select class="fi" id="np-year"></select></div>';
-  h+='</div>';
-  h+='<div style="margin-top:14px"><div class="fl">Documents</div>';
-  h+='<div id="np-file-list" style="margin-top:8px"></div>';
-  h+='<button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button>';
-  h+='<input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>';
-  h+='</div>';
-  h+='<div style="display:flex;gap:10px;margin-top:16px">';
-  h+='<button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button>';
-  h+='</div>';
-  h+='<div class="ld" id="np-loading" style="display:none"></div>';
-  h+='<div class="err" id="np-error" style="display:none"></div>';
-  h+='</div>';
-
   if(!allPeriods.length){
     return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
   }
-
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
-    // Period header with reprocess and delete buttons
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
-    // Documents used for this period
     const pdocs=dbp[p]||[];
     if(pdocs.length){
       h+='<h2>Documents Used</h2>';
@@ -585,13 +708,9 @@ function renderCkResults(ticker,d){
         h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';
       });
     }
-    // Add more documents to existing period
-    h+='<div style="margin-top:12px;margin-bottom:16px">';
-    h+='<div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
+    h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
-    h+='<div id="add-doc-list-'+esc(p)+'"></div>';
-    h+='</div>';
-    // Analysis output
+    h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
     const analysis=abp[p];
     if(analysis?.content){
       h+='<h2>Analysis Output</h2>';
@@ -603,12 +722,8 @@ function renderCkResults(ticker,d){
     } else if(!pdocs.length){
       h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';
     }
-    // Chat interface for this period
     h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2>';
-    h+='<div style="display:flex;gap:8px;margin-top:8px">';
-    h+='<input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth? How did management describe the outlook?" style="flex:1;font-size:13px">';
-    h+='<button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button>';
-    h+='</div>';
+    h+='<div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div>';
     h+='<div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div>';
     h+='</div>';
   });
@@ -618,40 +733,7 @@ function showResPeriod(p,btn){
   document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
   const target=E('res-'+p);if(target)target.style.display='block';
   E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
-  // Hide new period panel when switching tabs
   ckHideNewPeriod();
-}
-var NP_FILES=[];
-function ckShowNewPeriod(ticker){
-  const panel=E('ck-new-period-panel');if(!panel)return;
-  panel.style.display='block';
-  NP_FILES=[];npRenderFL();
-  // Populate year dropdown
-  const sel=E('np-year');if(sel&&!sel.options.length){const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}}
-  // Attach file input listener once
-  const hfi=E('np-hfi');if(hfi&&!hfi._npBound){hfi._npBound=true;hfi.addEventListener('change',function(){const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';NP_FILES.push({file:f,docType:dt});}this.value='';npRenderFL();});}
-}
-function ckHideNewPeriod(){const panel=E('ck-new-period-panel');if(panel)panel.style.display='none';NP_FILES=[];}
-function npRenderFL(){const c=E('np-file-list');if(!c)return;const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report:'📋',sustainability_report:'♻️',other:'📄'};let h='';NP_FILES.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="NP_FILES['+i+'].docType=this.value">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="NP_FILES.splice('+i+',1);npRenderFL()">&times;</button></div>';});c.innerHTML=h;}
-async function ckSubmitNewPeriod(ticker){
-  const pt=E('np-type')?.value,yr=E('np-year')?.value;
-  if(!pt||!yr){const e=E('np-error');if(e){e.textContent='Select period type and year.';e.style.display='block';}return;}
-  const period=yr+'_'+pt;
-  const errEl=E('np-error'),ldEl=E('np-loading'),btn=E('np-submit');
-  if(!NP_FILES.length){errEl.textContent='Add at least one document.';errEl.style.display='block';return;}
-  errEl.style.display='none';btn.disabled=true;btn.textContent='Uploading…';ldEl.style.display='block';ldEl.innerHTML='Uploading documents…';
-  try{
-    const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));NP_FILES.forEach(f=>fd.append('files',f.file));
-    const ru=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
-    const jobId=(await ru.json()).job_id;
-    ldEl.innerHTML='Analysing…';
-    await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+jobId);if(!rj.ok)return;const j=await rj.json();const pct=j.progress_pct||0;ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+pct+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
-    ldEl.style.display='none';ckHideNewPeriod();loadCockpit();
-    // Switch to results tab and show new period
-    setTimeout(()=>{const btn=document.querySelector('.tabs .tab:nth-child(3)');if(btn){ckTab('results',btn);}},500);
-  }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
-  btn.disabled=false;btn.textContent='Upload &amp; Analyse';ldEl.style.display='none';
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
@@ -2680,6 +2762,23 @@ function renderSearchResults(d,q){
 setInterval(function(){
   if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){gsPopulateTickers();}
 },1000);
+
+// ══════════════════════════════════════════════════════════════════
+// AUTORUN
+// ══════════════════════════════════════════════════════════════════
+const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'40%',colour:'var(--gold)',how:'No LLM — pure string matching',description:'Checks whether the new prompt recovers the same verbatim source_snippets already stored in ExtractedMetric rows. Word-overlap matching: a snippet counts as recovered if ≥60% of its words appear in an extracted item\'s source_snippet.',why:'source_snippet is ground truth — a verbatim quote validated when first extracted. High recall means the prompt is finding the right evidence.'},{id:'schema_compliance',name:'Schema Compliance',weight:'30%',colour:'var(--green)',how:'No LLM — Python field validation',description:'Checks every extracted item has required fields (metric_name, source_snippet, confidence) populated and correctly typed, plus at least one of metric_value or metric_text.',why:'Downstream services break silently when fields are missing. Reliable structure is more valuable than occasional perfect data.'},{id:'hallucination_rate',name:'Hallucination Rate',weight:'30%',colour:'var(--red)',how:'LLM judge — 1 call per variant',description:'For each numeric metric_value, checks whether that number appears in the source document. Hard cap: >20% hallucination rate drops score to 0.',why:'An extraction prompt that invents numbers is worse than one that finds fewer metrics.'}],output:[{id:'specificity',name:'Specificity',weight:'25%',colour:'var(--gold)',how:'LLM judge with anchored examples',description:'Every factual claim should cite a precise number with units. Score 10 = all claims specific. Score 0 = entirely vague.',why:'Vague language is useless for an analyst. The briefing should be directly quotable in a trade note.'},{id:'thesis_linkage',name:'Thesis Linkage',weight:'20%',colour:'var(--gold)',how:'LLM judge — actual company thesis injected from DB',description:'Does the bottom line state whether the investment thesis is intact, strengthened, or weakened? The judge receives the real stored thesis.',why:'Facts serve the investment case. A briefing that ignores the thesis is incomplete.'},{id:'management_scrutiny',name:'Management Scrutiny',weight:'20%',colour:'var(--amber)',how:'LLM judge with anchored examples',description:'Does the output distinguish what management claims from what the numbers show? Score 0 = parrots talking points.',why:'Buy-side analysts are paid to be sceptical.'},{id:'actionability',name:'Actionability',weight:'20%',colour:'var(--green)',how:'LLM judge with anchored examples',description:'Does the output end with a clear steer? Score 10 = explicit add/hold/trim with a specific forward reason. Score 0 = no conclusion.',why:'The output should drive a decision.'},{id:'hallucination_check',name:'Hallucination Check',weight:'10%',colour:'var(--red)',how:'LLM judge — hard cap if triggered',description:'Any number or assertion not supported by the source? If hallucinations found, overall score capped at 4.0.',why:'A single invented figure destroys trust.'},{id:'conciseness',name:'Conciseness',weight:'5%',colour:'var(--text3)',how:'LLM judge',description:'Every sentence should earn its place. Tiebreaker — low weight by design.',why:'Senior analysts read fast.'}]};
+const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
+let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
+function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
+function arSetMode(mode){_arMode=mode;['extraction','output','log'].forEach(m=>{const el=E('ar-mode-'+m);if(el)el.style.display=m===mode?'block':'none';const tab=E('ar-tab-'+m);if(tab)tab.classList.toggle('on',m===mode);});if(mode==='log')arRefreshStatus();}
+function arRenderTypeToggles(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-types');if(!el)return;el.innerHTML=AR_PROMPT_TYPES[pipeline].map(t=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="${t.id}" checked style="accent-color:var(--gold);margin-top:2px;flex-shrink:0"><div><div style="font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text)">${t.label}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">Docs: ${t.doc}</div></div></label>`).join('');}
+function arRenderEvals(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-evals');if(!el)return;el.innerHTML=AR_EVALS[pipeline].map(ev=>`<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${ev.colour};border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">${ev.name}</span><span style="font-family:var(--mono);font-size:11px;color:${ev.colour};background:rgba(255,255,255,.04);padding:2px 8px;border-radius:4px;font-weight:600">${ev.weight}</span></div><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:6px;font-style:italic">${ev.how}</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:7px">${ev.description}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text3);line-height:1.55;border-top:1px solid var(--border);padding-top:7px"><strong style="color:var(--text4)">Why it matters:</strong> ${ev.why}</div></div>`).join('');}
+function arGetSelectedTypes(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const container=E('ar-'+pfx+'-types');if(!container)return AR_PROMPT_TYPES[pipeline].map(t=>t.id);return Array.from(container.querySelectorAll('input:checked')).map(i=>i.value);}
+async function arStart(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const hours=parseFloat(E('ar-'+pfx+'-hours').value);const types=arGetSelectedTypes(pipeline);if(!types.length){alert('Select at least one prompt type.');return;}if(!confirm(`Start ${pipeline==='extraction'?'Extraction':'Output'} AutoRun for ${hours}h across ${types.length} type${types.length>1?'s':''}?\n\nEnsure you have run "Seed Default Variants" in Prompt Lab first.`))return;try{const r=await fetch('/api/v1/autorun/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours,prompt_types:types,pipeline})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Failed');arRefreshStatus();arStartPoll();}catch(e){alert('Failed: '+e.message);}}
+async function arStop(pipeline){if(!confirm('Request graceful stop?'))return;try{await fetch('/api/v1/autorun/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipeline})});arRefreshStatus();}catch(e){alert('Stop failed: '+e.message);}}
+async function arRefreshStatus(){try{const r=await fetch('/api/v1/autorun/status');if(!r.ok)return;arRenderStatus(await r.json());}catch(e){const el=E('ar-log-content');if(el)el.innerHTML='<span style="color:var(--red)">Could not reach AutoRun API — check autorun router is registered in main.py.</span>';}}
+function arRenderStatus(d){['extraction','output'].forEach(pipeline=>{const pState=d[pipeline]||{};const pfx=pipeline==='extraction'?'ext':'out';const running=pState.running||false;const startBtn=E('ar-'+pfx+'-start'),stopBtn=E('ar-'+pfx+'-stop'),statusEl=E('ar-'+pfx+'-status'),statsEl=E('ar-'+pfx+'-stats');if(startBtn){startBtn.disabled=running;startBtn.textContent=running?'⏸ Running…':'▶ Start';}if(stopBtn)stopBtn.style.display=running?'inline-block':'none';if(statusEl){if(running){statusEl.innerHTML=`<span style="color:var(--gold)">● Running — job ${esc(pState.job_id||'')}</span><br><span style="color:var(--text4);font-size:11px">${esc(pState.current_step||pState.current_type||'running…')}</span>`;}else if(pState.job_id){statusEl.innerHTML=`<span style="color:var(--green)">✓ Last run: ${esc(pState.job_id)}${pState.experiments_run>0?' — '+pState.experiments_run+' experiments, '+pState.promotions+' promotions':''}</span>`;}else{statusEl.textContent='Idle';}}if(statsEl&&(pState.experiments_run>0||pState.running)){statsEl.style.display='block';const se=E('ar-'+pfx+'-stat-exp'),sp=E('ar-'+pfx+'-stat-pro'),sd=E('ar-'+pfx+'-stat-delta');if(se)se.textContent=pState.experiments_run??'—';if(sp)sp.textContent=pState.promotions??'—';if(sd)sd.textContent=pState.avg_delta!=null?(pState.avg_delta>=0?'+':'')+pState.avg_delta.toFixed(2):'—';}});const logEl=E('ar-log-content');if(logEl){const logs=(d.log||[]).slice(0,200);if(logs.length){logEl.innerHTML=logs.map(entry=>{const ts=(entry.ts||'').substring(11,19);const col=entry.level==='error'?'var(--red)':entry.level==='warning'?'var(--amber)':(entry.msg||'').startsWith('✓')?'var(--green)':(entry.msg||'').startsWith('─')?'var(--gold)':'var(--text2)';const pipe=entry.pipeline?`<span style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-right:6px;background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(entry.pipeline)}</span>`:'';return `<div>${pipe}<span style="color:var(--text4)">${ts}</span>  <span style="color:${col}">${esc(entry.msg||'')}</span>${entry.detail?` <span style="color:var(--text4)">${esc(entry.detail)}</span>`:''}</div>`;}).join('');}else{logEl.innerHTML='<span style="color:var(--text4)">No activity yet.</span>';}}}
+function arStartPoll(){if(_arPollTimer)clearInterval(_arPollTimer);_arPollTimer=setInterval(async()=>{const page=E('page-autorun');if(!page||page.style.display==='none'){clearInterval(_arPollTimer);_arPollTimer=null;return;}await arRefreshStatus();},4000);}
 </script>
 </body>
 </html>
