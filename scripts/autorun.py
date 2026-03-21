@@ -357,12 +357,12 @@ async def _get_test_document(
 ) -> tuple[Document | None, str]:
     doc_types = DOC_TYPE_MAP.get(prompt_type, ["earnings_release"])
 
+    # Find documents of the right type that have been parsed (have sections)
     result = await db.execute(
         select(Document)
         .where(
-            Document.doc_type.in_(doc_types),
-            Document.parsed_text.isnot(None),
-            Document.parsed_text != "",
+            Document.document_type.in_(doc_types),
+            Document.parsing_status == "completed",
         )
         .order_by(func.random())
         .limit(6)
@@ -370,9 +370,20 @@ async def _get_test_document(
     docs = result.scalars().all()
 
     if not docs:
+        # Fall back: any completed document regardless of type
+        result = await db.execute(
+            select(Document)
+            .where(Document.parsing_status == "completed")
+            .order_by(func.random())
+            .limit(3)
+        )
+        docs = result.scalars().all()
+
+    if not docs:
         return None, ""
 
     # Prefer document with most high-confidence extracted metrics
+    from apps.api.models import DocumentSection
     best_doc, best_count = docs[0], 0
     for doc in docs:
         q = await db.execute(
@@ -386,7 +397,19 @@ async def _get_test_document(
             best_count = count
             best_doc = doc
 
-    return best_doc, best_doc.parsed_text[:DOC_CHAR_LIMIT]
+    # Get text from DocumentSection rows (parsed pages)
+    sections_q = await db.execute(
+        select(DocumentSection)
+        .where(DocumentSection.document_id == best_doc.id)
+        .order_by(DocumentSection.page_number)
+        .limit(20)
+    )
+    sections = sections_q.scalars().all()
+    doc_text = "\n\n".join(
+        s.text_content for s in sections if s.text_content
+    )[:DOC_CHAR_LIMIT]
+
+    return best_doc, doc_text
 
 
 # ─────────────────────────────────────────────────────────────────
