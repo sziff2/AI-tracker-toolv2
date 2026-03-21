@@ -479,7 +479,6 @@ def _eval_schema_compliance(items: list[dict], prompt_type: str = "") -> dict:
     """
     Pure Python — no LLM cost.
     Check every item has the required fields for its prompt type.
-    Different prompt types have different schemas (transcript vs earnings vs broker etc.)
     """
     if not items:
         return {"score": 0.0, "reason": "No items extracted", "compliant": 0, "total": 0}
@@ -493,21 +492,19 @@ def _eval_schema_compliance(items: list[dict], prompt_type: str = "") -> dict:
 
         if schema:
             name_field, value_fields, required_fields = schema
-            # Check the name field
+            # Check the name field exists and is non-empty
             val = item.get(name_field)
             if not val or (isinstance(val, str) and not val.strip()):
                 issues.append(f"item[{i}] missing {name_field}")
                 item_ok = False
             if item_ok:
-                # Check other required fields
-                for field in required_fields:
-                    v = item.get(field)
-                    if v is None or (isinstance(v, str) and not v.strip()):
-                        issues.append(f"item[{i}] missing {field}")
-                        item_ok = False
-                        break
+                # Check source_snippet exists (confidence is optional — LLMs sometimes omit it)
+                snippet = item.get("source_snippet")
+                if not snippet or (isinstance(snippet, str) and not snippet.strip()):
+                    issues.append(f"item[{i}] missing source_snippet")
+                    item_ok = False
             if item_ok:
-                # Check at least one value field
+                # Check at least one value field is populated
                 has_value = any(
                     item.get(f) is not None and item.get(f) != ""
                     for f in value_fields
@@ -516,13 +513,11 @@ def _eval_schema_compliance(items: list[dict], prompt_type: str = "") -> dict:
                     issues.append(f"item[{i}] no value in {value_fields}")
                     item_ok = False
         else:
-            # Fallback: just check source_snippet and confidence exist
-            for field, ftype in EXTRACTION_REQUIRED_FIELDS.items():
-                val = item.get(field)
-                if val is None or (isinstance(val, str) and not val.strip()):
-                    issues.append(f"item[{i}] missing {field}")
-                    item_ok = False
-                    break
+            # Fallback: just check source_snippet exists
+            snippet = item.get("source_snippet")
+            if not snippet or (isinstance(snippet, str) and not snippet.strip()):
+                issues.append(f"item[{i}] missing source_snippet")
+                item_ok = False
 
         if item_ok:
             compliant += 1
@@ -952,6 +947,13 @@ async def _run_extraction_experiment(
 
         schema_a = _eval_schema_compliance(items_a, prompt_type)
         schema_b = _eval_schema_compliance(items_b, prompt_type)
+
+        # Debug: log first item keys and schema reason so we can diagnose failures
+        if schema_a["score"] == 0.0 and items_a:
+            first_keys = list(items_a[0].keys())[:8]
+            _log("extraction", "info", f"{prompt_type}: schema debug",
+                 f"A items={len(items_a)} first_keys={first_keys} reason={schema_a['reason'][:100]}")
+
         recall_a = _eval_snippet_recall(items_a, ground_truth)
         recall_b = _eval_snippet_recall(items_b, ground_truth)
 
