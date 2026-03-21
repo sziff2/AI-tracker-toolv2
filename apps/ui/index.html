@@ -369,12 +369,10 @@ function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?
 function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
 function onCkSelect(v){
   if(v==='__new__'){
-    // Route to existing New Analysis page, pre-selecting __new__ in its dropdown
-    E('ck-company').value='';  // reset cockpit dropdown so it doesn't stay on __new__
+    E('ck-company').value='';
     showPage('new');
-    // Set company-select to __new__ and trigger its handler
-    const cs=E('company-select');if(cs){cs.value='__new__';onCompanySelect();}
-  } else {
+    var cs=E('company-select');if(cs){cs.value='__new__';onCompanySelect();}
+  }else{
     loadCockpit();
   }
 }
@@ -545,16 +543,10 @@ function renderCkKPIs(ticker,d){
 function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
   const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
-  if(!allPeriods.length){
-    return '<div style="text-align:center;padding:40px 24px">' +
-      '<div style="font-size:36px;margin-bottom:16px">📂</div>' +
-      '<div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:24px">No results yet. Add a new period to get started.</div>' +
-      '<button class="btn" onclick="showNewPeriodForm(''+ticker+'')" style="padding:12px 28px">+ Add New Period</button>' +
-    '</div>';
-  }
+  if(!allPeriods.length)return '<div style="text-align:center;padding:40px 24px"><div style="font-size:36px;margin-bottom:16px">📂</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:24px">No results yet for this company.</div><button class="btn" data-tk="'+ticker+'" onclick="showNewPeriodForm(this.dataset.tk)" style="padding:12px 28px">+ Add New Period</button></div>';
   let h='<div class="ptabs" id="res-ptabs">';
   allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});
-  h+='<button class="ptab" style="margin-left:auto;color:var(--gold);border-color:rgba(196,164,90,.4)" onclick="showNewPeriodForm(\''+ticker+'\')">+ New Period</button>';
+  h+='<button class="ptab" data-tk="'+ticker+'" style="margin-left:auto;color:var(--gold);border-color:rgba(196,164,90,.4)" onclick="showNewPeriodForm(this.dataset.tk)">+ New Period</button>';
   h+='</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="'+(i===0?'':'display:none')+'">';
@@ -2631,52 +2623,59 @@ setInterval(function(){
   if(CC&&CC.length>0&&E('gs-ticker')&&E('gs-ticker').options.length<=1){gsPopulateTickers();}
 },1000);
 
-// ── New Period inline form (shown in Results tab) ─────────────
-var _npUF=[], _npTicker='';
+// ── New Period inline form ─────────────────────────────────────
+var _npUF=[],_npTicker='';
 function showNewPeriodForm(ticker){
-  _npTicker=ticker; _npUF=[];
-  // Insert panel at the very top of ck-results tab content
-  var container=E('ck-results');if(!container)return;
+  _npTicker=ticker;_npUF=[];
+  var existing=document.getElementById('np-panel');if(existing)existing.remove();
   var yr=new Date().getFullYear();
   var yOpts='';for(var y=yr+1;y>=yr-5;y--){yOpts+='<option value="'+y+'"'+(y===yr?' selected':'')+'>'+y+'</option>';}
-  var panel='<div id="np-panel" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;max-width:560px">';
-  panel+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">';
-  panel+='<div style="font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)">New Period</div>';
-  panel+='<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNewPeriodForm()">✕ Cancel</button>';
-  panel+='</div>';
-  panel+='<div style="display:flex;gap:8px;margin-bottom:14px">';
-  panel+='<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>';
-  panel+='<select class="fi" id="np-py" style="flex:1">'+yOpts+'</select>';
-  panel+='</div>';
-  panel+='<div id="np-file-list"></div>';
-  panel+='<button class="af" onclick="document.getElementById(\'np-hfi\').click()"><span style="font-size:18px">+</span> Add documents</button>';
-  panel+='<input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>';
-  panel+='<div id="np-error" class="err" style="display:none;margin-top:8px"></div>';
-  panel+='<button class="btn btn-full" id="np-btn" onclick="npSubmit()" style="margin-top:14px">Analyse &amp; Synthesise</button>';
-  panel+='<div class="ld" id="np-ld" style="display:none;margin-top:12px"></div>';
-  panel+='</div>';
-  // Prepend to existing content
-  container.innerHTML=panel+container.innerHTML;
-  // Wire file input
-  document.getElementById('np-hfi').addEventListener('change',function(){
-    var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
-    function gType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
-    for(var f of this.files){_npUF.push({file:f,docType:gType(f.name)});}
-    this.value='';
-    var T2=T;var h='';
-    _npUF.forEach(function(f,i){var s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';Object.keys(T2).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T2[k]+'</option>';});h+='</select><button class="x" onclick="_npUF.splice('+i+',1);document.getElementById(\'np-file-list\').innerHTML=\'\'">&times;</button></div>';});
-    var fl=document.getElementById('np-file-list');if(fl)fl.innerHTML=h;
-  });
+  var p=document.createElement('div');
+  p.id='np-panel';
+  p.style.cssText='background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;max-width:560px';
+  p.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'
+    +'<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3)">New Period</div>'
+    +'<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="closeNpPanel()">✕ Cancel</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px">'
+    +'<select class="fi" id="np-pt" style="flex:1"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select>'
+    +'<select class="fi" id="np-py" style="flex:1">'+yOpts+'</select>'
+    +'</div>'
+    +'<div id="np-file-list"></div>'
+    +'<button class="af" onclick="document.getElementById(\'np-hfi-inp\').click()"><span style="font-size:18px">+</span> Add documents</button>'
+    +'<input type="file" id="np-hfi-inp" accept=".pdf,.docx,.txt" style="display:none" multiple>'
+    +'<div id="np-error" class="err" style="display:none;margin-top:8px"></div>'
+    +'<button class="btn btn-full" id="np-btn" onclick="npSubmit()" style="margin-top:14px">Analyse &amp; Synthesise</button>'
+    +'<div class="ld" id="np-ld" style="display:none;margin-top:12px"></div>';
+  var container=document.getElementById('ck-results');
+  if(container)container.insertBefore(p,container.firstChild);
+  document.getElementById('np-hfi-inp').addEventListener('change',npHandleFiles);
 }
-function closeNewPeriodForm(){var p=E('np-panel');if(p)p.remove();_npUF=[];}
+function closeNpPanel(){var p=document.getElementById('np-panel');if(p)p.remove();_npUF=[];}
+function npGuessType(n){n=n.toLowerCase();if(n.includes('proxy')||n.includes('agm'))return 'proxy_statement';if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';if(n.includes('transcript')||n.includes('call'))return 'transcript';if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';if(n.includes('presentation')||n.includes('slides'))return 'presentation';if(n.match(/earning|result|release|[qh][1-4]/))return 'earnings_release';if(n.includes('annual'))return 'annual_report';return 'other';}
+function npRenderFiles(){
+  var T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
+  var h='';
+  _npUF.forEach(function(f,i){
+    var s=(f.file.size/1024/1024).toFixed(1);
+    h+='<div class="fr"><span>📄</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="_npUF['+i+'].docType=this.value">';
+    Object.keys(T).forEach(function(k){h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});
+    h+='</select><button class="x" onclick="_npUF.splice('+i+',1);npRenderFiles()">&times;</button></div>';
+  });
+  var fl=document.getElementById('np-file-list');if(fl)fl.innerHTML=h;
+}
+function npHandleFiles(){
+  for(var f of this.files){_npUF.push({file:f,docType:npGuessType(f.name)});}
+  this.value='';npRenderFiles();
+}
 async function npSubmit(){
-  var pt=E('np-pt'),py=E('np-py');
+  var pt=document.getElementById('np-pt'),py=document.getElementById('np-py');
   if(!pt||!py)return;
   var period=py.value+'_'+pt.value;
-  var errEl=E('np-error');if(errEl)errEl.style.display='none';
+  var errEl=document.getElementById('np-error');if(errEl)errEl.style.display='none';
   if(!_npUF.length){if(errEl){errEl.innerHTML='Add at least one document.';errEl.style.display='block';}return;}
-  var btn=E('np-btn'),ld=E('np-ld');
-  if(btn){btn.disabled=true;btn.textContent='Uploading…';}
+  var btn=document.getElementById('np-btn'),ld=document.getElementById('np-ld');
+  if(btn){btn.disabled=true;btn.textContent='Uploading\u2026';}
   var fd=new FormData();
   fd.append('period_label',period);
   fd.append('document_types',_npUF.map(function(f){return f.docType;}).join(','));
@@ -2698,13 +2697,13 @@ async function npSubmit(){
       var r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
       var j=await r.json();
       var pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-      if(ld)ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div>'
+      if(ld)ld.innerHTML='<div style="margin-bottom:8px">'+esc(step.replace(/_/g,' '))+'\u2026 '+pct+'%</div>'
         +'<div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">'
         +'<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div>'
-        +'<div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
+        +'<div style="margin-top:6px;font-size:12px;color:var(--text4)">'+steps.join(' \u2192 ')+'</div>';
       if(j.status==='completed'){
         clearInterval(poll);_npUF=[];
-        if(ld)ld.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
+        if(ld)ld.innerHTML='<span style="color:var(--green)">\u2713 Analysis complete</span>';
         setTimeout(function(){loadCockpit();},1200);
       }else if(j.status==='failed'){
         clearInterval(poll);if(ld)ld.style.display='none';
