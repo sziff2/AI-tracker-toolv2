@@ -57,14 +57,18 @@ logger = logging.getLogger("autorun")
 # ─────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────
-MIN_IMPROVEMENT      = 0.5    # score delta to trigger promotion
-SLEEP_BETWEEN_TYPES  = 20     # seconds between prompt types in a round
-SLEEP_BETWEEN_ROUNDS = 90     # seconds between full sweeps
-MAX_TOKENS_REFINE    = 8192
-MAX_TOKENS_RUN       = 8192
+MIN_IMPROVEMENT      = 0.3    # score delta to trigger promotion
+SLEEP_BETWEEN_TYPES  = 60     # seconds between prompt types in a round
+SLEEP_BETWEEN_ROUNDS = 300    # seconds (5 min) between full sweeps
+MAX_TOKENS_REFINE    = 4096
+MAX_TOKENS_RUN       = 4096
 MAX_TOKENS_HALLUC    = 1024
 MAX_TOKENS_RUBRIC    = 1500
-DOC_CHAR_LIMIT       = 14000
+DOC_CHAR_LIMIT       = 8000
+
+# Cost guard — hard stop when estimated spend exceeds this
+COST_PER_EXPERIMENT  = 0.30   # USD conservative estimate per experiment
+MAX_COST_USD         = 10.0   # default hard cap per run
 
 EXTRACTION_PROMPT_TYPES = [
     "extraction_combined",
@@ -268,27 +272,33 @@ REFINE_PROMPT_EXTRACTION = """\
 You are a prompt engineer improving LLM extraction prompts for a value-oriented buy-side fund.
 
 Outputs are scored on:
-  snippet_recall    (40%) — does the prompt find the exact verbatim text from the document?
-  schema_compliance (30%) — are all required fields (metric_name, source_snippet,
-                            confidence, metric_value or metric_text) always populated?
-  hallucination_rate(30%) — are extracted numeric values actually present in the document?
-
-Rewrite the prompt to score higher. Rules:
-- Keep the EXACT same JSON output schema.
-- Add explicit instructions to always copy verbatim text into source_snippet.
-- Add instructions to never infer or calculate values — only state what is written.
-- Add instructions for every required field to be populated on every item.
-- Remove anything that encourages the LLM to summarise rather than quote exactly.
-- The prompt MUST contain {{text}} as a placeholder for document input.
+  snippet_recall    (40%) — does the prompt recover the exact verbatim source text?
+  schema_compliance (30%) — are all required fields always populated?
+  hallucination_rate(30%) — are numeric values actually present in the document?
 
 {feedback_section}
 
-CURRENT ACTIVE PROMPT ({variant_name}, generation {generation}):
+CURRENT ACTIVE PROMPT ({variant_name}, generation {generation}, score shown above):
 ---
 {prompt_text}
 ---
 
-Return ONLY the improved prompt text. No explanation, no markdown, no preamble."""
+Your task: produce a GENUINELY DIFFERENT prompt that will score higher.
+
+Pick ONE of these strategies (choose based on what the past experiment evidence suggests):
+  A) VERBATIM FOCUS — rewrite to aggressively prioritise copying exact quotes, even at the cost of fewer items extracted
+  B) COMPLETENESS FOCUS — rewrite to maximise number of items extracted, with strong field-population rules
+  C) STRUCTURE CHANGE — reorder or restructure the prompt instructions to change how the LLM prioritises tasks
+  D) EXAMPLES-DRIVEN — add 1-2 concrete examples of ideal vs bad extractions inline in the prompt
+  E) CONSTRAINT TIGHTENING — add hard rules and explicit penalties for missing fields or invented values
+
+Do NOT just make small wording tweaks — the current prompt has been refined many times already.
+Make a substantive change that represents a different approach.
+
+Rules:
+- Keep the EXACT same JSON output schema (field names and types must not change)
+- The prompt MUST contain {{text}} as the document placeholder
+- Return ONLY the new prompt text, no explanation"""
 
 REFINE_PROMPT_OUTPUT = """\
 You are a prompt engineer improving LLM briefing prompts for Oldfield Partners,
@@ -301,23 +311,29 @@ Outputs are scored on this rubric:
   actionability       (20%) — ends with an explicit add/hold/trim steer
   conciseness          (5%) — no waffle, no padding
 
-Rewrite the prompt to score higher. Rules:
-- Keep the EXACT same JSON output schema.
-- Instruct the LLM to always state exact figures with units for every claim.
-- Instruct the LLM to assess whether the investment thesis is intact, strengthened, or weakened.
-- Instruct the LLM to distinguish what management claims from what numbers show.
-- Instruct the LLM to end with an explicit add/hold/trim with one specific forward reason.
-- Remove any instruction that encourages hedging, padding, or balancing every point.
-- The prompt MUST contain {{text}} as a placeholder for document input.
-
 {feedback_section}
 
-CURRENT ACTIVE PROMPT ({variant_name}, generation {generation}):
+CURRENT ACTIVE PROMPT ({variant_name}, generation {generation}, score shown above):
 ---
 {prompt_text}
 ---
 
-Return ONLY the improved prompt text. No explanation, no markdown, no preamble."""
+Your task: produce a GENUINELY DIFFERENT prompt that will score higher.
+
+Pick ONE of these strategies (choose based on what the past experiment evidence suggests):
+  A) NUMBERS-FIRST — rewrite to force the LLM to lead every section with a specific figure
+  B) THESIS-ANCHORED — rewrite to make thesis assessment the structural spine of the whole output
+  C) SCEPTIC FRAME — rewrite from the perspective of a sceptical short-seller stress-testing the thesis
+  D) DECISION-FIRST — rewrite so the output starts with the add/hold/trim conclusion and then justifies it
+  E) MANAGEMENT ACCOUNTABILITY — rewrite to focus heavily on what management said vs what actually happened
+
+Do NOT just make small wording tweaks — the current prompt has been refined many times already.
+Make a substantive change that represents a different approach.
+
+Rules:
+- Keep the EXACT same JSON output schema (field names and types must not change)
+- The prompt MUST contain {{text}} as the document placeholder
+- Return ONLY the new prompt text, no explanation"""
 
 # ─────────────────────────────────────────────────────────────────
 # Shared state
@@ -1135,7 +1151,17 @@ async def run_pipeline_loop(
         while time.time() < deadline and not _state[pipeline]["stop_requested"]:
             round_num += 1
             remaining_h = (deadline - time.time()) / 3600
-            _log(pipeline, "info", f"─── Round {round_num} ───", f"{remaining_h:.1f}h remaining")
+
+            # Cost guard — stop if estimated spend exceeds cap
+            estimated_spend = _state[pipeline]["experiments_run"] * COST_PER_EXPERIMENT
+            if estimated_spend >= MAX_COST_USD:
+                _log(pipeline, "warning",
+                     f"Cost cap reached — stopping (est. ${estimated_spend:.2f} ≥ ${MAX_COST_USD})",
+                     "Increase MAX_COST_USD in autorun.py to run longer")
+                break
+
+            _log(pipeline, "info", f"─── Round {round_num} ───",
+                 f"{remaining_h:.1f}h remaining | est. spend ${estimated_spend:.2f}")
 
             for pt in prompt_types:
                 if _state[pipeline]["stop_requested"] or time.time() >= deadline:
