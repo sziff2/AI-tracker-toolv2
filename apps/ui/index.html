@@ -429,57 +429,6 @@ let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
-
-// ── Feedback-annotated card (with 👍/👎 buttons) ──────────────
-function fbCard(cls,title,content,ticker,period,section,promptType){
-  const id='fb-'+section.replace(/[^a-z0-9]/gi,'-');
-  return '<div class="cd '+cls+'" style="position:relative">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-    +'<div class="cd-t" style="margin:0">'+esc(title)+'</div>'
-    +'<div style="display:flex;gap:4px;align-items:center" id="'+id+'-bar">'
-    +'<button onclick="fbSave(\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',\'good\',this)" '
-    +'style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:13px;cursor:pointer;color:var(--text4);transition:all .15s" '
-    +'title="Good output">👍</button>'
-    +'<button onclick="fbSave(\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',\'bad\',this)" '
-    +'style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:13px;cursor:pointer;color:var(--text4);transition:all .15s" '
-    +'title="Poor output">👎</button>'
-    +'</div></div>'
-    +'<div class="cd-c">'+content+'</div>'
-    +'<div id="'+id+'-comment" style="display:none;margin-top:8px">'
-    +'<input class="fi" placeholder="Optional comment (press Enter to save)…" style="font-size:12px;padding:6px 10px" '
-    +'onkeydown="if(event.key===\'Enter\')fbSaveComment(\''+id+'\',\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',this.value)">'
-    +'</div>'
-    +'</div>';
-}
-
-async function fbSave(ticker,period,section,promptType,tag,btn){
-  // Visual feedback immediately
-  const bar=btn.parentElement;
-  bar.querySelectorAll('button').forEach(b=>{b.style.opacity='0.4';b.style.borderColor='var(--border)';});
-  btn.style.opacity='1';
-  btn.style.borderColor=tag==='good'?'var(--green)':'var(--red)';
-  btn.style.background=tag==='good'?'rgba(74,222,128,.1)':'rgba(239,83,80,.1)';
-
-  // Show comment box on thumbs down
-  const commentId='fb-'+section.replace(/[^a-z0-9]/gi,'-')+'-comment';
-  const commentEl=E(commentId);
-  if(tag==='bad'&&commentEl)commentEl.style.display='block';
-
-  try{
-    const content=btn.closest('.cd')?.querySelector('.cd-c')?.textContent?.slice(0,500)||'';
-    await fetch('/api/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticker,period_label:period,section,tag,source_snippet:content,prompt_type:promptType,author:'analyst'})});
-  }catch(e){console.warn('Feedback save failed',e);}
-}
-
-async function fbSaveComment(id,ticker,period,section,promptType,comment){
-  if(!comment.trim())return;
-  try{
-    await fetch('/api/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ticker,period_label:period,section,tag:'comment',comment,prompt_type:promptType,author:'analyst'})});
-    const el=E(id+'-comment');if(el){el.innerHTML='<div style="font-family:var(--sans);font-size:11px;color:var(--green);padding:4px 0">✓ Comment saved</div>';}
-  }catch(e){console.warn('Comment save failed',e);}
-}
 function enc(t){return encodeURIComponent(t);}
 function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
@@ -765,24 +714,7 @@ function renderCkResults(ticker,d){
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
     const analysis=abp[p];
-    if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;
-      const fb=(cls,title,content,section,pt)=>fbCard(cls,title,content,ticker,p,section,pt);
-      if(c.synthesis){const s=c.synthesis;
-        if(s.headline)h+=fb('gold','Headline',esc(s.headline),'synthesis:headline','synthesis');
-        if(s.what_happened)h+=fb('','What Happened',esc(s.what_happened),'synthesis:what_happened','synthesis');
-        if(s.management_message)h+=fb('','Management Message',esc(s.management_message),'synthesis:management_message','synthesis');
-        if(s.what_the_street_thinks)h+=fb('','Street View',esc(s.what_the_street_thinks),'synthesis:street_view','synthesis');
-        if(s.thesis_impact)h+=fb('','Thesis Impact',esc(s.thesis_impact),'synthesis:thesis_impact','synthesis');
-        if(s.key_debates)h+=fb('','Key Debates',esc(s.key_debates),'synthesis:key_debates','synthesis');
-        if(s.bottom_line)h+=fb('gold','Bottom Line',esc(s.bottom_line),'synthesis:bottom_line','synthesis');
-      }else if(c.briefing){const b=c.briefing;
-        if(b.what_happened)h+=fb('','What Happened',esc(b.what_happened),'briefing:what_happened','briefing');
-        if(b.what_changed)h+=fb('','What Changed',esc(b.what_changed),'briefing:what_changed','briefing');
-        if(b.bottom_line)h+=fb('gold','Bottom Line',esc(b.bottom_line),'briefing:bottom_line','briefing');
-      }
-      if(c.surprises?.length)h+=fb('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'),'surprise:all','surprise');
-      if(c.ir_questions?.length)h+=fb('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'),'ir_questions:all','ir_questions');
-    }
+    if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));}
     else if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';}
     h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2><div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
   });
@@ -1591,20 +1523,100 @@ async function loadLab(){
 function renderLab(variants,experiments,stats){
   const c=E('lab-content');let h='';
   h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Variants</div><div class="ck-stat-val">'+variants.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Experiments</div><div class="ck-stat-val">'+experiments.length+'</div></div><div class="ck-stat"><div class="ck-stat-label">Auto-promote at</div><div class="ck-stat-val">'+stats.auto_promote_threshold+' wins</div></div></div>';
-  const byType={};variants.forEach(v=>{if(!byType[v.prompt_type])byType[v.prompt_type]=[];byType[v.prompt_type].push(v);});
+
+  // Group by type, sort each group newest-first (by generation desc)
+  const byType={};
+  variants.forEach(v=>{if(!byType[v.prompt_type])byType[v.prompt_type]=[];byType[v.prompt_type].push(v);});
+  Object.keys(byType).forEach(t=>{byType[t].sort((a,b)=>b.generation-a.generation);});
+
   Object.keys(byType).sort().forEach(type=>{
-    h+='<h2>'+esc(type)+'</h2>';
-    byType[type].forEach(v=>{const wr=v.win_rate;const wrCls=wr>=60?'up':wr<=40&&v.total_runs>2?'down':'neutral';
-      h+='<div class="cd" style="border-left-color:'+(v.is_active?'var(--gold)':'var(--border)')+'"><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+(v.is_active?'var(--gold)':'var(--text)')+'">'+esc(v.variant_name)+'</span>'+(v.is_active?' <span style="font-size:10px;color:var(--gold);background:var(--bg3);padding:2px 8px;border-radius:4px">ACTIVE</span>':'')+' <span style="font-size:11px;color:var(--text4)">gen '+v.generation+'</span></div><div style="display:flex;gap:12px;font-family:var(--sans);font-size:12px"><span style="color:var(--green)">W:'+v.win_count+'</span><span style="color:var(--red)">L:'+v.loss_count+'</span><span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span><span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>'+(v.is_active?'':'<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>')+'</div></div><div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px;border-radius:6px;max-height:60px;overflow:hidden">'+esc(v.prompt_preview)+'</div>'+(v.notes?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>':'')+'</div>';
-    });
-    h+='<div style="display:flex;gap:8px;margin:8px 0 24px"><button class="btn2" onclick="refineType(\''+type+'\')">✨ LLM Refine</button><button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button></div>';
+    const all=byType[type];
+    const visible=all.slice(0,3);
+    const hidden=all.slice(3);
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;margin-bottom:8px">';
+    h+='<h2 style="margin:0">'+esc(type)+'</h2>';
+    h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+all.length+' variants</span>';
+    if(hidden.length)h+='<button class="btn2" style="font-size:11px;padding:4px 10px" onclick="labToggleAll(\'lab-hidden-'+type.replace(/_/g,'-')+'\')" id="lab-toggle-'+type.replace(/_/g,'-')+'">Show all '+all.length+'</button>';
+    h+='</div></div>';
+
+    // Render visible (last 3 including active)
+    // Always show the active one even if it's not in top 3
+    const activeInTop=visible.some(v=>v.is_active);
+    let toShow=[...visible];
+    if(!activeInTop){const activeV=all.find(v=>v.is_active);if(activeV)toShow=[activeV,...visible.slice(0,2)];}
+    toShow.forEach(v=>{ h+=labVariantCard(v,type); });
+
+    // Hidden variants (collapsed by default)
+    if(hidden.length){
+      h+='<div id="lab-hidden-'+type.replace(/_/g,'-')+'" style="display:none">';
+      hidden.forEach(v=>{h+=labVariantCard(v,type);});
+      h+='</div>';
+    }
+    h+='<div style="display:flex;gap:8px;margin:8px 0 4px"><button class="btn2" onclick="refineType(\''+type+'\')">✨ LLM Refine</button><button class="btn2" onclick="newVariant(\''+type+'\')">+ Manual Variant</button></div>';
   });
+
   h+='<h2 style="margin-top:32px">Run A/B Experiment</h2>';
   h+='<div class="form-row"><select class="fi" id="lab-type" style="max-width:200px">';Object.keys(byType).sort().forEach(t=>{h+='<option value="'+t+'">'+t+'</option>';});h+='</select><input class="fi" id="lab-ticker" placeholder="Ticker" style="max-width:140px"><input class="fi" id="lab-period" placeholder="Period" style="max-width:120px"></div>';
   h+='<div style="margin-top:8px"><div class="fl">Test Input</div><textarea class="fi" id="lab-input" style="min-height:100px" placeholder="Paste document text…"></textarea></div>';
   h+='<button class="btn" style="margin-top:12px" onclick="runExperiment()">Run Experiment</button><div id="lab-result" style="margin-top:16px"></div>';
   if(experiments.length){h+='<h2 style="margin-top:32px">Recent Experiments</h2>';experiments.slice(0,10).forEach(exp=>{const wClr=exp.winner==='a'?'var(--gold)':exp.winner==='b'?'var(--green)':'var(--text4)';h+='<div class="dl-item"><div style="display:flex;justify-content:space-between"><span style="font-family:var(--sans);font-size:12px;color:var(--text3)">'+esc(exp.prompt_type)+(exp.period_label?' · '+esc(exp.period_label):'')+'</span><span style="font-family:var(--sans);font-size:12px;color:'+wClr+'">Winner: '+(exp.winner||'pending')+'</span></div>'+(exp.feedback?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(exp.feedback)+'</div>':'')+'</div>';});}
+
+  // Prompt viewer modal
+  h+='<div id="lab-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;padding:40px 20px;overflow-y:auto" onclick="if(event.target===this)E(\'lab-prompt-modal\').style.display=\'none\'">'
+    +'<div style="max-width:800px;margin:0 auto;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
+    +'<span id="lab-modal-title" style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--gold)"></span>'
+    +'<button class="btn2" onclick="E(\'lab-prompt-modal\').style.display=\'none\'" style="padding:4px 12px">✕ Close</button></div>'
+    +'<pre id="lab-modal-text" style="font-family:var(--mono);font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.7;background:var(--bg);padding:16px;border-radius:8px;border:1px solid var(--border);max-height:65vh;overflow-y:auto"></pre>'
+    +'</div></div>';
+
   c.innerHTML=h;
+}
+
+function labVariantCard(v, type){
+  const wr=v.win_rate;const wrCls=wr>=60?'up':wr<=40&&v.total_runs>2?'down':'neutral';
+  const preview=(v.prompt_preview||'').slice(0,120)+(( v.prompt_preview?.length||0)>120?'…':'');
+  return '<div class="cd" style="border-left-color:'+(v.is_active?'var(--gold)':'var(--border)')+';">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center">'
+    +'<div><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:'+(v.is_active?'var(--gold)':'var(--text)')+'">'+esc(v.variant_name)+'</span>'
+    +(v.is_active?' <span style="font-size:10px;color:var(--gold);background:var(--bg3);padding:2px 8px;border-radius:4px">ACTIVE</span>':'')
+    +' <span style="font-size:11px;color:var(--text4)">gen '+v.generation+'</span></div>'
+    +'<div style="display:flex;gap:12px;font-family:var(--sans);font-size:12px;align-items:center">'
+    +'<span style="color:var(--green)">W:'+v.win_count+'</span>'
+    +'<span style="color:var(--red)">L:'+v.loss_count+'</span>'
+    +'<span class="ck-stat-val '+wrCls+'" style="font-size:12px">'+wr+'%</span>'
+    +'<span style="color:var(--text4)">avg '+v.avg_rating.toFixed(1)+'/5</span>'
+    +(v.is_active?'':'<button class="btn-sm" onclick="activateVariant(\''+v.id+'\')">Promote</button>')
+    +'</div></div>'
+    +'<div style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-top:8px;background:var(--bg);padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" '
+    +'onclick="labShowPrompt(\''+esc(v.variant_name)+'\',\''+v.id+'\')">'
+    +'<span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+esc(preview)+'</span>'
+    +'<span style="flex-shrink:0;margin-left:10px;font-size:10px;color:var(--gold);font-family:var(--sans)">View full ▸</span>'
+    +'</div>'
+    +(v.notes?'<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:4px">'+esc(v.notes)+'</div>':'')
+    +'</div>';
+}
+
+async function labShowPrompt(name, variantId){
+  E('lab-modal-title').textContent=name+' — loading…';
+  E('lab-modal-text').textContent='';
+  E('lab-prompt-modal').style.display='block';
+  try{
+    const r=await fetch('/api/v1/experiments/variants/'+variantId);
+    const d=await r.json();
+    E('lab-modal-title').textContent=name;
+    E('lab-modal-text').textContent=d.prompt_text||'(no prompt text)';
+  }catch(e){
+    E('lab-modal-text').textContent='Failed to load: '+e.message;
+  }
+}
+
+function labToggleAll(id){
+  const el=E(id);if(!el)return;
+  const hidden=el.style.display==='none';
+  el.style.display=hidden?'block':'none';
+  const btn=E('lab-toggle-'+id.replace('lab-hidden-',''));
+  if(btn)btn.textContent=hidden?'Show fewer':'Show all';
 }
 
 async function activateVariant(id){if(!confirm('Promote as active default?'))return;try{await fetch('/api/v1/experiments/variants/'+id+'/activate',{method:'POST'});loadLab();}catch(e){alert(e.message);}}
