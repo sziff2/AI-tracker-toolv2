@@ -642,8 +642,14 @@ function renderCkThesis(d){
   h+='</select></div>';
   h+='</div></div>';
 
+  // Regenerate button
+  h+='<div style="display:flex;justify-content:flex-end;margin-top:12px">';
+  h+='<button class="btn2" style="font-size:12px;padding:6px 14px;display:flex;align-items:center;gap:6px" onclick="regenThesisColumns(\''+ticker+'\')" id="regen-thesis-btn-'+ticker+'">';
+  h+='<span id="regen-thesis-ico-'+ticker+'">✦</span> Regenerate with latest analysis';
+  h+='</button></div>';
+
   // Three-column structured thesis section
-  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">';
   // What Would Make Us Wrong
   h+='<div class="cd" style="border-left-color:var(--red);margin:0"><div class="cd-t" style="color:var(--red)">What Would Make Us Wrong?</div>';
   h+='<textarea class="fi" style="font-size:12px;min-height:200px;border:none;background:transparent;padding:0;color:var(--text2)" placeholder="The specific observations or outcomes that would invalidate the thesis…" onchange="saveThesisField(\''+ticker+'\',\'what_would_make_us_wrong\',this.value)">'+esc(t.what_would_make_us_wrong||'')+'</textarea></div>';
@@ -710,6 +716,109 @@ function renderCkThesis(d){
     }
   }
   return h;
+}
+
+
+async function regenThesisColumns(ticker){
+  const btn = E('regen-thesis-btn-'+ticker);
+  const ico = E('regen-thesis-ico-'+ticker);
+  if(btn) btn.disabled = true;
+  if(ico) ico.textContent = '⏳';
+
+  try {
+    // Fetch latest company data (thesis + most recent analysis)
+    const r = await fetch('/api/v1/companies/'+enc(ticker)+'/analysis');
+    if(!r.ok) throw new Error('Could not load company data');
+    const d = await r.json();
+
+    const thesis = d.thesis || {};
+    const abp = d.analyses_by_period || {};
+    const periods = Object.keys(abp).sort().reverse();
+    const latestPeriod = periods[0] || '';
+    const latestContent = latestPeriod ? (abp[latestPeriod]?.content || {}) : {};
+    const synthesis = latestContent.synthesis || latestContent.briefing || {};
+    const thesisComp = latestContent.thesis_comparison || {};
+    const surprises = latestContent.surprises || {};
+
+    // Build context string for the LLM
+    const ctx = [
+      thesis.core_thesis ? 'INVESTMENT THESIS:
+' + thesis.core_thesis : '',
+      latestPeriod ? 'LATEST PERIOD: ' + latestPeriod : '',
+      synthesis.headline ? 'HEADLINE: ' + synthesis.headline : '',
+      synthesis.what_happened ? 'WHAT HAPPENED:
+' + synthesis.what_happened : '',
+      synthesis.thesis_impact ? 'THESIS IMPACT:
+' + synthesis.thesis_impact : '',
+      synthesis.bottom_line ? 'BOTTOM LINE:
+' + synthesis.bottom_line : '',
+      thesisComp.summary ? 'THESIS COMPARISON:
+' + thesisComp.summary : '',
+      thesisComp.weakening_signals?.length ? 'WEAKENING SIGNALS:
+' + thesisComp.weakening_signals.join('; ') : '',
+      thesisComp.supporting_signals?.length ? 'SUPPORTING SIGNALS:
+' + thesisComp.supporting_signals.join('; ') : '',
+      thesisComp.new_risks?.length ? 'NEW RISKS:
+' + thesisComp.new_risks.join('; ') : '',
+      surprises.positive?.length ? 'POSITIVE SURPRISES:
+' + surprises.positive.join('; ') : '',
+      surprises.negative?.length ? 'NEGATIVE SURPRISES:
+' + surprises.negative.join('; ') : '',
+    ].filter(Boolean).join('
+
+');
+
+    if(!ctx.trim()) throw new Error('No analysis data available to regenerate from. Run an analysis first.');
+
+    // Call Claude API
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: 
+        }]
+      })
+    });
+
+    if(!resp.ok) throw new Error('API call failed: ' + resp.status);
+    const apiData = await resp.json();
+    let text = apiData.content?.[0]?.text || '';
+    // Strip markdown fences if present
+    text = text.replace(/^$/,'').trim();
+    const result = JSON.parse(text);
+
+    // Save each field to the server and update textareas
+    const fields = [
+      ['what_would_make_us_wrong', result.what_would_make_us_wrong],
+      ['disconfirming_evidence', result.disconfirming_evidence],
+      ['positive_surprises', result.positive_surprises],
+      ['negative_surprises', result.negative_surprises],
+      ['key_risks', result.key_risks],
+      ['catalyst', result.catalyst],
+    ];
+
+    for(const [field, value] of fields){
+      if(value){
+        await saveThesisField(ticker, field, value);
+        // Update visible textareas
+        document.querySelectorAll('textarea[onchange*="' + field + '"]').forEach(ta => {
+          ta.value = value;
+        });
+      }
+    }
+
+    if(ico) ico.textContent = '✓';
+    setTimeout(() => { if(ico) ico.textContent = '✦'; if(btn) btn.disabled = false; }, 2000);
+
+  } catch(e) {
+    alert('Regeneration failed: ' + e.message);
+    if(ico) ico.textContent = '✦';
+    if(btn) btn.disabled = false;
+  }
 }
 
 async function saveThesisField(ticker,field,value){
