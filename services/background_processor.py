@@ -288,6 +288,12 @@ async def run_batch_pipeline(
                             doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
                             full_text = parse_result.get("full_text", "")
                             tables_data = parse_result.get("tables_data")
+                            logger.info("Parsed doc %s: %d chars", did, len(full_text))
+
+                            # Warn if text is suspiciously short
+                            if len(full_text) < 500:
+                                logger.warning("Document %s has very short text (%d chars) - may be parsing issue",
+                                               did, len(full_text))
                         except Exception as e:
                             doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
                             return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
@@ -307,12 +313,20 @@ async def run_batch_pipeline(
                                     "governance": extraction.get("governance", [])[:15],
                                     "fields_populated": extraction.get("esg_fields_populated", {}),
                                 }
+                                logger.info("Extracted ESG from %s: %d items (dtype=%s)", did, len(items), dtype)
                             else:
                                 extraction = await extract_by_document_type(doc_db, doc, full_text, tables_data=tables_data)
                                 items = extraction.get("raw_items", [])
                                 doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                                logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
+
+                            # Warn if extraction returned no items
+                            if not items:
+                                logger.warning("No items extracted from %s (%s) - text was %d chars",
+                                               doc.title, dtype, len(full_text))
                         except Exception as e:
                             doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
+                            logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
 
                         return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title}
                 except Exception as e:
@@ -361,6 +375,18 @@ async def run_batch_pipeline(
                     output["per_document_extractions"][title] = {
                         "type": dtype, "items_count": len(items), "sample": items[:3],
                     }
+
+            # Log aggregation totals for debugging
+            logger.info("Aggregated: earnings=%d, transcript=%d, broker=%d, presentation=%d",
+                        len(earnings_data), len(transcript_data), len(broker_data), len(presentation_data))
+
+            # Include extraction stats in output for UI visibility
+            output["extraction_stats"] = {
+                "earnings_items": len(earnings_data),
+                "transcript_items": len(transcript_data),
+                "broker_items": len(broker_data),
+                "presentation_items": len(presentation_data),
+            }
 
             if not last_doc_id:
                 await _update_job(job_id, status="failed", error_message="No documents processed successfully")
