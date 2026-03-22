@@ -270,6 +270,17 @@ OUTPUT_RUBRIC_WEIGHTS = {
     # hallucination_check is a cap, not a weighted dimension
 }
 
+# Per-type weight overrides — thesis_comparison is an assessment, not a trade recommendation
+OUTPUT_RUBRIC_WEIGHTS_BY_TYPE = {
+    "thesis_comparison": {
+        "specificity":         0.30,
+        "thesis_linkage":      0.30,
+        "management_scrutiny": 0.25,
+        "actionability":       0.05,  # not expected to end with add/hold/trim
+        "conciseness":         0.10,
+    },
+}
+
 REFINE_PROMPT_EXTRACTION = """\
 You are a prompt engineer improving LLM extraction prompts for a value-oriented buy-side fund.
 
@@ -647,9 +658,10 @@ def _extraction_breakdown(schema: dict, recall: dict, halluc: dict) -> str:
 # OUTPUT EVALS
 # ─────────────────────────────────────────────────────────────────
 
-def _compute_output_rubric_score(rubric: dict) -> float:
+def _compute_output_rubric_score(rubric: dict, prompt_type: str = "") -> float:
+    weights = OUTPUT_RUBRIC_WEIGHTS_BY_TYPE.get(prompt_type, OUTPUT_RUBRIC_WEIGHTS)
     total = 0.0
-    for dim, weight in OUTPUT_RUBRIC_WEIGHTS.items():
+    for dim, weight in weights.items():
         dim_data = rubric.get(dim, {})
         score = float(dim_data.get("score", 5)) if isinstance(dim_data, dict) else 5.0
         total += score * weight
@@ -671,7 +683,7 @@ def _output_breakdown(rubric: dict, halluc_count: int) -> str:
 
 
 async def _eval_output(
-    doc_text: str, output_text: str, thesis: str
+    doc_text: str, output_text: str, thesis: str, prompt_type: str = ""
 ) -> dict:
     """Run hallucination check + Oldfield rubric in parallel."""
     source_snippet = doc_text[:8000]
@@ -700,7 +712,7 @@ async def _eval_output(
     if isinstance(rubric_result, Exception):
         rubric_result = {d: {"score": 5, "reason": "eval failed"} for d in OUTPUT_RUBRIC_WEIGHTS}
 
-    rubric_score = _compute_output_rubric_score(rubric_result)
+    rubric_score = _compute_output_rubric_score(rubric_result, prompt_type)
     halluc_count = int(halluc_result.get("count", 0))
     hallucinations_found = halluc_result.get("hallucinations_found", False) and halluc_count > 0
 
@@ -800,6 +812,32 @@ async def _refine_variant(
                 _log(pipeline, "info", f"{prompt_type}: injecting {len(analyst_fb)} analyst feedback items into refine")
     except Exception as e:
         _log(pipeline, "warning", f"{prompt_type}: could not load analyst feedback", str(e)[:80])
+
+    # Inject current scores so the refiner knows which dimension is the weakness
+    if experiments and pipeline == "output":
+        # Parse the most recent experiment's breakdown to identify weak dimensions
+        latest = experiments[0]
+        fb_text = latest.analyst_feedback or ""
+        # Extract scores like "spec=8 thes=9 mgmt=9 act=7 conc=6"
+        score_match = re.search(r"A=[\d.]+\s*\[([^\]]+)\]", fb_text)
+        if score_match:
+            scores_str = score_match.group(1)
+            dim_scores = {}
+            dim_names = {"spec": "specificity", "thes": "thesis_linkage",
+                         "mgmt": "management_scrutiny", "act": "actionability", "conc": "conciseness"}
+            for part in scores_str.split():
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    try:
+                        dim_scores[k] = float(v)
+                    except ValueError:
+                        pass
+            if dim_scores:
+                # Find the weakest dimension
+                weakest = min(dim_scores.items(), key=lambda x: x[1])
+                weakest_name = dim_names.get(weakest[0], weakest[0])
+                feedback_section += f"\n\nCURRENT ACTIVE VARIANT SCORES: {scores_str}"
+                feedback_section += f"\n⚠️ WEAKEST DIMENSION: {weakest_name}={weakest[1]:.0f}/10 — FOCUS YOUR CHANGES HERE"
 
     template = REFINE_PROMPT_EXTRACTION if pipeline == "extraction" else REFINE_PROMPT_OUTPUT
     refine_prompt = template.format(
@@ -1134,8 +1172,8 @@ async def _run_output_experiment(
 
         _step("output", f"{prompt_type}: evaluating (rubric + halluc)")
         eval_a, eval_b = await asyncio.gather(
-            _eval_output(doc_text, raw_a, thesis),
-            _eval_output(doc_text, raw_b, thesis),
+            _eval_output(doc_text, raw_a, thesis, prompt_type),
+            _eval_output(doc_text, raw_b, thesis, prompt_type),
         )
 
         _log("output", "info", f"{prompt_type}: eval done",
