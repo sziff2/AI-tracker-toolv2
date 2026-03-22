@@ -154,13 +154,32 @@ async def call_llm_json_async(prompt: str, **kwargs) -> Any:
     return await loop.run_in_executor(_executor, lambda: call_llm_json(prompt, **kwargs))
 
 
-async def call_llm_json_parallel(prompts: list[str], **kwargs) -> list[Any]:
-    """Run multiple LLM calls in parallel and return results in order."""
-    tasks = [call_llm_json_async(p, **kwargs) for p in prompts]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 2, timeout_seconds: int = 60, **kwargs) -> list[Any]:
+    """Run multiple LLM calls with limited concurrency and timeout per call."""
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def limited_call(prompt: str, index: int) -> tuple[int, Any]:
+        async with semaphore:
+            try:
+                result = await asyncio.wait_for(
+                    call_llm_json_async(prompt, **kwargs),
+                    timeout=timeout_seconds
+                )
+                return (index, result)
+            except asyncio.TimeoutError:
+                logger.warning("LLM call %d timed out after %ds", index + 1, timeout_seconds)
+                return (index, TimeoutError(f"LLM call timed out after {timeout_seconds}s"))
+            except Exception as e:
+                return (index, e)
+
+    tasks = [limited_call(p, i) for i, p in enumerate(prompts)]
+    results_tuples = await asyncio.gather(*tasks)
+
+    # Sort by index and extract results
+    results_tuples.sort(key=lambda x: x[0])
     out = []
     failed_indices = []
-    for i, r in enumerate(results):
+    for i, r in results_tuples:
         if isinstance(r, Exception):
             logger.warning("Parallel LLM call %d/%d failed: %s", i + 1, len(prompts), r)
             usage_tracker.record_failure()
