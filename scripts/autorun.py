@@ -58,8 +58,8 @@ logger = logging.getLogger("autorun")
 # Config
 # ─────────────────────────────────────────────────────────────────
 MIN_IMPROVEMENT      = 0.3    # score delta to trigger promotion
-SLEEP_BETWEEN_TYPES  = 60     # seconds between prompt types in a round
-SLEEP_BETWEEN_ROUNDS = 300    # seconds (5 min) between full sweeps
+SLEEP_BETWEEN_TYPES  = 5      # seconds between prompt types (rate-limit buffer)
+SLEEP_BETWEEN_ROUNDS = 30     # seconds between full sweeps
 MAX_TOKENS_REFINE    = 4096
 MAX_TOKENS_RUN       = 4096
 MAX_TOKENS_HALLUC    = 1024
@@ -1244,14 +1244,22 @@ async def run_pipeline_loop(
             _log(pipeline, "info", f"─── Round {round_num} ───",
                  f"{remaining_h:.1f}h remaining | est. spend ${estimated_spend:.2f}")
 
-            for pt in prompt_types:
+            # Run prompt types in parallel (up to 3 concurrent to respect rate limits)
+            async def run_one(pt):
                 if _state[pipeline]["stop_requested"] or time.time() >= deadline:
-                    break
-                _state[pipeline]["current_type"] = pt
+                    return pt, "skipped"
                 result = await run_fn(pt, dry_run=dry_run)
-                sym = {"promoted": "→", "rejected": "↔", "skipped": "—", "error": "✗"}.get(result, "?")
-                _log(pipeline, "info", f"{sym} {pt}: {result.upper()}")
-                await asyncio.sleep(SLEEP_BETWEEN_TYPES)
+                return pt, result
+
+            # Process in batches of 3 to avoid rate limits
+            for i in range(0, len(prompt_types), 3):
+                batch = prompt_types[i:i+3]
+                results = await asyncio.gather(*[run_one(pt) for pt in batch])
+                for pt, result in results:
+                    sym = {"promoted": "→", "rejected": "↔", "skipped": "—", "error": "✗"}.get(result, "?")
+                    _log(pipeline, "info", f"{sym} {pt}: {result.upper()}")
+                if i + 3 < len(prompt_types):
+                    await asyncio.sleep(SLEEP_BETWEEN_TYPES)
 
             _state[pipeline]["current_type"] = None
             _state[pipeline]["current_step"] = None
