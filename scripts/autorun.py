@@ -76,6 +76,7 @@ EXTRACTION_PROMPT_TYPES = [
     "extraction_transcript",
     "extraction_broker",
     "extraction_presentation",
+    "extraction_annual_report",
 ]
 
 OUTPUT_PROMPT_TYPES = [
@@ -87,31 +88,32 @@ OUTPUT_PROMPT_TYPES = [
 ]
 
 DOC_TYPE_MAP = {
-    "extraction_combined":     ["earnings_release", "transcript", "annual_report"],
-    "extraction_earnings":     ["earnings_release"],
-    "extraction_transcript":   ["transcript"],
-    "extraction_broker":       ["broker_note"],
-    "extraction_presentation": ["presentation"],
-    "synthesis":               ["earnings_release", "transcript"],
-    "briefing":                ["earnings_release", "transcript"],
-    "ir_questions":            ["earnings_release", "transcript", "presentation"],
-    "surprise":                ["earnings_release", "transcript"],
-    "thesis_comparison":       ["earnings_release", "transcript"],
+    "extraction_combined":      ["earnings_release", "transcript", "annual_report"],
+    "extraction_earnings":      ["earnings_release"],
+    "extraction_transcript":    ["transcript"],
+    "extraction_broker":        ["broker_note"],
+    "extraction_presentation":  ["presentation"],
+    "extraction_annual_report": ["annual_report", "10-K"],
+    "synthesis":                ["earnings_release", "transcript"],
+    "briefing":                 ["earnings_release", "transcript"],
+    "ir_questions":             ["earnings_release", "transcript", "presentation"],
+    "surprise":                 ["earnings_release", "transcript"],
+    "thesis_comparison":        ["earnings_release", "transcript"],
 }
 
 # Required fields per prompt type — matches actual prompt output schemas
 # Each entry: (name_field, value_fields, required_fields)
 EXTRACTION_SCHEMA_BY_TYPE = {
-    # earnings / combined: metric_name + metric_value or metric_text
-    "extraction_earnings":     ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
-    "extraction_combined":     ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
+    # earnings / combined / annual report: metric_name + metric_value or metric_text
+    "extraction_earnings":      ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
+    "extraction_combined":      ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
+    "extraction_annual_report": ("metric_name",    ["metric_value", "metric_text"], ["source_snippet", "confidence"]),
     # transcript: items have category (guidance/tone/qa_exchange) + source_snippet
-    "extraction_transcript":   ("category",       ["guidance_text", "description", "key_insight", "metric_name"], ["source_snippet", "confidence"]),
-    # broker: the v1_default prompt returns a flat summary object (company_name, analyst_rating etc.)
-    # Use None for name_field to skip that check, just require source_snippet
-    "extraction_broker":       (None,              ["description", "analyst_rating", "metric_or_topic", "current_value"], ["source_snippet"]),
+    "extraction_transcript":    ("category",       ["guidance_text", "description", "key_insight", "metric_name"], ["source_snippet", "confidence"]),
+    # broker: the v1_default prompt returns a flat summary object
+    "extraction_broker":        (None,             ["description", "analyst_rating", "metric_or_topic", "current_value"], ["source_snippet"]),
     # presentation: metric_or_topic + source_snippet
-    "extraction_presentation": ("metric_or_topic", ["value", "description"],        ["source_snippet", "confidence"]),
+    "extraction_presentation":  ("metric_or_topic", ["value", "description"],       ["source_snippet", "confidence"]),
 }
 # Fallback for unknown types
 EXTRACTION_REQUIRED_FIELDS = {

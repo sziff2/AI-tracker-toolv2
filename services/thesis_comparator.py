@@ -308,7 +308,17 @@ async def compare_thesis(
     # Build thesis risks text
     thesis_risks = thesis.key_risks or "No specific risks documented."
 
-    prompt = THESIS_COMPARATOR_V2.format(
+    # Use DB-active prompt variant if available
+    thesis_template = THESIS_COMPARATOR_V2
+    try:
+        from services.prompt_registry import get_active_prompt
+        from apps.api.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db2:
+            thesis_template = await get_active_prompt(db2, "thesis_comparison", THESIS_COMPARATOR_V2)
+    except Exception:
+        pass  # keep hardcoded prompt if registry fails
+
+    prompt = thesis_template.format(
         thesis=thesis.core_thesis,
         thesis_risks=thesis_risks,
         tracked_kpis=tracked_kpis_text or "No tracked KPIs set up.",

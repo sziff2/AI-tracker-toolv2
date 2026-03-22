@@ -376,11 +376,13 @@ async def run_batch_pipeline(
                 from services.llm_client import call_llm_json
                 from prompts import SYNTHESIS_BRIEFING
                 from services.context_builder import build_thesis_context, build_prior_period_context
+                from services.prompt_registry import get_active_prompt
 
                 # Get structured context instead of raw dumps
                 async with AsyncSessionLocal() as db_ctx:
                     thesis_ctx = await build_thesis_context(db_ctx, company_id)
                     prior_ctx = await build_prior_period_context(db_ctx, company_id, period_label)
+                    synthesis_template = await get_active_prompt(db_ctx, "synthesis", SYNTHESIS_BRIEFING)
 
                 # Cap raw extraction data — compress to key facts, not full JSON
                 def _compress_items(items_list, label, max_items=20):
@@ -405,7 +407,7 @@ async def run_batch_pipeline(
                         raw = "\n".join(items_list)[:3000]
                         return raw
 
-                synthesis_prompt = SYNTHESIS_BRIEFING.format(
+                synthesis_prompt = synthesis_template.format(
                     company=company.name if company else ticker,
                     ticker=ticker,
                     period=period_label,

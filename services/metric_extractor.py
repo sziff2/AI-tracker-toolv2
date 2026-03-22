@@ -116,10 +116,37 @@ async def extract_by_document_type(
 ) -> dict:
     """
     Run type-specific extraction with PARALLEL chunk processing.
-    If tables_data is provided, runs table-first extraction and merges results.
+    Uses DB-active prompt variant if available, falls back to hardcoded prompts.
     """
+    from services.prompt_registry import get_active_prompt
+
     doc_type = document.document_type or "other"
-    prompt_template = DOCTYPE_PROMPTS.get(doc_type, COMBINED_EXTRACTOR)
+
+    # Map doc_type to AutoResearch prompt_type name, then look up active variant
+    DOCTYPE_TO_PROMPT_TYPE = {
+        "earnings_release": "extraction_earnings",
+        "10-Q":             "extraction_earnings",
+        "10-K":             "extraction_annual_report",
+        "annual_report":    "extraction_annual_report",
+        "transcript":       "extraction_transcript",
+        "broker_note":      "extraction_broker",
+        "presentation":     "extraction_presentation",
+    }
+    DOCTYPE_FALLBACKS = {
+        "earnings_release": EARNINGS_RELEASE_EXTRACTOR,
+        "10-Q":             EARNINGS_RELEASE_EXTRACTOR,
+        "10-K":             ANNUAL_REPORT_EXTRACTOR,
+        "annual_report":    ANNUAL_REPORT_EXTRACTOR,
+        "transcript":       TRANSCRIPT_EXTRACTOR,
+        "broker_note":      BROKER_NOTE_EXTRACTOR,
+        "presentation":     PRESENTATION_EXTRACTOR,
+    }
+    prompt_type = DOCTYPE_TO_PROMPT_TYPE.get(doc_type)
+    fallback = DOCTYPE_FALLBACKS.get(doc_type, COMBINED_EXTRACTOR)
+    if prompt_type:
+        prompt_template = await get_active_prompt(db, prompt_type, fallback)
+    else:
+        prompt_template = COMBINED_EXTRACTOR
 
     # ── Pre-filter: remove boilerplate BEFORE chunking ────────
     # Removes exhibits, legal boilerplate, signatures, disclaimers
@@ -235,15 +262,18 @@ async def extract_by_document_type(
 async def extract_combined(db: AsyncSession, document: Document, text: str) -> dict:
     """
     Single-pass extraction: KPIs and guidance together.
-    Chunks processed in parallel. Returns split results.
+    Uses DB-active prompt variant if available.
     """
+    from services.prompt_registry import get_active_prompt
+    combined_template = await get_active_prompt(db, "extraction_combined", COMBINED_EXTRACTOR)
+
     chunks = _smart_chunk(text)
     logger.info("Combined extraction: %d chunks from %d chars", len(chunks), len(text))
 
     if not chunks:
         return {"metrics": [], "guidance": []}
 
-    prompts = [COMBINED_EXTRACTOR.format(text=chunk) for chunk in chunks]
+    prompts = [combined_template.format(text=chunk) for chunk in chunks]
     results = await call_llm_json_parallel(prompts, max_tokens=8192)
 
     all_items = []

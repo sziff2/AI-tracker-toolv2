@@ -429,6 +429,51 @@ let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
+
+// ── Feedback-annotated card (👍/👎 on briefing outputs) ────────
+function fbCard(cls,title,content,ticker,period,section,promptType){
+  const id='fb-'+section.replace(/[^a-z0-9]/gi,'-');
+  return '<div class="cd '+cls+'" style="position:relative">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    +'<div class="cd-t" style="margin:0">'+esc(title)+'</div>'
+    +'<div style="display:flex;gap:4px;align-items:center" id="'+id+'-bar">'
+    +'<button onclick="fbSave(\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',\'good\',this)" '
+    +'style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:13px;cursor:pointer;color:var(--text4)" '
+    +'title="Good output">👍</button>'
+    +'<button onclick="fbSave(\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',\'bad\',this)" '
+    +'style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:13px;cursor:pointer;color:var(--text4)" '
+    +'title="Poor output">👎</button>'
+    +'</div></div>'
+    +'<div class="cd-c">'+content+'</div>'
+    +'<div id="'+id+'-comment" style="display:none;margin-top:8px">'
+    +'<input class="fi" placeholder="Optional comment (press Enter to save)…" style="font-size:12px;padding:6px 10px" '
+    +'onkeydown="if(event.key===\'Enter\')fbSaveComment(\''+id+'\',\''+esc(ticker)+'\',\''+esc(period)+'\',\''+esc(section)+'\',\''+esc(promptType)+'\',this.value)">'
+    +'</div>'
+    +'</div>';
+}
+async function fbSave(ticker,period,section,promptType,tag,btn){
+  const bar=btn.parentElement;
+  bar.querySelectorAll('button').forEach(b=>{b.style.opacity='0.4';b.style.borderColor='var(--border)';b.style.background='none';});
+  btn.style.opacity='1';
+  btn.style.borderColor=tag==='good'?'var(--green)':'var(--red)';
+  btn.style.background=tag==='good'?'rgba(74,222,128,.1)':'rgba(239,83,80,.1)';
+  const commentId='fb-'+section.replace(/[^a-z0-9]/gi,'-')+'-comment';
+  const commentEl=E(commentId);
+  if(tag==='bad'&&commentEl)commentEl.style.display='block';
+  try{
+    const content=btn.closest('.cd')?.querySelector('.cd-c')?.textContent?.slice(0,500)||'';
+    await fetch('/api/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ticker,period_label:period,section,tag,source_snippet:content,prompt_type:promptType,author:'analyst'})});
+  }catch(e){console.warn('Feedback save failed',e);}
+}
+async function fbSaveComment(id,ticker,period,section,promptType,comment){
+  if(!comment.trim())return;
+  try{
+    await fetch('/api/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ticker,period_label:period,section,tag:'comment',comment,prompt_type:promptType,author:'analyst'})});
+    const el=E(id+'-comment');if(el){el.innerHTML='<div style="font-family:var(--sans);font-size:11px;color:var(--green);padding:4px 0">✓ Comment saved</div>';}
+  }catch(e){console.warn('Comment save failed',e);}
+}
 function enc(t){return encodeURIComponent(t);}
 function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
@@ -714,7 +759,24 @@ function renderCkResults(ticker,d){
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
     const analysis=abp[p];
-    if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;if(c.synthesis){const s=c.synthesis;if(s.headline)h+=card('gold','Headline',esc(s.headline));if(s.what_happened)h+=card('','What Happened',esc(s.what_happened));if(s.management_message)h+=card('','Management Message',esc(s.management_message));if(s.what_the_street_thinks)h+=card('','Street View',esc(s.what_the_street_thinks));if(s.thesis_impact)h+=card('','Thesis Impact',esc(s.thesis_impact));if(s.key_debates)h+=card('','Key Debates',esc(s.key_debates));if(s.bottom_line)h+=card('gold','Bottom Line',esc(s.bottom_line));}else if(c.briefing){const b=c.briefing;if(b.what_happened)h+=card('','What Happened',esc(b.what_happened));if(b.what_changed)h+=card('','What Changed',esc(b.what_changed));if(b.bottom_line)h+=card('gold','Bottom Line',esc(b.bottom_line));}if(c.surprises?.length)h+=card('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'));if(c.ir_questions?.length)h+=card('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'));}
+    if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;
+      const fb=(cls,title,content,section,pt)=>fbCard(cls,title,content,ticker,p,section,pt);
+      if(c.synthesis){const s=c.synthesis;
+        if(s.headline)h+=fb('gold','Headline',esc(s.headline),'synthesis:headline','synthesis');
+        if(s.what_happened)h+=fb('','What Happened',esc(s.what_happened),'synthesis:what_happened','synthesis');
+        if(s.management_message)h+=fb('','Management Message',esc(s.management_message),'synthesis:management_message','synthesis');
+        if(s.what_the_street_thinks)h+=fb('','Street View',esc(s.what_the_street_thinks),'synthesis:street_view','synthesis');
+        if(s.thesis_impact)h+=fb('','Thesis Impact',esc(s.thesis_impact),'synthesis:thesis_impact','synthesis');
+        if(s.key_debates)h+=fb('','Key Debates',esc(s.key_debates),'synthesis:key_debates','synthesis');
+        if(s.bottom_line)h+=fb('gold','Bottom Line',esc(s.bottom_line),'synthesis:bottom_line','synthesis');
+      }else if(c.briefing){const b=c.briefing;
+        if(b.what_happened)h+=fb('','What Happened',esc(b.what_happened),'briefing:what_happened','briefing');
+        if(b.what_changed)h+=fb('','What Changed',esc(b.what_changed),'briefing:what_changed','briefing');
+        if(b.bottom_line)h+=fb('gold','Bottom Line',esc(b.bottom_line),'briefing:bottom_line','briefing');
+      }
+      if(c.surprises?.length)h+=fb('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'),'surprise:all','surprise');
+      if(c.ir_questions?.length)h+=fb('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'),'ir_questions:all','ir_questions');
+    }
     else if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';}
     h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2><div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
   });
@@ -2838,7 +2900,7 @@ setInterval(function(){
 // AUTORUN
 // ══════════════════════════════════════════════════════════════════
 const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'40%',colour:'var(--gold)',how:'No LLM — pure string matching',description:'Checks whether the new prompt recovers the same verbatim source_snippets already stored in ExtractedMetric rows. Word-overlap matching: a snippet counts as recovered if ≥60% of its words appear in an extracted item\'s source_snippet.',why:'source_snippet is ground truth — a verbatim quote validated when first extracted. High recall means the prompt is finding the right evidence.'},{id:'schema_compliance',name:'Schema Compliance',weight:'30%',colour:'var(--green)',how:'No LLM — Python field validation',description:'Checks every extracted item has required fields (metric_name, source_snippet, confidence) populated and correctly typed, plus at least one of metric_value or metric_text.',why:'Downstream services break silently when fields are missing. Reliable structure is more valuable than occasional perfect data.'},{id:'hallucination_rate',name:'Hallucination Rate',weight:'30%',colour:'var(--red)',how:'LLM judge — 1 call per variant',description:'For each numeric metric_value, checks whether that number appears in the source document. Hard cap: >20% hallucination rate drops score to 0.',why:'An extraction prompt that invents numbers is worse than one that finds fewer metrics.'}],output:[{id:'specificity',name:'Specificity',weight:'25%',colour:'var(--gold)',how:'LLM judge with anchored examples',description:'Every factual claim should cite a precise number with units. Score 10 = all claims specific. Score 0 = entirely vague.',why:'Vague language is useless for an analyst.'},{id:'thesis_linkage',name:'Thesis Linkage',weight:'20%',colour:'var(--gold)',how:'LLM judge — actual company thesis injected from DB',description:'Does the bottom line state whether the investment thesis is intact, strengthened, or weakened? The judge receives the real stored thesis.',why:'Facts serve the investment case.'},{id:'management_scrutiny',name:'Management Scrutiny',weight:'20%',colour:'var(--amber)',how:'LLM judge with anchored examples',description:'Does the output distinguish what management claims from what the numbers show?',why:'Buy-side analysts are paid to be sceptical.'},{id:'actionability',name:'Actionability',weight:'20%',colour:'var(--green)',how:'LLM judge with anchored examples',description:'Does the output end with a clear steer? Score 10 = explicit add/hold/trim with a specific forward reason.',why:'The output should drive a decision.'},{id:'hallucination_check',name:'Hallucination Check',weight:'10%',colour:'var(--red)',how:'LLM judge — hard cap if triggered',description:'Any number or assertion not supported by the source? If hallucinations found, overall score capped at 4.0.',why:'A single invented figure destroys trust.'},{id:'conciseness',name:'Conciseness',weight:'5%',colour:'var(--text3)',how:'LLM judge',description:'Every sentence should earn its place. Tiebreaker — low weight by design.',why:'Senior analysts read fast.'}]};
-const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
+const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'},{id:'extraction_annual_report',label:'Annual Report / 10-K',doc:'annual_report, 10-K'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
 let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
 function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
 function arSetMode(mode){_arMode=mode;['extraction','output','log'].forEach(m=>{const el=E('ar-mode-'+m);if(el)el.style.display=m===mode?'block':'none';const tab=E('ar-tab-'+m);if(tab)tab.classList.toggle('on',m===mode);});if(mode==='log')arRefreshStatus();}

@@ -90,6 +90,19 @@ async def detect_surprises(
         expectations=_build_expectations_text(guidance_metrics),
         actuals=_build_actuals_text(actual_metrics),
     )
+
+    # Use DB-active prompt variant if available
+    try:
+        from services.prompt_registry import get_active_prompt
+        from apps.api.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db2:
+            surprise_template = await get_active_prompt(db2, "surprise", SURPRISE_DETECTOR)
+        prompt = surprise_template.format(
+            expectations=_build_expectations_text(guidance_metrics),
+            actuals=_build_actuals_text(actual_metrics),
+        )
+    except Exception:
+        pass  # keep hardcoded prompt if registry fails
     raw = call_llm_json(prompt)
     if not isinstance(raw, list):
         raw = [raw]

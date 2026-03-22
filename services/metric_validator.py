@@ -201,7 +201,17 @@ async def cross_verify_metrics(items: list[dict], source_text: str, max_items: i
     # Truncate source text to fit in context
     truncated_source = source_text[:12000]
 
-    prompt = CROSS_CHECK_PROMPT.format(
+    # Use DB-active prompt variant if available
+    check_template = CROSS_CHECK_PROMPT
+    try:
+        from services.prompt_registry import get_active_prompt
+        from apps.api.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db_reg:
+            check_template = await get_active_prompt(db_reg, "metric_validation", CROSS_CHECK_PROMPT)
+    except Exception:
+        pass
+
+    prompt = check_template.format(
         metrics_to_check=metrics_text,
         source_text=truncated_source,
     )

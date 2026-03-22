@@ -41,12 +41,13 @@ async def generate_briefing(
     db: AsyncSession, company_id: uuid.UUID, period_label: str
 ) -> BriefingSection:
     from services.context_builder import build_briefing_context
+    from services.prompt_registry import get_active_prompt
 
     company = await _company_by_id(db, company_id)
     ctx = await build_briefing_context(db, company_id, period_label)
+    briefing_template = await get_active_prompt(db, "briefing", ONE_PAGE_BRIEFING)
 
-    # Build focused prompt with structured context
-    prompt = ONE_PAGE_BRIEFING.format(
+    prompt = briefing_template.format(
         company=company.name,
         ticker=company.ticker,
         period=period_label,
@@ -112,12 +113,13 @@ async def generate_ir_questions(
     db: AsyncSession, company_id: uuid.UUID, period_label: str
 ) -> list[IRQuestion]:
     from services.context_builder import build_briefing_context
+    from services.prompt_registry import get_active_prompt
 
     company = await _company_by_id(db, company_id)
     ctx = await build_briefing_context(db, company_id, period_label)
+    ir_template = await get_active_prompt(db, "ir_questions", IR_QUESTION_GENERATOR)
 
-    # IR questions need: key metrics, thesis, and guidance — not the full dump
-    prompt = IR_QUESTION_GENERATOR.format(
+    prompt = ir_template.format(
         company=company.name,
         period=period_label,
         findings=f"Key metrics:\n{ctx['kpis']}\n\nGuidance:\n{ctx['guidance']}",
