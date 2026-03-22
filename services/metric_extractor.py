@@ -208,7 +208,8 @@ async def extract_by_document_type(
             logger.warning("Table-first extraction failed: %s", str(e)[:100])
 
     # Build all prompts and run in parallel
-    prompts = [prompt_template.format(text=chunk) for chunk in chunks]
+    # Escape curly braces in text to prevent format() errors from document content
+    prompts = [prompt_template.format(text=chunk.replace("{", "{{").replace("}", "}}")) for chunk in chunks]
     logger.info("Running %d LLM extraction calls for doc %s", len(prompts), document.id)
     results = await call_llm_json_parallel(prompts, max_tokens=8192)
 
@@ -287,7 +288,7 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
     if not chunks:
         return {"metrics": [], "guidance": []}
 
-    prompts = [combined_template.format(text=chunk) for chunk in chunks]
+    prompts = [combined_template.format(text=chunk.replace("{", "{{").replace("}", "}}")) for chunk in chunks]
     results = await call_llm_json_parallel(prompts, max_tokens=8192)
 
     all_items = []
@@ -448,9 +449,11 @@ async def extract_esg(db: AsyncSession, document: Document, text: str) -> dict:
     full_text = "\n\n".join(chunks[:3])  # First 3 chunks for ESG (proxy docs are long)
 
     # Run all three in parallel
-    env_prompt = ESG_ENVIRONMENTAL_EXTRACTOR.format(text=full_text)
-    soc_prompt = ESG_SOCIAL_EXTRACTOR.format(text=full_text)
-    gov_prompt = ESG_GOVERNANCE_EXTRACTOR.format(text=full_text)
+    # Escape curly braces to prevent format() errors from document content
+    safe_text = full_text.replace("{", "{{").replace("}", "}}")
+    env_prompt = ESG_ENVIRONMENTAL_EXTRACTOR.format(text=safe_text)
+    soc_prompt = ESG_SOCIAL_EXTRACTOR.format(text=safe_text)
+    gov_prompt = ESG_GOVERNANCE_EXTRACTOR.format(text=safe_text)
 
     results = await asyncio.gather(
         call_llm_json_async(env_prompt, max_tokens=4096),
