@@ -84,17 +84,59 @@ def _repair_truncated_json(raw: str) -> Any:
     return json.loads(candidate)
 
 
-def _parse_json(raw: str) -> Any:
+def _clean_json_string(raw: str) -> str:
+    """Clean up common LLM JSON formatting issues."""
+    import re
     cleaned = raw
+
+    # Remove markdown code fences
     if cleaned.startswith("```"):
-        cleaned = cleaned.split("\n", 1)[1]
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
     if cleaned.endswith("```"):
         cleaned = cleaned.rsplit("```", 1)[0]
+
+    # Strip leading/trailing whitespace
     cleaned = cleaned.strip()
+
+    # Fix common issues: control characters inside strings that break JSON
+    # Replace literal newlines/tabs inside JSON string values with escaped versions
+    # This regex finds strings and normalizes control chars within them
+    def escape_control_chars_in_string(match):
+        s = match.group(0)
+        # Replace actual control chars with escaped versions
+        s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        return s
+
+    # Process strings (anything between quotes, handling escaped quotes)
+    # This is a simplified approach - fix obvious issues
+    cleaned = re.sub(r'(?<!\\)"[^"]*(?<!\\)"', escape_control_chars_in_string, cleaned)
+
+    # Remove trailing commas before ] or } (common LLM mistake)
+    cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
+
+    # Fix missing quotes around field names (rare but happens)
+    # e.g., {field: "value"} -> {"field": "value"}
+    cleaned = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', cleaned)
+    cleaned = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', cleaned)
+
+    return cleaned
+
+
+def _parse_json(raw: str) -> Any:
+    # First attempt: direct parse
+    try:
+        return json.loads(raw.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Second attempt: clean common issues
+    cleaned = _clean_json_string(raw)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
+
+    # Third attempt: repair truncated JSON
     try:
         result = _repair_truncated_json(cleaned)
         logger.warning("Repaired truncated JSON (%d chars)", len(cleaned))
