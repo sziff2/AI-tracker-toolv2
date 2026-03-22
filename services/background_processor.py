@@ -347,6 +347,7 @@ async def run_batch_pipeline(
             # Aggregate results
             for i, res in enumerate(results):
                 if res is None:
+                    logger.warning("Result %d is None - document processing failed completely", i)
                     continue
                 last_doc_id = res["doc_id"]
                 output["documents_processed"].append(res["result"])
@@ -356,6 +357,9 @@ async def run_batch_pipeline(
                 dtype = res["dtype"]
                 title = res.get("title", f"doc_{i}")
 
+                logger.info("Aggregating doc %d: title=%s, dtype=%s, items=%d",
+                            i, title[:50] if title else "?", dtype, len(items) if items else 0)
+
                 if res.get("esg"):
                     output["esg_extraction"] = res["esg"]
 
@@ -363,18 +367,27 @@ async def run_batch_pipeline(
                     items_summary = json.dumps(items[:30], indent=2, default=str)
                     if dtype in ("earnings_release", "10-Q", "10-K", "annual_report"):
                         earnings_data.append(items_summary)
+                        logger.info("  -> Added %d items to earnings_data", len(items))
                     elif dtype == "transcript":
                         transcript_data.append(items_summary)
+                        logger.info("  -> Added %d items to transcript_data", len(items))
                     elif dtype == "broker_note":
                         broker_data.append(items_summary)
+                        logger.info("  -> Added %d items to broker_data", len(items))
                     elif dtype == "presentation":
                         presentation_data.append(items_summary)
+                        logger.info("  -> Added %d items to presentation_data", len(items))
                     elif dtype not in ("sustainability_report", "proxy_statement"):
                         earnings_data.append(items_summary)
+                        logger.info("  -> Added %d items to earnings_data (fallback dtype=%s)", len(items), dtype)
+                    else:
+                        logger.info("  -> Skipped aggregation for dtype=%s", dtype)
 
                     output["per_document_extractions"][title] = {
                         "type": dtype, "items_count": len(items), "sample": items[:3],
                     }
+                else:
+                    logger.warning("  -> No items to aggregate for doc %s (dtype=%s)", title[:30] if title else "?", dtype)
 
             # Log aggregation totals for debugging
             logger.info("Aggregated: earnings=%d, transcript=%d, broker=%d, presentation=%d",

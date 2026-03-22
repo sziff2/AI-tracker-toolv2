@@ -160,7 +160,9 @@ async def extract_by_document_type(
             from services.document_filter import filter_document, get_high_value_text
             # Use stored parsed pages if available (set by document_parser)
             # Otherwise fall back to splitting raw text into 3000-char pseudo-pages
-            if hasattr(document, '_parsed_pages') and document._parsed_pages:
+            has_parsed_pages = hasattr(document, '_parsed_pages') and document._parsed_pages
+            logger.info("Pre-filter setup: has_parsed_pages=%s, text_len=%d", has_parsed_pages, len(text))
+            if has_parsed_pages:
                 pages = document._parsed_pages
             else:
                 page_size = 3000
@@ -169,8 +171,13 @@ async def extract_by_document_type(
             filter_result = filter_document(pages, doc_type)
             logger.info("Pre-filter [%s]: %s", doc_type, filter_result.summary())
             filtered_text = get_high_value_text(filter_result, max_chars=200_000)
+            logger.info("Pre-filter result: %d chars filtered_text (original %d chars)",
+                        len(filtered_text) if filtered_text else 0, len(text))
             if filtered_text and len(filtered_text) > 500:
                 text = filtered_text
+            else:
+                logger.warning("Pre-filter returned insufficient text (%d chars), using original",
+                               len(filtered_text) if filtered_text else 0)
         except Exception as e:
             logger.warning("Pre-filter failed, using raw text: %s", str(e)[:150])
 
@@ -202,14 +209,21 @@ async def extract_by_document_type(
 
     # Build all prompts and run in parallel
     prompts = [prompt_template.format(text=chunk) for chunk in chunks]
+    logger.info("Running %d LLM extraction calls for doc %s", len(prompts), document.id)
     results = await call_llm_json_parallel(prompts, max_tokens=8192)
 
     all_items = []
-    for result in results:
+    for i, result in enumerate(results):
         if isinstance(result, list):
             all_items.extend(result)
+            logger.debug("Chunk %d returned %d items (list)", i, len(result))
         elif isinstance(result, dict):
             all_items.append(result)
+            logger.debug("Chunk %d returned 1 item (dict)", i)
+        else:
+            logger.warning("Chunk %d returned unexpected type: %s", i, type(result).__name__)
+
+    logger.info("LLM extraction total: %d raw items from %d chunks", len(all_items), len(chunks))
 
     # Merge table-first items with text extraction items
     if table_items:
