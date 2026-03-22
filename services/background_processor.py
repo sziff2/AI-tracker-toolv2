@@ -501,6 +501,11 @@ async def run_batch_pipeline(
                             else:
                                 logger.warning("No metrics found in DB either for %s/%s", ticker, period_label)
 
+                        # ── BROKER FALLBACK: if earnings_data is empty but broker_data has items, use broker as fallback ──
+                        if not earnings_data and broker_data:
+                            logger.info("Using broker_data as fallback for earnings_data in synthesis")
+                            earnings_data.extend(broker_data)
+
                     format_args = {
                         "company": company.name if company else ticker,
                         "ticker": ticker,
