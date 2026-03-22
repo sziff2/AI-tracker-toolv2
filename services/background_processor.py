@@ -334,8 +334,9 @@ async def run_batch_pipeline(
                     return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
 
             # Run documents with limited concurrency to avoid OOM on small Railway plans
+            # 2 docs × 3 LLM calls = 6 max simultaneous requests — safe without crashing
             import asyncio
-            semaphore = asyncio.Semaphore(1)
+            semaphore = asyncio.Semaphore(2)
 
             async def _limited_process(did, dtype, idx):
                 async with semaphore:

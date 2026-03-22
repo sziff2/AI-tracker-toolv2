@@ -115,10 +115,6 @@ def _clean_json_string(raw: str) -> str:
 
 
 def _parse_json(raw: str) -> Any:
-    # ── DIAGNOSTIC: log the raw response before any processing ──
-    # This will show exactly what the LLM returned, with all whitespace/control
-    # chars visible as escape sequences (e.g. \n, \t). Remove once issue is diagnosed.
-    logger.warning("RAW_LLM_RESPONSE (%d chars): %r", len(raw), raw[:3000])
 
     # First attempt: direct parse
     try:
@@ -154,7 +150,7 @@ async def call_llm_json_async(prompt: str, **kwargs) -> Any:
     return await loop.run_in_executor(_executor, lambda: call_llm_json(prompt, **kwargs))
 
 
-async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 2, timeout_seconds: int = 60, **kwargs) -> list[Any]:
+async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 3, timeout_seconds: int = 60, **kwargs) -> list[Any]:
     """Run multiple LLM calls with limited concurrency and timeout per call."""
     semaphore = asyncio.Semaphore(max_concurrency)
 
