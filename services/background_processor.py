@@ -333,9 +333,9 @@ async def run_batch_pipeline(
                     doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})
                     return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
 
-            # Run all documents in parallel (max 4 concurrent to respect API limits)
+            # Run documents with limited concurrency to avoid OOM on small Railway plans
             import asyncio
-            semaphore = asyncio.Semaphore(4)
+            semaphore = asyncio.Semaphore(1)
 
             async def _limited_process(did, dtype, idx):
                 async with semaphore:

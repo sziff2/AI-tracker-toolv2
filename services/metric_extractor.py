@@ -211,7 +211,7 @@ async def extract_by_document_type(
     # Escape curly braces in text to prevent format() errors from document content
     prompts = [prompt_template.format(text=chunk.replace("{", "{{").replace("}", "}}")) for chunk in chunks]
     logger.info("Running %d LLM extraction calls for doc %s", len(prompts), document.id)
-    results = await call_llm_json_parallel(prompts, max_tokens=8192)
+    results = await call_llm_json_parallel(prompts, max_tokens=4096)
 
     all_items = []
     for i, result in enumerate(results):
@@ -289,7 +289,7 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
         return {"metrics": [], "guidance": []}
 
     prompts = [combined_template.format(text=chunk.replace("{", "{{").replace("}", "}}")) for chunk in chunks]
-    results = await call_llm_json_parallel(prompts, max_tokens=8192)
+    results = await call_llm_json_parallel(prompts, max_tokens=4096)
 
     all_items = []
     for result in results:
@@ -458,7 +458,7 @@ async def extract_esg(db: AsyncSession, document: Document, text: str) -> dict:
     results = await asyncio.gather(
         call_llm_json_async(env_prompt, max_tokens=4096),
         call_llm_json_async(soc_prompt, max_tokens=4096),
-        call_llm_json_async(gov_prompt, max_tokens=8192),  # Governance gets more tokens
+        call_llm_json_async(gov_prompt, max_tokens=4096),  # Governance gets more tokens
         return_exceptions=True,
     )
 
