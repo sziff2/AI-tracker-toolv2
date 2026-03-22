@@ -211,9 +211,13 @@ async def cross_verify_metrics(items: list[dict], source_text: str, max_items: i
     except Exception:
         pass
 
+    # Escape curly braces in dynamic content to prevent format() errors
+    # (source text from Bloomberg transcripts contains {BIO XXXXXXX <GO>} tags)
+    safe_metrics_text = metrics_text.replace("{", "{{").replace("}", "}}")
+    safe_source = truncated_source.replace("{", "{{").replace("}", "}}")
     prompt = check_template.format(
-        metrics_to_check=metrics_text,
-        source_text=truncated_source,
+        metrics_to_check=safe_metrics_text,
+        source_text=safe_source,
     )
 
     try:
