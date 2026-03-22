@@ -406,10 +406,12 @@ async def extract_from_tables(
                 continue
 
             table_text = format_table_for_llm(table, page)
+            # Escape curly braces in table_text to prevent format() errors
+            safe_table_text = table_text.replace("{", "{{").replace("}", "}}")
             prompt = TABLE_TO_SCHEMA_PROMPT.format(
                 company=company_name, ticker=ticker,
                 document_title=document_title, page_number=page,
-                table_data=table_text,
+                table_data=safe_table_text,
             )
 
             try:

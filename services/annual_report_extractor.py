@@ -184,12 +184,14 @@ async def extract_annual_report(
             logger.warning("Table-first failed: %s", str(e)[:100])
 
     # ── Step 4: Build prompts and run in parallel ──────────────
+    # Escape curly braces in text to prevent format() errors from document content
     prompts = []
     for chunk_text, priority in selected:
+        safe_chunk = chunk_text.replace("{", "{{").replace("}", "}}")
         if priority == 'high':
-            prompts.append(ANNUAL_REPORT_EXTRACTOR.format(text=chunk_text))
+            prompts.append(ANNUAL_REPORT_EXTRACTOR.format(text=safe_chunk))
         else:
-            prompts.append(COMBINED_EXTRACTOR.format(text=chunk_text))
+            prompts.append(COMBINED_EXTRACTOR.format(text=safe_chunk))
 
     results = await call_llm_json_parallel(prompts, max_tokens=4096)  # 4k not 8k — faster
 
