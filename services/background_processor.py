@@ -407,22 +407,29 @@ async def run_batch_pipeline(
                         raw = "\n".join(items_list)[:3000]
                         return raw
 
-                synthesis_prompt = synthesis_template.format(
-                    company=company.name if company else ticker,
-                    ticker=ticker,
-                    period=period_label,
-                    thesis=thesis_ctx,
-                    earnings_data=_compress_items(earnings_data, "earnings"),
-                    transcript_data=_compress_items(transcript_data, "transcript"),
-                    broker_data=_compress_items(broker_data, "broker"),
-                    presentation_data=_compress_items(presentation_data, "presentation"),
-                    thesis_comparison=json.dumps(output.get("thesis_comparison"), default=str)[:1000] if output.get("thesis_comparison") else "Not available.",
-                    surprises=json.dumps(output.get("surprises"), default=str)[:1000] if output.get("surprises") else "None detected.",
-                )
+                format_args = {
+                    "company": company.name if company else ticker,
+                    "ticker": ticker,
+                    "period": period_label,
+                    "thesis": thesis_ctx,
+                    "earnings_data": _compress_items(earnings_data, "earnings"),
+                    "transcript_data": _compress_items(transcript_data, "transcript"),
+                    "broker_data": _compress_items(broker_data, "broker"),
+                    "presentation_data": _compress_items(presentation_data, "presentation"),
+                    "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:1000] if output.get("thesis_comparison") else "Not available.",
+                    "surprises": json.dumps(output.get("surprises"), default=str)[:1000] if output.get("surprises") else "None detected.",
+                    "text": _compress_items(earnings_data + transcript_data, "all"),  # fallback for {text} placeholder
+                }
+                try:
+                    synthesis_prompt = synthesis_template.format(**format_args)
+                except KeyError as ke:
+                    logger.warning("Synthesis prompt format failed (bad placeholder %s), falling back to default", ke)
+                    synthesis_prompt = SYNTHESIS_BRIEFING.format(**format_args)
                 synthesis = call_llm_json(synthesis_prompt, max_tokens=8192)
                 output["synthesis"] = synthesis
                 completed.append("synthesis")
             except Exception as e:
+                logger.error("Synthesis failed for %s/%s: %s", ticker, period_label, str(e)[:500])
                 output["synthesis"] = {"error": str(e)[:200]}
 
             # ── IR Questions ─────────────────────────────────
