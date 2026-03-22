@@ -318,16 +318,19 @@ async def compare_thesis(
     except Exception:
         pass  # keep hardcoded prompt if registry fails
 
-    prompt = thesis_template.format(
-        thesis=thesis.core_thesis,
-        thesis_risks=thesis_risks,
-        tracked_kpis=tracked_kpis_text or "No tracked KPIs set up.",
-        current_period=period_label,
-        current_metrics=_metrics_to_text(current_metrics),
-        document_summary=doc_summary[:2000] if doc_summary else "No document text available.",
-        prior_period=prior_period or "N/A",
-        prior_metrics=_metrics_to_text(prior_metrics),
-        prior_analysis=prior_analysis or "No prior analysis available.",
+    # Use .replace() instead of .format() to avoid KeyErrors from curly braces
+    # in thesis text, metrics, document summaries, or DB prompt templates
+    prompt = (
+        thesis_template
+        .replace("{thesis}", thesis.core_thesis)
+        .replace("{thesis_risks}", thesis_risks)
+        .replace("{tracked_kpis}", tracked_kpis_text or "No tracked KPIs set up.")
+        .replace("{current_period}", period_label)
+        .replace("{current_metrics}", _metrics_to_text(current_metrics))
+        .replace("{document_summary}", doc_summary[:2000] if doc_summary else "No document text available.")
+        .replace("{prior_period}", prior_period or "N/A")
+        .replace("{prior_metrics}", _metrics_to_text(prior_metrics))
+        .replace("{prior_analysis}", prior_analysis or "No prior analysis available.")
     )
 
     data = call_llm_json(prompt)
