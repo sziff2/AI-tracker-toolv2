@@ -26,6 +26,7 @@ from apps.api.routes import (
     execution_router,
     autorun_router,
 )
+from apps.api.routes.feedback import router as feedback_router
 from configs.settings import settings
 
 
@@ -40,6 +41,8 @@ async def lifespan(app: FastAPI):
         # IC Summary fields on thesis_versions
         for col in ["recommendation", "catalyst", "conviction", "what_would_make_us_wrong", "disconfirming_evidence", "positive_surprises", "negative_surprises"]:
             await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
+        # Ensure extraction_feedback table exists (created by Base.metadata.create_all above)
+        await conn.execute(sa_text("ALTER TABLE extraction_feedback ADD COLUMN IF NOT EXISTS output_content TEXT"))
     yield
     await async_engine.dispose()
 
@@ -73,6 +76,7 @@ app.include_router(esg_router, prefix=PREFIX)
 app.include_router(portfolio_router, prefix=PREFIX)
 app.include_router(execution_router, prefix=PREFIX)
 app.include_router(autorun_router, prefix=PREFIX)
+app.include_router(feedback_router, prefix=PREFIX)
 
 
 @app.get("/health")

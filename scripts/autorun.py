@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.database import AsyncSessionLocal
 from apps.api.models import (
     ABExperiment, Company, Document, ExtractedMetric,
-    PromptVariant, ThesisVersion,
+    PromptVariant, ThesisVersion, ExtractionFeedback,
 )
 from services.llm_client import call_llm, call_llm_json
 
@@ -757,6 +757,47 @@ async def _refine_variant(
         feedback_section = f"EVIDENCE FROM {len(experiments)} PAST EXPERIMENTS:\n" + "\n".join(lines)
     else:
         feedback_section = "No past experiments yet — use the eval criteria as your primary guide."
+
+    # Pull analyst inline feedback (thumbs up/down from the cockpit UI)
+    # Map prompt_type to the output section tags analysts would annotate
+    output_pt = prompt_type.replace("extraction_", "") if "extraction_" in prompt_type else prompt_type
+    try:
+        fb_q = await db.execute(
+            select(ExtractionFeedback).where(
+                ExtractionFeedback.prompt_type.in_([prompt_type, output_pt]),
+                ExtractionFeedback.tag.in_(["good", "bad", "comment"]),
+            )
+            .order_by(ExtractionFeedback.created_at.desc())
+            .limit(20)
+        )
+        analyst_fb = fb_q.scalars().all()
+
+        if analyst_fb:
+            good_examples = [f for f in analyst_fb if f.tag == "good"]
+            bad_examples  = [f for f in analyst_fb if f.tag == "bad"]
+            comments      = [f for f in analyst_fb if f.tag == "comment" and f.comment]
+
+            inline_lines = []
+            if good_examples:
+                inline_lines.append(f"\nANALYST-APPROVED OUTPUTS ({len(good_examples)} thumbs-up):")
+                for f in good_examples[:4]:
+                    snip = (f.source_snippet or "")[:200]
+                    inline_lines.append(f"  ✓ [{f.section}] {snip}")
+            if bad_examples:
+                inline_lines.append(f"\nANALYST-REJECTED OUTPUTS ({len(bad_examples)} thumbs-down):")
+                for f in bad_examples[:4]:
+                    snip = (f.source_snippet or "")[:200]
+                    inline_lines.append(f"  ✗ [{f.section}] {snip}")
+            if comments:
+                inline_lines.append(f"\nANALYST COMMENTS:")
+                for f in comments[:6]:
+                    inline_lines.append(f"  [{f.section}] {f.comment}")
+
+            if inline_lines:
+                feedback_section += "\n\nDIRECT ANALYST FEEDBACK FROM THE UI:\n" + "\n".join(inline_lines)
+                _log(pipeline, "info", f"{prompt_type}: injecting {len(analyst_fb)} analyst feedback items into refine")
+    except Exception as e:
+        _log(pipeline, "warning", f"{prompt_type}: could not load analyst feedback", str(e)[:80])
 
     template = REFINE_PROMPT_EXTRACTION if pipeline == "extraction" else REFINE_PROMPT_OUTPUT
     refine_prompt = template.format(
