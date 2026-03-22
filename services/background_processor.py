@@ -261,65 +261,91 @@ async def run_batch_pipeline(
             last_doc_id = None
             total_docs = len(doc_ids)
 
-            # ── Process each document ────────────────────────
-            for i, (did, dtype) in enumerate(zip(doc_ids, doc_types)):
-                pct = 5 + int((i / total_docs) * 50)
-                await _update_step(job_id, f"processing doc {i+1}/{total_docs}", pct, completed)
+            # ── Process documents in parallel ────────────────────────
+            await _update_step(job_id, f"processing {total_docs} documents", 10, completed)
 
-                doc_q = await db.execute(select(Document).where(Document.id == did))
-                doc = doc_q.scalar_one_or_none()
-                if not doc:
-                    continue
+            async def _process_one_doc(did, dtype, idx):
+                """Process a single document (parse + extract) with its own DB session."""
+                from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
+                from services.document_parser import process_document
 
-                doc_result = {"filename": doc.title, "document_type": dtype, "steps": []}
-                last_doc_id = did
+                doc_result = {"document_type": dtype, "steps": []}
+                items = []
+                esg_data = None
 
-                # Parse
                 try:
-                    from services.document_parser import process_document
-                    parse_result = await process_document(db, doc, ticker=ticker)
-                    doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
-                except Exception as e:
-                    doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
-                    output["documents_processed"].append(doc_result)
-                    continue
+                    async with AsyncSessionLocal() as doc_db:
+                        doc_q = await doc_db.execute(select(Document).where(Document.id == did))
+                        doc = doc_q.scalar_one_or_none()
+                        if not doc:
+                            return None
 
-                # Extract
-                try:
-                    from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
-                    text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
-                    tables_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "tables.json"
-                    pages = json.loads(text_path.read_text())
-                    full_text = "\n\n".join(p["text"] for p in pages)
+                        doc_result["filename"] = doc.title
 
-                    # Load tables for table-first extraction
-                    tables_data = None
-                    if tables_path.exists():
+                        # Parse - returns full_text directly now
                         try:
-                            tables_data = json.loads(tables_path.read_text())
-                        except Exception:
-                            pass
+                            parse_result = await process_document(doc_db, doc, ticker=ticker)
+                            doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
+                            full_text = parse_result.get("full_text", "")
+                            tables_data = parse_result.get("tables_data")
+                        except Exception as e:
+                            doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
+                            return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
 
-                    # Route ESG doc types to ESG-specific extraction
-                    if dtype in ESG_DOC_TYPES:
-                        extraction = await extract_esg(db, doc, full_text)
-                        items = extraction.get("raw_items", [])
-                        doc_result["steps"].append({"step": "extract_esg", "status": "ok",
-                            "env": len(extraction.get("environmental", [])),
-                            "soc": len(extraction.get("social", [])),
-                            "gov": len(extraction.get("governance", [])),
-                            "fields_populated": len(extraction.get("esg_fields_populated", {}))})
-                        output["esg_extraction"] = {
-                            "environmental": extraction.get("environmental", [])[:10],
-                            "social": extraction.get("social", [])[:10],
-                            "governance": extraction.get("governance", [])[:15],
-                            "fields_populated": extraction.get("esg_fields_populated", {}),
-                        }
-                    else:
-                        extraction = await extract_by_document_type(db, doc, full_text, tables_data=tables_data)
-                        items = extraction.get("raw_items", [])
-                        doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                        # Extract - use returned text directly
+                        try:
+                            if dtype in ESG_DOC_TYPES:
+                                extraction = await extract_esg(doc_db, doc, full_text)
+                                items = extraction.get("raw_items", [])
+                                doc_result["steps"].append({"step": "extract_esg", "status": "ok",
+                                    "env": len(extraction.get("environmental", [])),
+                                    "soc": len(extraction.get("social", [])),
+                                    "gov": len(extraction.get("governance", []))})
+                                esg_data = {
+                                    "environmental": extraction.get("environmental", [])[:10],
+                                    "social": extraction.get("social", [])[:10],
+                                    "governance": extraction.get("governance", [])[:15],
+                                    "fields_populated": extraction.get("esg_fields_populated", {}),
+                                }
+                            else:
+                                extraction = await extract_by_document_type(doc_db, doc, full_text, tables_data=tables_data)
+                                items = extraction.get("raw_items", [])
+                                doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                        except Exception as e:
+                            doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
 
+                        return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title}
+                except Exception as e:
+                    doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})
+                    return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
+
+            # Run all documents in parallel (max 4 concurrent to respect API limits)
+            import asyncio
+            semaphore = asyncio.Semaphore(4)
+
+            async def _limited_process(did, dtype, idx):
+                async with semaphore:
+                    return await _process_one_doc(did, dtype, idx)
+
+            tasks = [_limited_process(did, dtype, i) for i, (did, dtype) in enumerate(zip(doc_ids, doc_types))]
+            results = await asyncio.gather(*tasks)
+
+            # Aggregate results
+            for i, res in enumerate(results):
+                if res is None:
+                    continue
+                last_doc_id = res["doc_id"]
+                output["documents_processed"].append(res["result"])
+                completed.append(f"doc_{i+1}")
+
+                items = res["items"]
+                dtype = res["dtype"]
+                title = res.get("title", f"doc_{i}")
+
+                if res.get("esg"):
+                    output["esg_extraction"] = res["esg"]
+
+                if items:
                     items_summary = json.dumps(items[:30], indent=2, default=str)
                     if dtype in ("earnings_release", "10-Q", "10-K", "annual_report"):
                         earnings_data.append(items_summary)
@@ -329,19 +355,12 @@ async def run_batch_pipeline(
                         broker_data.append(items_summary)
                     elif dtype == "presentation":
                         presentation_data.append(items_summary)
-                    elif dtype in ESG_DOC_TYPES:
-                        pass  # ESG data goes to ESG tab, not synthesis
-                    else:
+                    elif dtype not in ("sustainability_report", "proxy_statement"):
                         earnings_data.append(items_summary)
 
-                    output["per_document_extractions"][doc.title or f"doc_{i}"] = {
+                    output["per_document_extractions"][title] = {
                         "type": dtype, "items_count": len(items), "sample": items[:3],
                     }
-                except Exception as e:
-                    doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
-
-                output["documents_processed"].append(doc_result)
-                completed.append(f"doc_{i+1}")
 
             if not last_doc_id:
                 await _update_job(job_id, status="failed", error_message="No documents processed successfully")

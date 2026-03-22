@@ -151,4 +151,6 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
         "pages": len(pages),
         "tables_found": sum(len(t.get("tables", [])) for t in tables),
         "classification": classification.model_dump(),
+        "full_text": full_text,  # Return directly for parallel processing
+        "tables_data": tables,
     }
