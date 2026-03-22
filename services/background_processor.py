@@ -478,6 +478,29 @@ async def run_batch_pipeline(
                         thesis_ctx = await build_thesis_context(db_ctx, company_id)
                         synthesis_template = await get_active_prompt(db_ctx, "synthesis", SYNTHESIS_BRIEFING)
 
+                        # ── DB FALLBACK: if in-memory accumulators are empty, pull from DB ──
+                        if not any([earnings_data, transcript_data, broker_data, presentation_data]):
+                            logger.warning("All extraction accumulators empty - falling back to DB metrics")
+                            from sqlalchemy import select as sa_select
+                            from apps.api.models import ExtractedMetric
+                            db_metrics_q = await db_ctx.execute(
+                                sa_select(ExtractedMetric).where(
+                                    ExtractedMetric.company_id == company_id,
+                                    ExtractedMetric.period_label == period_label,
+                                ).order_by(ExtractedMetric.confidence.desc()).limit(60)
+                            )
+                            db_metrics = db_metrics_q.scalars().all()
+                            if db_metrics:
+                                logger.info("Found %d metrics in DB for fallback", len(db_metrics))
+                                lines = []
+                                for m in db_metrics:
+                                    val = f"{m.metric_value} {m.unit}" if m.metric_value else m.metric_text
+                                    lines.append({"metric_name": m.metric_name, "metric_value": val, "segment": m.segment})
+                                fallback_summary = json.dumps(lines)
+                                earnings_data.append(fallback_summary)
+                            else:
+                                logger.warning("No metrics found in DB either for %s/%s", ticker, period_label)
+
                     format_args = {
                         "company": company.name if company else ticker,
                         "ticker": ticker,
