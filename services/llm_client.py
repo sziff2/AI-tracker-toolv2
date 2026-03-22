@@ -115,6 +115,11 @@ def _clean_json_string(raw: str) -> str:
 
 
 def _parse_json(raw: str) -> Any:
+    # ── DIAGNOSTIC: log the raw response before any processing ──
+    # This will show exactly what the LLM returned, with all whitespace/control
+    # chars visible as escape sequences (e.g. \n, \t). Remove once issue is diagnosed.
+    logger.warning("RAW_LLM_RESPONSE (%d chars): %r", len(raw), raw[:3000])
+
     # First attempt: direct parse
     try:
         return json.loads(raw.strip())
