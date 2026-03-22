@@ -47,7 +47,7 @@ async def build_thesis_context(db: AsyncSession, company_id) -> str:
 
 
 async def build_kpi_summary(
-    db: AsyncSession, company_id, period: str, *, max_metrics: int = 25
+    db: AsyncSession, company_id, period: str, *, max_metrics: int = 50
 ) -> str:
     """
     Build a compressed KPI summary — structured key-value facts.

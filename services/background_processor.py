@@ -384,8 +384,8 @@ async def run_batch_pipeline(
                     prior_ctx = await build_prior_period_context(db_ctx, company_id, period_label)
                     synthesis_template = await get_active_prompt(db_ctx, "synthesis", SYNTHESIS_BRIEFING)
 
-                # Cap raw extraction data — compress to key facts, not full JSON
-                def _compress_items(items_list, label, max_items=20):
+                # Compress extraction data — preserve key details and source context
+                def _compress_items(items_list, label, max_items=40):
                     if not items_list:
                         return f"No {label} data."
                     try:
@@ -394,17 +394,25 @@ async def run_batch_pipeline(
                             parsed = json.loads(block) if isinstance(block, str) else block
                             if isinstance(parsed, list):
                                 all_items.extend(parsed)
-                        # Compress to key-value lines instead of raw JSON
+                        # Include more context per item
                         lines = []
                         for item in all_items[:max_items]:
                             name = item.get("metric_name") or item.get("topic") or item.get("category", "")
                             val = item.get("metric_value") or item.get("metric_text") or item.get("description") or ""
                             unit = item.get("unit") or ""
-                            lines.append(f"{name}: {val} {unit}".strip())
+                            segment = item.get("segment") or item.get("geography") or ""
+                            snippet = item.get("source_snippet") or ""
+                            # Build richer line
+                            line = f"• {name}: {val} {unit}".strip()
+                            if segment:
+                                line += f" [{segment}]"
+                            if snippet and len(snippet) < 200:
+                                line += f" — \"{snippet[:150]}\""
+                            lines.append(line)
                         return "\n".join(lines)
                     except Exception:
                         # Fall back to truncated raw
-                        raw = "\n".join(items_list)[:3000]
+                        raw = "\n".join(items_list)[:5000]
                         return raw
 
                 format_args = {
@@ -416,8 +424,8 @@ async def run_batch_pipeline(
                     "transcript_data": _compress_items(transcript_data, "transcript"),
                     "broker_data": _compress_items(broker_data, "broker"),
                     "presentation_data": _compress_items(presentation_data, "presentation"),
-                    "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:1000] if output.get("thesis_comparison") else "Not available.",
-                    "surprises": json.dumps(output.get("surprises"), default=str)[:1000] if output.get("surprises") else "None detected.",
+                    "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:2500] if output.get("thesis_comparison") else "Not available.",
+                    "surprises": json.dumps(output.get("surprises"), default=str)[:2000] if output.get("surprises") else "None detected.",
                     "text": _compress_items(earnings_data + transcript_data, "all"),  # fallback for {text} placeholder
                 }
                 try:
