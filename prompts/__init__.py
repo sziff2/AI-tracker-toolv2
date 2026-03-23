@@ -730,60 +730,94 @@ Schema:
 # ─────────────────────────────────────────────────────────────────
 # Moat / competitive advantage analysis
 # ─────────────────────────────────────────────────────────────────
-MOAT_ANALYSIS = """\
-You are a senior investment analyst specialising in competitive strategy and moat analysis.
-Conduct a rigorous assessment of this company's competitive advantages using ALL available data.
+MOAT_ANALYSIS = """You are a senior buy-side equity analyst specialising in competitive strategy.
+Your job is to produce a rigorous, opinionated moat assessment that would stand up to scrutiny in an IC meeting.
+Be specific — cite actual numbers, name specific competitors, reference management comments.
+Avoid generic statements. Every claim must be grounded in the data provided.
 
 COMPANY: {company} ({ticker})
 SECTOR: {sector}
 
-=== AVAILABLE DATA ===
-{context}
+=== INVESTMENT THESIS ===
+{thesis}
 
-Assess the following moat sources. For each, provide: strength (strong/moderate/weak/none),
-trajectory (strengthening/stable/weakening), key evidence, and risks to the moat.
+=== FINANCIAL METRICS ===
+{metrics}
+
+=== MANAGEMENT COMMENTARY ===
+{commentary}
+
+=== ESG DATA ===
+{esg_data}
+
+=== EXECUTION TRACK RECORD ===
+{execution}
+
+=== YOUR TASK ===
+
+Assess each of the five moat sources below. For each:
+- Be direct about whether the moat is real or illusory
+- Cite specific evidence from the data above (numbers, quotes, trends)
+- Distinguish between moats that are durable vs temporarily sustained by market conditions
+- Note where management claims a moat but the financial data doesn't support it
 
 Moat sources to assess:
-1. Network effects
-2. Switching costs
-3. Cost advantages (scale, process, location)
-4. Intangible assets (brands, patents, licences, regulatory)
-5. Efficient scale
+1. Network effects — does value compound with scale? Are there flywheel dynamics?
+2. Switching costs — how painful is it for customers to leave? Cite contract lengths, integration depth, churn data
+3. Cost advantages — is the cost edge structural (scale, location, process) or cyclical? What does the gross margin trend tell you?
+4. Intangible assets — brands, patents, licences, regulatory moats. Are they eroding or strengthening?
+5. Efficient scale — is the market large enough for only a few players? Does new entry make economic sense?
+
+Then provide:
+- An overall moat rating (wide/narrow/none) with conviction level
+- Trajectory assessment: is the moat getting stronger or being eroded, and why?
+- The 3-5 most important drivers of competitive advantage right now
+- The key risks that could erode the moat, with time horizon and management response
+- A blunt portfolio implication: what does this moat assessment mean for position sizing and thesis conviction?
 
 Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "moat_sources": [
+  "moat_rating": "wide" | "narrow" | "none",
+  "moat_trajectory": "strengthening" | "stable" | "weakening",
+  "conviction": "high" | "medium" | "low",
+  "sources": [
     {{
-      "type": "<moat type>",
-      "strength": "strong" | "moderate" | "weak" | "none",
+      "type": "network_effects" | "switching_costs" | "cost_advantages" | "intangible_assets" | "efficient_scale",
+      "strength": "strong" | "moderate" | "weak" | "not_applicable",
       "trajectory": "strengthening" | "stable" | "weakening",
-      "explanation": "<evidence-based explanation>",
-      "evidence": "<specific data points>",
-      "risks": "<what could erode this advantage>"
+      "explanation": "<2-3 sentences grounded in the data — cite specific numbers or quotes>",
+      "evidence": "<the single most compelling data point or quote supporting this assessment>",
+      "risks": "<what specific development would erode this advantage>"
     }}
   ],
   "trajectory_assessment": {{
-    "verdict": "<overall moat trajectory>",
-    "recent_developments": "<what has changed recently>",
-    "roic_trend": "<ROIC trend commentary if data available>",
-    "market_relevance": "<is the moat still relevant in the current market?>"
+    "verdict": "stable" | "strengthening" | "weakening",
+    "recent_developments": "<2-3 sentences on what has changed in the competitive position recently — be specific>",
+    "roic_trend": "<what does the ROIC trend tell us about whether the moat is real? Be direct.>",
+    "market_relevance": "<is this moat still relevant given industry trends? Name the trends.>"
   }},
-  "key_drivers": ["<top driver 1>", "<top driver 2>", "<top driver 3>"],
+  "key_drivers": [
+    "<specific driver 1 with supporting evidence>",
+    "<specific driver 2 with supporting evidence>",
+    "<specific driver 3 with supporting evidence>"
+  ],
   "key_risks": [
     {{
-      "risk": "<risk description>",
+      "threat": "<specific threat to the moat — name the competitor, technology, or regulatory change>",
       "probability_impact": "high" | "medium" | "low",
-      "time_horizon": "near_term" | "medium_term" | "structural"
+      "time_horizon": "near_term" | "medium_term" | "structural",
+      "management_response": "<what is management doing about this, if anything?>"
     }}
   ],
-  "portfolio_implication": "<1-2 sentence implication for the investment thesis>"
+  "portfolio_implication": "<2-3 sentences: what does this moat assessment mean for position sizing, thesis conviction, and key things to monitor? Be direct and opinionated.>",
+  "data_gaps": ["<what data would change this assessment if available>"]
 }}
 """
 
 
-# ═══════════════════════════════════════════════════════════════════
+# ═══════════════# ═══════════════════════════════════════════════════════════════════
 # ANNUAL REPORT / 10-K EXTRACTOR
 # Purpose-built for full-year filings: goes beyond reported numbers
 # to capture MD&A narrative, risk factor changes, segment economics,
