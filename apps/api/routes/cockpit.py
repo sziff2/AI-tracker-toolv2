@@ -851,7 +851,7 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
         sections = sections_q.scalars().all()
         text = "\n".join(s.text_content[:400] for s in sections if s.text_content)[:2000]
         if text:
-            commentary_parts.append(f"[{doc.period_label} — {doc.doc_type}]\n{text}")
+            commentary_parts.append(f"[{doc.period_label} — {doc.document_type}]\n{text}")
     commentary_text = "\n\n".join(commentary_parts)[:6000] or "No document commentary available."
 
     # Gather ESG data
@@ -922,4 +922,51 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     if not isinstance(result, dict):
         raise HTTPException(502, "Moat analysis returned unexpected format — retry.")
 
+    # Persist result to ResearchOutput
+    import json as _json2
+    output = ResearchOutput(
+        company_id=company.id,
+        period_label="all_time",
+        output_type="moat_analysis",
+        content_json=_json2.dumps(result),
+        review_status="draft",
+    )
+    db.add(output)
+    await db.commit()
+
     return result
+
+
+@router.get("/companies/{ticker}/moat-analysis")
+async def get_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get the most recent moat analysis for a company, if one exists.
+    """
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    # Get most recent moat analysis
+    import json as _json3
+    output_q = await db.execute(
+        select(ResearchOutput).where(
+            ResearchOutput.company_id == company.id,
+            ResearchOutput.output_type == "moat_analysis",
+        ).order_by(ResearchOutput.created_at.desc()).limit(1)
+    )
+    output = output_q.scalar_one_or_none()
+
+    if not output or not output.content_json:
+        return {"exists": False, "data": None, "created_at": None}
+
+    try:
+        data = _json3.loads(output.content_json)
+    except Exception:
+        data = None
+
+    return {
+        "exists": True,
+        "data": data,
+        "created_at": output.created_at.isoformat() if output.created_at else None,
+    }
