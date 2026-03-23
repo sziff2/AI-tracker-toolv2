@@ -504,7 +504,11 @@ async def run_batch_pipeline(
 
                         # ── BROKER FALLBACK: if earnings_data is empty but broker_data has items, use broker as fallback ──
                         if not earnings_data and broker_data:
-                            logger.info("Using broker_data as fallback for earnings_data in synthesis")
+                            logger.warning("No earnings data extracted — broker data used as fallback. Tagging as estimates, not actuals.")
+                            for item in broker_data:
+                                if isinstance(item, dict):
+                                    item["data_source"] = "broker_estimate"
+                                    item["is_estimate"] = True
                             earnings_data.extend(broker_data)
 
                     format_args = {

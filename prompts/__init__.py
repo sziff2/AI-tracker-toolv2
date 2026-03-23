@@ -403,6 +403,14 @@ CRITICAL RULES — READ CAREFULLY:
     drives each scenario and what the Bayesian update to each key assumption is.
     A large positive earnings surprise should shift the bull probability upward.
     A guidance cut should shift bear probability upward. Be consistent.
+11. BROKER ESTIMATES: If any data items are tagged is_estimate: true or data_source: broker_estimate,
+    treat them as broker estimates NOT reported actuals. Do not present them as reported figures.
+    Clearly distinguish between what the company actually reported vs what analysts estimated.
+12. MANAGEMENT VS STREET: For the management_vs_street field, compare what management actually
+    reported and guided to against what the sell-side expected. Be explicit about beats and
+    misses with specific numbers. For tone_gap, identify where management's narrative diverges
+    from broker consensus — e.g. "management more cautious on Europe than brokers expected" or
+    "management emphasised cost savings while brokers focused on revenue weakness."
 ═══════════════════════════════════
 
 Respond ONLY with a JSON object. No preamble, no markdown fences.
@@ -417,6 +425,18 @@ Schema:
   "risks": "<2-3 paragraphs on the updated risk picture. Include both risks that materialised this quarter and emerging risks from the data or commentary. Quantify where possible — e.g. 'leverage ticked up to 2.4x from 2.2x' rather than 'leverage increased'.>",
   "follow_ups": "<specific questions and monitoring items for the next period, with context on why each matters>",
   "bottom_line": "<2-3 sentence opinionated synthesis — what does this mean for the position? Be direct about conviction level and what would change your view.>",
+  "management_vs_street": {{
+    "key_metrics": [
+      {{
+        "metric": "<metric name — e.g. Revenue, EPS, EBITDA>",
+        "reported": "<actual reported figure, or null if not available>",
+        "mgmt_guidance": "<what management guided to, or null>",
+        "consensus": "<what brokers/street expected, or null>",
+        "variance": "<beat/miss/in-line with specific delta and why it matters>"
+      }}
+    ],
+    "tone_gap": "<one sentence: where management and sell-side diverge most in their narrative or outlook>"
+  }},
   "probabilistic": {{
     "scenarios": [
       {{
