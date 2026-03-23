@@ -61,6 +61,19 @@ async def update_company(ticker: str, body: CompanyUpdate, db: AsyncSession = De
     return company
 
 
+@router.delete("/{ticker}", status_code=204)
+async def delete_company(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Delete a company and all associated data."""
+    clean = _clean_ticker(ticker)
+    result = await db.execute(select(Company).where(Company.ticker == clean))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+    await db.delete(company)
+    await db.commit()
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────
 # Thesis
 # ─────────────────────────────────────────────────────────────────

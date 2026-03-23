@@ -615,6 +615,8 @@ function renderCkThesis(d){
   // IC Summary strip
   h+='<div class="cd gold" style="padding:20px 24px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">IC Summary</div>';
+  h+='<div style="display:flex;align-items:center;gap:16px">';
+  h+='<button class="btn2" style="font-size:10px;padding:4px 10px" onclick="runLLMUpdateThesis(\''+ticker+'\')">Update from Analysis</button>';
   h+='<div style="font-family:var(--sans);font-size:11px;display:flex;gap:16px">';
   if(a.thesis_direction)h+='<span>Thesis: <span style="color:'+dirCls+';font-weight:600">'+esc(dir)+'</span></span>';
   if(a.confidence)h+='<span style="color:var(--text4)">Confidence: '+a.confidence+'</span>';
@@ -714,6 +716,21 @@ function renderCkThesis(d){
 
 async function saveThesisField(ticker,field,value){
   try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
+}
+
+async function runLLMUpdateThesis(ticker){
+  const btn=event.target;btn.disabled=true;btn.textContent='Updating…';
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/llm-update-thesis',{method:'POST'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    const d=await r.json();
+    btn.textContent='Updated '+d.fields_updated.length+' fields';
+    setTimeout(()=>{btn.textContent='Update from Analysis';btn.disabled=false;},2000);
+    loadCockpit();
+  }catch(e){
+    alert('Update failed: '+e.message);
+    btn.textContent='Update from Analysis';btn.disabled=false;
+  }
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────
