@@ -906,12 +906,15 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     execution_text = execution_text[:2000]
 
     # Run LLM analysis (async, 8192 tokens to avoid truncated JSON)
-    prompt = MOAT_ANALYSIS.format(
-        company=company.name, ticker=company.ticker,
-        sector=company.sector or "N/A",
-        thesis=thesis_text, metrics=metrics_text,
-        commentary=commentary_text, esg_data=esg_text,
-        execution=execution_text,
+    prompt = (MOAT_ANALYSIS
+        .replace("{company}", company.name)
+        .replace("{ticker}", company.ticker)
+        .replace("{sector}", company.sector or "N/A")
+        .replace("{thesis}", thesis_text)
+        .replace("{metrics}", metrics_text)
+        .replace("{commentary}", commentary_text)
+        .replace("{esg_data}", esg_text)
+        .replace("{execution}", execution_text)
     )
 
     try:
