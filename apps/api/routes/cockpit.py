@@ -833,7 +833,7 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     recent_docs_q = await db.execute(
         select(Document).where(
             Document.company_id == company.id,
-            Document.doc_type.in_(["transcript", "earnings_release", "annual_report"]),
+            Document.document_type.in_(["transcript", "earnings_release", "annual_report"]),
             Document.parsing_status == "completed",
         )
         .order_by(Document.period_label.desc())
