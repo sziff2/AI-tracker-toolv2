@@ -289,12 +289,12 @@ Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "what_happened": "<summary of the quarter — ONLY using numbers from the data>",
-  "what_changed": "<key changes vs prior>",
-  "thesis_status": "<impact on thesis>",
-  "risks": "<updated risk picture>",
-  "follow_ups": "<open items>",
-  "bottom_line": "<1-2 sentence conclusion>",
+  "what_happened": "<2-3 detailed paragraphs summarising the quarter's results. Include specific revenue, margin, and EPS figures with YoY/QoQ comparisons where available. Break down by segment if data exists. Cite actual numbers — do not generalise.>",
+  "what_changed": "<2-3 paragraphs detailing material changes vs prior period and vs guidance. Include specific deltas in bps/%, segment trajectory changes, and anything that broke trend.>",
+  "thesis_status": "<2-3 paragraphs assessing impact on each pillar of the investment thesis. Be specific about which thesis elements are supported or challenged by the data, citing actual figures.>",
+  "risks": "<2-3 paragraphs on the updated risk picture with quantified impacts where possible.>",
+  "follow_ups": "<specific monitoring items with context on why each matters>",
+  "bottom_line": "<2-3 sentence opinionated synthesis — what does this mean for the position?>,
   "probabilistic": {{
     "scenarios": [
       {{
@@ -409,14 +409,14 @@ Respond ONLY with a JSON object. No preamble, no markdown fences.
 
 Schema:
 {{
-  "headline": "<one-sentence headline>",
-  "what_happened": "<summary of results — ONLY using numbers from the data>",
-  "what_changed": "<key changes vs prior period>",
-  "management_message": "<what management wants the market to take away>",
-  "thesis_impact": "<how results affect the thesis>",
-  "risks": "<updated risk picture>",
-  "follow_ups": "<open items for next IR call>",
-  "bottom_line": "<1-2 sentence opinionated conclusion>",
+  "headline": "<one-sentence headline capturing the key takeaway>",
+  "what_happened": "<2-3 detailed paragraphs summarising the quarter's results. Include specific revenue, margin, and EPS figures with YoY/QoQ comparisons where available. Break down by segment if data exists. Cite actual numbers from the sources — do not generalise. Example: 'Revenue came in at $3.31B, down 1.7% organically with FX headwinds of 3.7%. North America organic sales declined 0.7% while Europe saw a steeper 4.8% organic decline...' >",
+  "what_changed": "<2-3 paragraphs detailing material changes vs prior period and vs guidance. Include specific deltas — margin compression in bps, volume/price mix shifts, segment trajectory changes. Highlight anything that broke trend or surprised vs expectations.>",
+  "management_message": "<2-3 paragraphs analysing management's strategic messaging. What did they emphasise on the call? What guidance did they provide (cite specific figures)? What topics did they deflect or avoid? Include direct quotes where impactful. Assess whether their tone matches the numbers — are they genuinely confident or managing expectations?>",
+  "thesis_impact": "<2-3 paragraphs assessing how these results affect each pillar of the investment thesis. Be specific: if the thesis depends on European margin recovery, state the actual margin outcome and what it implies. If cash generation is key, cite the actual FCF figure and conversion rate. Address both supporting and challenging data points.>",
+  "risks": "<2-3 paragraphs on the updated risk picture. Include both risks that materialised this quarter and emerging risks from the data or commentary. Quantify where possible — e.g. 'leverage ticked up to 2.4x from 2.2x' rather than 'leverage increased'.>",
+  "follow_ups": "<specific questions and monitoring items for the next period, with context on why each matters>",
+  "bottom_line": "<2-3 sentence opinionated synthesis — what does this mean for the position? Be direct about conviction level and what would change your view.>",
   "probabilistic": {{
     "scenarios": [
       {{
