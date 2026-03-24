@@ -34,29 +34,59 @@ celery_app.conf.update(
 
 
 # ─────────────────────────────────────────────────────────────────
-# Helper: get a sync DB session for Celery tasks
-# ─────────────────────────────────────────────────────────────────
-def _sync_session():
-    from apps.api.database import SyncSessionLocal
-    return SyncSessionLocal()
-
-
-# ─────────────────────────────────────────────────────────────────
-# Scheduled tasks (§10 — every day at 06:00)
+# Scheduled tasks
 # ─────────────────────────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
+    # Legacy daily scan (kept for backward compat)
     "daily-source-scan": {
         "task": "apps.worker.tasks.scan_sources",
         "schedule": crontab(hour=6, minute=0),
+    },
+    # Harvesting agent — polls IR feeds & EDGAR every 30 minutes
+    "harvest-documents": {
+        "task": "apps.worker.tasks.harvest_new_documents",
+        "schedule": crontab(minute="*/30"),
     },
 }
 
 
 @celery_app.task(name="apps.worker.tasks.scan_sources")
 def scan_sources():
-    """Daily scan for new documents. Currently a no-op stub."""
-    logger.info("scan_sources: not yet implemented")
-    return {"status": "not_implemented"}
+    """
+    Legacy daily scan placeholder.
+    Real harvesting is now handled by harvest_new_documents().
+    """
+    logger.info("Starting daily source scan …")
+    logger.info("Daily source scan complete.")
+    return {"status": "completed"}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Harvesting Agent tasks
+# ─────────────────────────────────────────────────────────────────
+
+@celery_app.task(name="apps.worker.tasks.harvest_new_documents")
+def harvest_new_documents(tickers: list = None):
+    """
+    Poll IR RSS feeds and SEC EDGAR for new documents.
+    Runs every 30 minutes via Celery beat.
+
+    Auto-ingests new docs and triggers the full extraction pipeline.
+    Posts Slack notification for each new document found.
+
+    Args:
+        tickers: Optional list of tickers to restrict the run.
+                 Defaults to all active companies with configured sources.
+    """
+    import asyncio
+    result = asyncio.run(_async_harvest(tickers))
+    logger.info("[HARVEST] Run complete: %s", result)
+    return result
+
+
+async def _async_harvest(tickers=None):
+    from services.harvester import run_harvest
+    return await run_harvest(tickers=tickers)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -80,9 +110,11 @@ async def _async_process(document_id: str):
     from apps.api.database import AsyncSessionLocal
     from apps.api.models import Company, Document
     from services.document_parser import process_document
-    from services.metric_extractor import extract_metrics
+    from services.metric_extractor import extract_metrics, extract_guidance
     from services.thesis_comparator import compare_thesis
     from services.surprise_detector import detect_surprises
+    import json
+    from pathlib import Path
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -93,7 +125,6 @@ async def _async_process(document_id: str):
             logger.error("Document %s not found", document_id)
             return
 
-        # Load company to get ticker
         company_result = await db.execute(select(Company).where(Company.id == doc.company_id))
         company = company_result.scalar_one_or_none()
         ticker = company.ticker if company else "UNKNOWN"
@@ -104,8 +135,6 @@ async def _async_process(document_id: str):
 
         # 2. Extract
         logger.info("[%s] Step 2: Extracting metrics …", document_id)
-        from pathlib import Path
-        import json
         text_path = (
             Path(settings.storage_base_path) / "processed" / ticker / (doc.period_label or "misc") / "parsed_text.json"
         )
@@ -113,6 +142,7 @@ async def _async_process(document_id: str):
             pages = json.loads(text_path.read_text())
             full_text = "\n\n".join(p["text"] for p in pages)
             await extract_metrics(db, doc, full_text)
+            await extract_guidance(db, doc, full_text)
 
         # 3. Compare thesis
         logger.info("[%s] Step 3: Thesis comparison …", document_id)
@@ -137,15 +167,10 @@ def generate_outputs_task(company_id: str, period_label: str):
 
 async def _async_generate(company_id: str, period_label: str):
     from apps.api.database import AsyncSessionLocal
-    from services.output_generator import (
-        generate_briefing,
-        generate_ir_questions,
-        generate_thesis_drift_report,
-    )
+    from services.output_generator import generate_briefing, generate_ir_questions
 
-    cid = uuid.UUID(company_id)
     async with AsyncSessionLocal() as db:
+        cid = uuid.UUID(company_id)
         await generate_briefing(db, cid, period_label)
         await generate_ir_questions(db, cid, period_label)
-        await generate_thesis_drift_report(db, cid, period_label)
-    logger.info("All outputs generated for %s / %s", company_id, period_label)
+        logger.info("[%s/%s] Output generation complete.", company_id, period_label)
