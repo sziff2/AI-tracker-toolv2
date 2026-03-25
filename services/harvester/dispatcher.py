@@ -132,6 +132,7 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                 continue
 
             period_label  = c.get("period_label") or _fallback_period(c.get("published_at"))
+            c["period_label"] = period_label  # Ensure period is stored in harvested_documents
             document_type = c.get("document_type", "earnings_release")
             download_url  = c.get("pdf_url") or source_url
 
