@@ -84,7 +84,7 @@ async def merge_companies(
     Merge source company into target company.
     Moves all documents, metrics, outputs, etc. from source to target, then deletes source.
     """
-    from sqlalchemy import update
+    from sqlalchemy import update, delete
     from apps.api.models import (
         Document, ThesisVersion, ExtractedMetric, EventAssessment, ResearchOutput,
         TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
@@ -109,15 +109,41 @@ async def merge_companies(
     if target.id == source.id:
         raise HTTPException(400, "Cannot merge a company into itself")
 
-    # Tables with company_id foreign key to update
+    moved_counts = {}
+
+    # Tables with unique company_id constraint - delete source if target exists
+    unique_tables = [ESGData, HarvesterSource]
+    for model in unique_tables:
+        try:
+            # Check if target already has a record
+            target_exists = await db.execute(
+                select(model).where(model.company_id == target.id)
+            )
+            if target_exists.scalar_one_or_none():
+                # Delete source record since target already has one
+                result = await db.execute(
+                    delete(model).where(model.company_id == source.id)
+                )
+                if result.rowcount > 0:
+                    moved_counts[model.__tablename__] = f"deleted {result.rowcount} (target exists)"
+            else:
+                # Move source to target
+                result = await db.execute(
+                    update(model).where(model.company_id == source.id).values(company_id=target.id)
+                )
+                if result.rowcount > 0:
+                    moved_counts[model.__tablename__] = result.rowcount
+        except Exception:
+            pass
+
+    # Tables with company_id foreign key to update (no unique constraint)
     tables_with_company_id = [
         Document, ThesisVersion, ExtractedMetric, EventAssessment, ResearchOutput,
         TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
-        HarvesterSource, HarvestedDocument, ManagementStatement, ExecutionScorecard,
-        ESGData, PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
+        HarvestedDocument, ManagementStatement, ExecutionScorecard,
+        PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
     ]
 
-    moved_counts = {}
     for model in tables_with_company_id:
         try:
             result = await db.execute(
@@ -127,8 +153,7 @@ async def merge_companies(
             )
             if result.rowcount > 0:
                 moved_counts[model.__tablename__] = result.rowcount
-        except Exception as e:
-            # Some tables might not exist or have different structure
+        except Exception:
             pass
 
     # Delete the source company
