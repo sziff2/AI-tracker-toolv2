@@ -588,9 +588,9 @@ function renderCockpit(ticker,d){
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
   h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button></div>';
-  h+='<div id="ck-results">'+renderCkResults(ticker,d)+'</div>';
-  h+='<div id="ck-thesis" style="display:none">'+renderCkThesis(d,co.name,ticker)+'</div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button></div>';
+  h+='<div id="ck-thesis">'+renderCkThesis(d,co.name,ticker)+'</div>';
+  h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-guidance" style="display:none"><div class="ld">Loading guidance…</div></div>';
   h+='<div id="ck-moat" style="display:none"><div class="ld">Loading…</div></div>';
@@ -599,7 +599,7 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['results','thesis','kpis','guidance','moat','execution','decisions','esg'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
+function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d,companyName,ticker){
@@ -747,7 +747,7 @@ function renderCkKPIs(ticker,d){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
   }
-  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">1 = &lt;−10%   2 = −10% to −5%   3 = &plusmn;5%   4 = +5% to +10%   5 = &gt;+10%</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">1 = &lt;\u221210%   2 = \u221210% to \u22125%   3 = \u00B15%   4 = +5% to +10%   5 = &gt;+10%</div>';
   h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>#</th><th>KPI</th>';periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});h+='<th></th></tr></thead><tbody>';
   h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
   kpis.forEach((k,idx)=>{h+='<tr><td style="color:var(--text4);font-size:12px">'+(idx+1)+'</td><td class="kn" style="cursor:pointer" onclick="editKPI(\''+ticker+'\',\''+k.id+'\',\''+esc(k.kpi_name).replace(/'/g,"\\'")+'\',\''+esc(k.unit||'').replace(/'/g,"\\'")+'\')">'+esc(k.kpi_name)+(k.unit?' <span style="color:var(--text4);font-size:11px">('+esc(k.unit)+')</span>':'')+'<span style="color:var(--text4);font-size:10px;margin-left:6px">✎</span></td>';
@@ -776,12 +776,11 @@ function renderCkResults(ticker,d){
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
-    const pdocs=dbp[p]||[];
-    if(pdocs.length){h+='<h2>Documents Used</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
-    h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
-    h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
-    h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
+    // Ask a Question at top
+    h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
+    // Analysis Output
     const analysis=abp[p];
+    const pdocs=dbp[p]||[];
     if(analysis?.content){h+='<h2>Analysis Output</h2>';const c=analysis.content;
       const fb=(cls,title,content,section,pt)=>fbCard(cls,title,content,ticker,p,section,pt);
       if(c.synthesis){const s=c.synthesis;
@@ -805,7 +804,12 @@ function renderCkResults(ticker,d){
       if(c.ir_questions?.length)h+=fb('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'),'ir_questions:all','ir_questions');
     }
     else if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';}
-    h+='<h2 style="margin-top:28px">Ask a Question about '+esc(p)+'</h2><div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="e.g. What was the organic revenue growth?" style="flex:1;font-size:13px"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
+    // Documents Used at bottom
+    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents Used</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
+    h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
+    h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
+    h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
+    h+='</div>';
   });
   return h;
 }
@@ -1091,6 +1095,13 @@ function renderSingleHTML(d){var company=d.company,period=d.period,briefing=d.br
 
 // ═══ ESG MODULE ═════════════════════════════════════════════
 let esgCache={};
+
+// ── Guidance tab ──────────────────────────────────────────────
+async function loadGuidance(ticker){
+  const c=E('ck-guidance');if(!c)return;
+  c.innerHTML='<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">📊</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:16px">Guidance tracking coming soon. This will show management guidance vs actual results over time.</div></div>';
+}
+
 // ── Moat / Competitive Advantage tab ─────────────────────────
 async function loadMoat(ticker){
   const c=E('ck-moat');if(!c)return;
