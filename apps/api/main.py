@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
         # IC Summary fields on thesis_versions
         for col in ["recommendation", "catalyst", "conviction", "what_would_make_us_wrong", "disconfirming_evidence", "positive_surprises", "negative_surprises"]:
             await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
+        # Log entries for processing jobs (Option C - detailed log stream)
+        await conn.execute(sa_text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS log_entries TEXT DEFAULT '[]'"))
     yield
     await async_engine.dispose()
 
