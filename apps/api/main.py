@@ -25,6 +25,7 @@ from apps.api.routes import (
     portfolio_router,
     execution_router,
     autorun_router,
+    harvester_router,
 )
 from apps.api.routes.feedback import router as feedback_router
 from configs.settings import settings
@@ -43,6 +44,37 @@ async def lifespan(app: FastAPI):
             await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
         # Log entries for processing jobs (Option C - detailed log stream)
         await conn.execute(sa_text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS log_entries TEXT DEFAULT '[]'"))
+        # Harvester tables
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS harvester_sources (
+                id UUID PRIMARY KEY,
+                company_id UUID UNIQUE REFERENCES companies(id),
+                ir_docs_url TEXT,
+                ir_url TEXT,
+                rss_url TEXT,
+                ir_reachable BOOLEAN DEFAULT FALSE,
+                discovery_method TEXT,
+                last_checked_at TIMESTAMPTZ,
+                override BOOLEAN DEFAULT FALSE,
+                notes TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS harvested_documents (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id),
+                source TEXT,
+                source_url TEXT UNIQUE NOT NULL,
+                headline TEXT,
+                period_label TEXT,
+                discovered_at TIMESTAMPTZ,
+                ingested BOOLEAN DEFAULT FALSE,
+                document_id UUID REFERENCES documents(id),
+                error TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
     yield
     await async_engine.dispose()
 
@@ -76,6 +108,7 @@ app.include_router(esg_router, prefix=PREFIX)
 app.include_router(portfolio_router, prefix=PREFIX)
 app.include_router(execution_router, prefix=PREFIX)
 app.include_router(autorun_router, prefix=PREFIX)
+app.include_router(harvester_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
 
 

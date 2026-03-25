@@ -493,3 +493,42 @@ class ExtractionFeedback(Base, TimestampMixin):
     promoted = Column(Boolean, default=False)  # True once sent to Prompt Lab
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Harvester Sources — per-company document harvesting configuration
+# ─────────────────────────────────────────────────────────────────
+class HarvesterSource(Base, TimestampMixin):
+    __tablename__ = "harvester_sources"
+
+    id               = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id       = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
+    ir_docs_url      = Column(Text, nullable=True)
+    ir_url           = Column(Text, nullable=True)
+    rss_url          = Column(Text, nullable=True)
+    ir_reachable     = Column(Boolean, default=False)
+    discovery_method = Column(Text, nullable=True)
+    last_checked_at  = Column(DateTime(timezone=True), nullable=True)
+    override         = Column(Boolean, default=False)
+    notes            = Column(Text, nullable=True)
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Harvested Documents — documents discovered by the harvester
+# ─────────────────────────────────────────────────────────────────
+class HarvestedDocument(Base, TimestampMixin):
+    __tablename__ = "harvested_documents"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id    = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    source        = Column(Text)
+    source_url    = Column(Text, unique=True, nullable=False)
+    headline      = Column(Text)
+    period_label  = Column(Text, nullable=True)
+    discovered_at = Column(DateTime(timezone=True))
+    ingested      = Column(Boolean, default=False)
+    document_id   = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    error         = Column(Text, nullable=True)
+    company  = relationship("Company")
+    document = relationship("Document")

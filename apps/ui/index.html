@@ -376,6 +376,25 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div id="dh-holdings-result" style="margin-top:8px"></div>
     </div>
 
+    <!-- Document Harvester -->
+    <div class="cd" style="margin-bottom:20px;border-left:3px solid var(--amber)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="cd-t" style="color:var(--amber);margin-bottom:0">🔍 Document Harvester</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn2" onclick="loadHarvesterSourcesPanel()" style="font-size:11px;padding:4px 10px">↻ Refresh</button>
+          <button class="btn2" id="harvest-run-all-btn" onclick="triggerFullHarvestRun()" style="font-size:11px;padding:4px 10px">▶ Run All</button>
+        </div>
+      </div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:14px">
+        Automatically downloads new documents for each holding. Uses <strong style="color:var(--green)">EDGAR</strong> where available, otherwise scrapes the company IR page. Set the IR documents URL per company below, or configure it directly in the <strong>Documents</strong> tab of each company's Research page.
+      </div>
+      <div id="harvester-sources-table"><div class="ld" style="margin:8px 0;font-size:13px">Loading…</div></div>
+      <div class="col" onclick="toggleHarvestLogPanel()" style="margin-top:16px"><span style="font-size:12px">📋 Recent harvest log</span><span id="harvest-log-panel-arr">▸</span></div>
+      <div id="harvest-log-panel-body" style="display:none;margin-top:4px">
+        <div id="harvest-log-panel-inner"><div class="ld" style="margin:8px 0;font-size:12px">Loading…</div></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -551,7 +570,7 @@ async function generateThesis(){const t=getTicker();if(!t){alert('Select a compa
 function addFile(){HFI.click();}
 HFI.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('def 14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg report')||n.includes('csr')||n.includes('tcfd')||n.includes('cdp'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note')||n.includes('research'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';UF.push({file:f,docType:dt});}this.value='';renderFL();});
 function rmF(i){UF.splice(i,1);renderFL();}function chT(i,v){UF[i].docType=v;}
-function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',annual_report_esg:'Annual Report (ESG)',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report_esg:'🌍',sustainability_report:'♻️',other:'📄'};let h='';UF.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+esc(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="chT('+i+',this.value)">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="rmF('+i+')">&times;</button></div>';});c.innerHTML=h;}
+function renderFL(){const c=E('file-list');const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',annual_report_esg:'Annual Report (ESG)',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report_esg:'🌍',sustainability_report:'♻️',other:'📄'};let h='';UF.forEach((f,i)=>{const isUrl=f.type==='url';const name=isUrl?f.name:(f.file?f.file.name:'');const size=isUrl?'URL':(f.file?(f.file.size/1024/1024).toFixed(1)+'MB':'');h+='<div class="fr"><span>'+esc(I[f.docType]||'📄')+'</span><span class="fn">'+(isUrl?'<span style="font-size:10px;color:var(--amber);margin-right:4px">🔗</span>':'')+esc(name)+'</span><span class="fs">'+esc(size)+'</span><select onchange="chT('+i+',this.value)">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="rmF('+i+')">&times;</button></div>';});c.innerHTML=h;}
 
 // ── Submit ───────────────────────────────────────────────────
 function showErr(m){E('error').innerHTML=m;E('error').style.display='block';}
@@ -590,7 +609,7 @@ function renderCockpit(ticker,d){
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
   h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Valuation</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Valuation</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'documents\',this)">Documents</button></div>';
   h+='<div id="ck-thesis">'+renderCkThesis(d,co.name,ticker)+'</div>';
   h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
@@ -599,9 +618,10 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-execution" style="display:none"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
+  h+='<div id="ck-documents" style="display:none"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}}
+function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d,companyName,ticker){
@@ -3057,6 +3077,351 @@ async function arStop(pipeline){if(!confirm('Request graceful stop?'))return;try
 async function arRefreshStatus(){try{const r=await fetch('/api/v1/autorun/status');if(!r.ok)return;arRenderStatus(await r.json());}catch(e){const el=E('ar-log-content');if(el)el.innerHTML='<span style="color:var(--red)">Could not reach AutoRun API — check autorun router is registered in main.py.</span>';}}
 function arRenderStatus(d){['extraction','output'].forEach(pipeline=>{const pState=d[pipeline]||{};const pfx=pipeline==='extraction'?'ext':'out';const running=pState.running||false;const startBtn=E('ar-'+pfx+'-start'),stopBtn=E('ar-'+pfx+'-stop'),statusEl=E('ar-'+pfx+'-status'),statsEl=E('ar-'+pfx+'-stats');if(startBtn){startBtn.disabled=running;startBtn.textContent=running?'⏸ Running…':'▶ Start';}if(stopBtn)stopBtn.style.display=running?'inline-block':'none';if(statusEl){if(running){statusEl.innerHTML=`<span style="color:var(--gold)">● Running — job ${esc(pState.job_id||'')}</span><br><span style="color:var(--text4);font-size:11px">${esc(pState.current_step||pState.current_type||'running…')}</span>`;}else if(pState.job_id){statusEl.innerHTML=`<span style="color:var(--green)">✓ Last run: ${esc(pState.job_id)}${pState.experiments_run>0?' — '+pState.experiments_run+' experiments, '+pState.promotions+' promotions':''}</span>`;}else{statusEl.textContent='Idle';}}if(statsEl&&(pState.experiments_run>0||pState.running)){statsEl.style.display='block';const se=E('ar-'+pfx+'-stat-exp'),sp=E('ar-'+pfx+'-stat-pro'),sd=E('ar-'+pfx+'-stat-delta');if(se)se.textContent=pState.experiments_run??'—';if(sp)sp.textContent=pState.promotions??'—';if(sd)sd.textContent=pState.avg_delta!=null?(pState.avg_delta>=0?'+':'')+pState.avg_delta.toFixed(2):'—';}});const logEl=E('ar-log-content');if(logEl){const logs=(d.log||[]).slice(0,200);if(logs.length){logEl.innerHTML=logs.map(entry=>{const ts=(entry.ts||'').substring(11,19);const col=entry.level==='error'?'var(--red)':entry.level==='warning'?'var(--amber)':(entry.msg||'').startsWith('✓')?'var(--green)':(entry.msg||'').startsWith('─')?'var(--gold)':'var(--text2)';const pipe=entry.pipeline?`<span style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-right:6px;background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(entry.pipeline)}</span>`:'';return `<div>${pipe}<span style="color:var(--text4)">${ts}</span>  <span style="color:${col}">${esc(entry.msg||'')}</span>${entry.detail?` <span style="color:var(--text4)">${esc(entry.detail)}</span>`:''}</div>`;}).join('');}else{logEl.innerHTML='<span style="color:var(--text4)">No activity yet.</span>';}}}
 function arStartPoll(){if(_arPollTimer)clearInterval(_arPollTimer);_arPollTimer=setInterval(async()=>{const page=E('page-autorun');if(!page||page.style.display==='none'){clearInterval(_arPollTimer);_arPollTimer=null;return;}await arRefreshStatus();},4000);}
+
+// ═══ COCKPIT DOCUMENTS TAB ══════════════════════════════════════
+
+async function loadCkDocuments(ticker){
+  var el=E('ck-documents');if(!el)return;
+  el.innerHTML='<div class="ld" style="margin:24px 0">Loading…</div>';
+  try{
+    // Load harvester source config for this company
+    var srcR=await fetch('/api/v1/harvester/sources');
+    var allSrcs=srcR.ok?await srcR.json():[];
+    var companySrc=allSrcs.find(function(s){return s.ticker===ticker;})||{};
+    var isEdgar=companySrc.active_source==='edgar';
+    var currentDocsUrl=companySrc.ir_docs_url||'';
+
+    // Source config panel at top of tab
+    var h='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:20px">';
+    h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">🔍 Harvester Source</div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    if(isEdgar){
+      h+='<span style="font-family:var(--sans);font-size:12px;color:var(--green);font-weight:600">🏛 EDGAR</span>';
+      h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text3)">Filings fetched automatically via SEC EDGAR — no URL needed.</span>';
+      h+='<button class="btn2" style="font-size:11px;padding:5px 12px;margin-left:auto;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">↺ Refresh from EDGAR</button>';
+    } else {
+      h+='<input id="ck-docs-ir-url" class="fi" value="'+esc(currentDocsUrl)+'" placeholder="Paste IR documents page URL — e.g. https://www.bunzl.com/investors/results-reports-and-presentations/" style="flex:1;font-size:12px;padding:7px 12px;min-width:260px">';
+      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
+      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest</button>';
+    }
+    h+='</div>';
+    if(!isEdgar&&!currentDocsUrl){
+      h+='<div style="font-family:var(--sans);font-size:11px;color:var(--amber);margin-top:8px">⚠ No IR page URL set. Paste the company\'s results &amp; reports page URL above, save, then run a harvest.</div>';
+    }
+    h+='</div>';
+
+    // Load harvested documents for this company
+    var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=200');
+    if(!r.ok)throw new Error('Failed to load harvested documents');
+    var docs=await r.json();
+
+    // Load already-ingested documents to show "In DB" badge
+    var r2=await fetch('/api/v1/companies/'+enc(ticker)+'/documents');
+    var ingested=r2.ok?await r2.json():[];
+    var ingestedUrls=new Set(ingested.map(function(d){return d.source_url;}).filter(Boolean));
+
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+    h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2)">Documents discovered by the harvester. Select any to send to New Analysis.</div>';
+    h+='</div>';
+
+    if(!docs.length){
+      h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text4);padding:24px 0;text-align:center">No documents harvested yet.<br><br>';
+      h+=(!isEdgar&&!currentDocsUrl)?'Enter the IR documents page URL above and run a harvest.':'Click ↺ Refresh / ▶ Run Harvest to fetch documents.';
+      h+='</div>';
+      el.innerHTML=h;return;
+    }
+
+    // Selection action bar (hidden until docs are checked)
+    h+='<div id="ck-docs-sel-bar" style="display:none;background:var(--goldDim);border:1px solid rgba(196,164,90,.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;align-items:center;justify-content:space-between">';
+    h+='<span style="font-family:var(--sans);font-size:13px;color:var(--gold)"><span id="ck-docs-sel-count">0</span> selected</span>';
+    h+='<button class="btn" style="padding:7px 18px;font-size:12px" onclick="uploadSelectedDocs(\''+esc(ticker)+'\')">Send to New Analysis →</button>';
+    h+='</div>';
+
+    // Group by period, sort newest first
+    var byPeriod={};
+    docs.forEach(function(doc){
+      var p=doc.period||'Unknown period';
+      if(!byPeriod[p])byPeriod[p]=[];
+      byPeriod[p].push(doc);
+    });
+    var periods=Object.keys(byPeriod).sort(function(a,b){return b.localeCompare(a);});
+
+    periods.forEach(function(period){
+      var pdocs=byPeriod[period];
+      h+='<div style="margin-bottom:18px">';
+      h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">'+esc(period)+'</div>';
+      pdocs.forEach(function(doc){
+        var alreadyIn=doc.source_url&&ingestedUrls.has(doc.source_url);
+        var srcIcon={'edgar':'🏛','ir_scrape':'🔎','manual':'📎'}[doc.source]||'📄';
+        var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','manual':'Manual'}[doc.source]||doc.source||'';
+        var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
+        var hasErr=doc.error&&!doc.ingested;
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid '+(hasErr?'rgba(239,68,68,.3)':'var(--border)')+';border-radius:8px;margin-bottom:5px;cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor=\'var(--gold)\'" onmouseleave="this.style.borderColor=\''+(hasErr?'rgba(239,68,68,.3)':'var(--border)')+'\'" onclick="toggleDocRow(this)" data-url="'+esc(doc.source_url||'')+'" data-headline="'+esc(doc.headline||'')+'" data-period="'+esc(doc.period||'')+'">';
+        h+='<input type="checkbox" style="cursor:pointer;accent-color:var(--gold);width:14px;height:14px;flex-shrink:0" onclick="event.stopPropagation()" onchange="updateDocSelBar()">';
+        h+='<div style="flex:1;min-width:0">';
+        h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(doc.headline||doc.source_url||'—')+'</div>';
+        h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">'+srcIcon+' '+srcLabel+(dt?' · '+dt:'')+(hasErr?' · <span style="color:var(--red)">'+esc(doc.error.substring(0,60))+'</span>':'')+'</div>';
+        h+='</div>';
+        if(alreadyIn)h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;color:var(--green);background:var(--greenDim);padding:2px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0">In DB</span>';
+        if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" onclick="event.stopPropagation()" style="color:var(--text4);font-size:16px;text-decoration:none;flex-shrink:0;line-height:1" title="Open document">↗</a>';
+        h+='</div>';
+      });
+      h+='</div>';
+    });
+
+    el.innerHTML=h;
+    updateDocSelBar();
+  }catch(e){
+    if(E('ck-documents'))E('ck-documents').innerHTML='<div class="err">'+esc(e.message)+'</div>';
+  }
+}
+
+function toggleDocRow(row){
+  var cb=row.querySelector('input[type=checkbox]');
+  if(cb){cb.checked=!cb.checked;updateDocSelBar();}
+}
+
+function updateDocSelBar(){
+  var el=E('ck-documents');if(!el)return;
+  var checked=el.querySelectorAll('input[type=checkbox]:checked').length;
+  var bar=E('ck-docs-sel-bar');
+  var cnt=E('ck-docs-sel-count');
+  if(bar)bar.style.display=checked>0?'flex':'none';
+  if(cnt)cnt.textContent=checked;
+}
+
+async function saveCkDocsUrl(ticker){
+  var input=E('ck-docs-ir-url');if(!input)return;
+  var url=input.value.trim();
+  try{
+    var r=await fetch('/api/v1/harvester/sources/'+encodeURIComponent(ticker),{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ir_docs_url:url})
+    });
+    if(!r.ok)throw new Error('Save failed');
+    input.style.borderColor='var(--green)';
+    setTimeout(function(){input.style.borderColor='';},1500);
+  }catch(e){alert('Failed to save URL: '+e.message);}
+}
+
+async function runHarvestAndReload(ticker,btn){
+  var orig=btn.textContent;
+  btn.textContent='Running…';btn.disabled=true;
+  try{
+    var r=await fetch('/api/v1/harvester/run?ticker='+encodeURIComponent(ticker),{method:'POST'});
+    if(!r.ok)throw new Error('Failed to start harvest');
+    btn.textContent='Harvesting…';
+    // Wait for background harvest to complete then reload
+    setTimeout(async function(){
+      btn.textContent=orig;btn.disabled=false;
+      await loadCkDocuments(ticker);
+    },7000);
+  }catch(e){
+    btn.textContent=orig;btn.disabled=false;
+    alert('Harvest failed: '+e.message);
+  }
+}
+
+async function uploadSelectedDocs(ticker){
+  var el=E('ck-documents');if(!el)return;
+  var rows=el.querySelectorAll('[data-url] input[type=checkbox]:checked');
+  if(!rows.length){alert('Select at least one document first.');return;}
+  var docs=[];
+  rows.forEach(function(cb){
+    var row=cb.closest('[data-url]');
+    if(row&&row.dataset.url)docs.push({url:row.dataset.url,headline:row.dataset.headline||''});
+  });
+  if(!docs.length){alert('Selected documents have no URLs.');return;}
+
+  // Fetch each PDF as a blob and push into UF as a real File object
+  var btn=el.querySelector('button[onclick*="uploadSelectedDocs"]');
+  if(btn){btn.textContent='Fetching…';btn.disabled=true;}
+
+  var fetched=[];
+  for(var i=0;i<docs.length;i++){
+    var doc=docs[i];
+    try{
+      var resp=await fetch(doc.url);
+      if(!resp.ok)throw new Error('HTTP '+resp.status);
+      var blob=await resp.blob();
+      var filename=doc.url.split('/').pop().split('?')[0]||('document_'+(i+1)+'.pdf');
+      if(!filename.match(/\.(pdf|docx|txt)$/i))filename+='.pdf';
+      var file=new File([blob],filename,{type:blob.type||'application/pdf'});
+      // Auto-detect doc type from filename
+      var dt='earnings_release';
+      var nl=filename.toLowerCase();
+      if(nl.includes('presentation')||nl.includes('slides'))dt='presentation';
+      else if(nl.includes('transcript'))dt='transcript';
+      else if(nl.includes('annual'))dt='annual_report';
+      fetched.push({file:file,docType:dt});
+    }catch(e){
+      console.warn('Could not fetch',doc.url,e);
+    }
+  }
+
+  if(btn){btn.textContent='Send to New Analysis →';btn.disabled=false;}
+
+  if(!fetched.length){
+    alert('Could not fetch any of the selected documents. Try opening them via ↗ and uploading manually.');
+    return;
+  }
+
+  // Switch to New Analysis, pre-select company and period, populate file list
+  showPage('new');
+  var sel=E('company-select');
+  if(sel&&ticker){sel.value=ticker;onCompanySelect();}
+
+  // Pre-select the period from the first checked document's period_label
+  var firstChecked=el.querySelector('[data-url] input[type=checkbox]:checked');
+  if(firstChecked){
+    var firstRow=firstChecked.closest('[data-url]');
+    var periodRaw=firstRow?firstRow.dataset.period:'';
+    if(periodRaw&&periodRaw.indexOf('_')!==-1){
+      var parts=periodRaw.split('_');
+      var yearPart=parts[0];
+      var typePart=parts.slice(1).join('_');
+      var yearSel=E('period-year');
+      var typeSel=E('period-type');
+      if(yearSel&&yearPart)yearSel.value=yearPart;
+      if(typeSel&&typePart){
+        var mapped=typePart==='H1'||typePart==='H2'?'HY':typePart;
+        typeSel.value=mapped;
+      }
+    }
+  }
+
+  UF=fetched;
+  renderFL();
+  var st=E('status');
+  if(st){st.style.display='block';st.textContent=fetched.length+' document'+(fetched.length!==1?'s':'')+' loaded from harvester. Set the period and click Analyse & Synthesise.';}
+}
+
+// ═══ DATA HUB — Harvester Sources Panel ═════════════════════════
+
+(function(){
+  var _orig=showPage;
+  showPage=function(p){
+    _orig(p);
+    if(p==='data')setTimeout(loadHarvesterSourcesPanel,100);
+  };
+})();
+
+async function loadHarvesterSourcesPanel(){
+  var el=E('harvester-sources-table');if(!el)return;
+  el.innerHTML='<div class="ld" style="margin:8px 0;font-size:13px">Loading…</div>';
+  try{
+    var r=await fetch('/api/v1/harvester/sources');
+    if(!r.ok)throw new Error('Failed');
+    var rows=await r.json();
+    if(!rows.length){el.innerHTML='<div style="font-family:var(--sans);font-size:13px;color:var(--text4)">No active companies found.</div>';return;}
+    var h='<table class="kt" style="margin-top:4px">';
+    h+='<thead><tr><th>Ticker</th><th>Company</th><th style="text-align:center">Source</th><th>IR Documents URL</th><th style="text-align:center">Lock</th><th></th></tr></thead><tbody>';
+    rows.forEach(function(row){
+      var safe=row.ticker.replace(/ /g,'_').replace(/\./g,'_');
+      var isEdgar=row.active_source==='edgar';
+      var srcClr=isEdgar?'var(--green)':row.active_source==='ir_scrape'?'var(--gold)':'var(--text4)';
+      var srcLabel=isEdgar?'🏛 EDGAR':row.active_source==='ir_scrape'?'🔎 Scraper':'⚠ None';
+      var chk=row.override?'checked':'';
+      var lastChk=row.last_checked_at?row.last_checked_at.split('T')[0]:'—';
+      var inputDisabled=isEdgar?'disabled':'';
+      var inputBg=isEdgar?'var(--bg)':'var(--bg3)';
+      var inputColor=isEdgar?'var(--text4)':'var(--text)';
+      h+='<tr>';
+      h+='<td class="kn">'+esc(row.ticker)+'</td>';
+      h+='<td style="font-size:12px;color:var(--text2)">'+esc(row.name)+'</td>';
+      h+='<td style="text-align:center"><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+srcClr+'">'+srcLabel+'</span>'+(lastChk!=='—'?'<div style="font-size:10px;color:var(--text4)">'+esc(lastChk)+'</div>':'')+'</td>';
+      h+='<td><input id="hs-docs-'+safe+'" value="'+esc(row.ir_docs_url||'')+'" placeholder="'+(isEdgar?'Handled by EDGAR':'https://company.com/investors/results/')+'" '+inputDisabled+' style="width:100%;min-width:200px;background:'+inputBg+';border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:'+inputColor+';font-family:var(--sans);font-size:11px;outline:none" onfocus="this.style.borderColor=\'var(--gold)\'" onblur="this.style.borderColor=\'var(--border)\'"></td>';
+      h+='<td style="text-align:center"><input type="checkbox" '+chk+' '+(isEdgar?'disabled':'')+' title="Lock — prevent re-discovery" onchange="saveHarvesterSourcePanel(\''+esc(row.ticker)+'\',null,this.checked)" style="cursor:pointer;accent-color:var(--amber);width:14px;height:14px"></td>';
+      h+='<td><div style="display:flex;gap:4px">';
+      if(!isEdgar)h+='<button class="btn2" style="font-size:10px;padding:3px 8px;white-space:nowrap" onclick="saveHarvesterSourcePanelFromRow(\''+esc(row.ticker)+'\',\''+safe+'\')">Save</button>';
+      h+='<button class="btn2" style="font-size:10px;padding:3px 8px;white-space:nowrap" onclick="runHarvestPanel(\''+esc(row.ticker)+'\',this)">'+(isEdgar?'▶ Run':'▶ Test')+'</button>';
+      h+='</div></td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='<div class="err" style="margin:0">'+esc(e.message)+'</div>';}
+}
+
+async function saveHarvesterSourcePanelFromRow(ticker,safe){
+  var docsEl=E('hs-docs-'+safe);
+  var url=docsEl?docsEl.value.trim():null;
+  var tr=docsEl?docsEl.closest('tr'):null;
+  var cb=tr?tr.querySelector('input[type=checkbox]'):null;
+  var override=cb?cb.checked:null;
+  await saveHarvesterSourcePanel(ticker,url,override,true);
+}
+
+async function saveHarvesterSourcePanel(ticker,irDocsUrl,override,reload){
+  try{
+    var body={};
+    if(irDocsUrl!==null&&irDocsUrl!==undefined)body.ir_docs_url=irDocsUrl;
+    if(override!==null&&override!==undefined)body.override=override;
+    var r=await fetch('/api/v1/harvester/sources/'+encodeURIComponent(ticker),{
+      method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+    });
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Save failed');
+    if(reload)loadHarvesterSourcesPanel();
+  }catch(e){alert('Save failed: '+e.message);}
+}
+
+async function runHarvestPanel(ticker,btn){
+  var orig=btn.textContent;btn.textContent='Running…';btn.disabled=true;
+  try{
+    var r=await fetch('/api/v1/harvester/run?ticker='+encodeURIComponent(ticker),{method:'POST'});
+    if(!r.ok)throw new Error('Failed');
+    btn.textContent='Done ✓';
+    setTimeout(function(){btn.textContent=orig;btn.disabled=false;loadHarvestLogPanel();},2500);
+  }catch(e){btn.textContent=orig;btn.disabled=false;alert('Failed: '+e.message);}
+}
+
+async function triggerFullHarvestRun(){
+  var btn=E('harvest-run-all-btn');if(!btn)return;
+  btn.textContent='Running…';btn.disabled=true;
+  try{
+    var r=await fetch('/api/v1/harvester/run',{method:'POST'});
+    if(!r.ok)throw new Error('Failed');
+    btn.textContent='Started ✓';
+    setTimeout(function(){btn.textContent='▶ Run All';btn.disabled=false;loadHarvestLogPanel();},3000);
+  }catch(e){btn.textContent='▶ Run All';btn.disabled=false;alert('Failed: '+e.message);}
+}
+
+var _harvestLogPanelOpen=false;
+function toggleHarvestLogPanel(){
+  _harvestLogPanelOpen=!_harvestLogPanelOpen;
+  var body=E('harvest-log-panel-body'),arr=E('harvest-log-panel-arr');
+  if(_harvestLogPanelOpen){body.style.display='block';arr.textContent='▾';loadHarvestLogPanel();}
+  else{body.style.display='none';arr.textContent='▸';}
+}
+
+async function loadHarvestLogPanel(){
+  var el=E('harvest-log-panel-inner');if(!el)return;
+  el.innerHTML='<div class="ld" style="margin:6px 0;font-size:12px">Loading…</div>';
+  try{
+    var r=await fetch('/api/v1/harvester/log?limit=40');
+    if(!r.ok)throw new Error('Failed');
+    var rows=await r.json();
+    if(!rows.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);padding:6px 0">No harvest activity yet.</div>';return;}
+    var srcLabels={'edgar':'EDGAR','ir_scrape':'Scraper','ir_rss':'RSS','manual':'Manual'};
+    var h='<table class="kt" style="margin-top:4px">';
+    h+='<thead><tr><th>Date</th><th>Ticker</th><th>Source</th><th>Document</th><th>Period</th><th style="text-align:center">OK</th><th>Error</th></tr></thead><tbody>';
+    rows.forEach(function(row){
+      var dt=row.discovered_at?row.discovered_at.split('T')[0]:'';
+      var ingClr=row.ingested?'var(--green)':'var(--red)';
+      h+='<tr>';
+      h+='<td style="font-size:11px;color:var(--text4);white-space:nowrap">'+esc(dt)+'</td>';
+      h+='<td class="kn">'+esc(row.ticker)+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(srcLabels[row.source]||row.source||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text2);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(row.headline||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(row.period||'—')+'</td>';
+      h+='<td style="text-align:center;font-weight:700;color:'+ingClr+'">'+(row.ingested?'✓':'✗')+'</td>';
+      h+='<td style="font-size:10px;color:var(--red);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(row.error||'')+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='<div class="err" style="margin:0;font-size:12px">'+esc(e.message)+'</div>';}
+}
 </script>
 </body>
 </html>

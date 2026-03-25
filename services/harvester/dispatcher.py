@@ -71,12 +71,15 @@ async def _record(
     ingested: bool,
     error: Optional[str] = None,
 ) -> None:
+    """Persist a harvest attempt. period_label is stored so the
+    Documents tab can group entries by period without a DB join."""
     db.add(HarvestedDocument(
         id=uuid.uuid4(),
         company_id=company_id,
         source=candidate["source"],
         source_url=candidate["source_url"],
         headline=candidate.get("headline", "")[:500],
+        period_label=candidate.get("period_label"),   # required by Documents tab
         discovered_at=datetime.now(timezone.utc),
         ingested=ingested,
         document_id=document_id,
