@@ -113,6 +113,7 @@ async def merge_companies(
 
     # Tables with unique company_id constraint - delete source if target exists
     unique_tables = [ESGData, HarvesterSource]
+    errors = []
     for model in unique_tables:
         try:
             # Check if target already has a record
@@ -133,8 +134,8 @@ async def merge_companies(
                 )
                 if result.rowcount > 0:
                     moved_counts[model.__tablename__] = result.rowcount
-        except Exception:
-            pass
+        except Exception as e:
+            errors.append(f"{model.__tablename__}: {str(e)[:100]}")
 
     # Tables with company_id foreign key to update (no unique constraint)
     tables_with_company_id = [
@@ -153,18 +154,23 @@ async def merge_companies(
             )
             if result.rowcount > 0:
                 moved_counts[model.__tablename__] = result.rowcount
-        except Exception:
-            pass
+        except Exception as e:
+            errors.append(f"{model.__tablename__}: {str(e)[:100]}")
 
     # Delete the source company
-    await db.delete(source)
-    await db.commit()
+    try:
+        await db.delete(source)
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(500, f"Failed to delete source company: {str(e)[:500]}")
 
     return {
         "status": "merged",
         "source": source_clean,
         "target": target_clean,
         "moved": moved_counts,
+        "errors": errors if errors else None,
     }
 
 
