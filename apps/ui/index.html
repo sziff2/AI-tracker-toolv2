@@ -587,26 +587,24 @@ function renderCockpit(ticker,d){
   h+='<h1>'+esc(co.name)+' <span style="color:var(--gold)">'+esc(co.ticker)+'</span></h1>';
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
-  h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Metrics</div><div class="ck-stat-val">'+d.stats.total_metrics+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
-  // Global chat bar
-  h+='<div style="display:flex;gap:8px;margin-bottom:20px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(co.name)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
-  h+='<div id="ck-chat-history" style="margin-bottom:20px"></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'metrics\',this)">Metrics</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button></div>';
-  h+='<div id="ck-thesis">'+renderCkThesis(d)+'</div>';
+  h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
+  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Decisions</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button></div>';
+  h+='<div id="ck-results">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-thesis" style="display:none">'+renderCkThesis(d,co.name,ticker)+'</div>';
   h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
-  h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-guidance" style="display:none"><div class="ld">Loading guidance…</div></div>';
   h+='<div id="ck-moat" style="display:none"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-execution" style="display:none"><div class="ld">Loading…</div></div>';
-  h+='<div id="ck-metrics" style="display:none"><div class="ld" id="metrics-loading">Loading metrics…</div></div>';
   h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','kpis','results','moat','execution','metrics','esg','decisions'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='metrics'){const ticker=E('ck-company').value;if(ticker)loadMetrics(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
+function ckTab(t,btn){['results','thesis','kpis','guidance','moat','execution','decisions','esg'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
-function renderCkThesis(d){
-  const ticker=E('ck-company').value;
+function renderCkThesis(d,companyName,ticker){
+  if(!ticker)ticker=E('ck-company').value;
+  if(!companyName)companyName=d.company?.name||'';
   if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
   const t=d.thesis;let h='';
   const a=d.thesis_assessment||{};
@@ -714,6 +712,10 @@ function renderCkThesis(d){
       h+='</div>';
     }
   }
+  // Global chat bar
+  h+='<div style="margin-top:24px"><h2>Ask a Question</h2>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(companyName)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
+  h+='<div id="ck-chat-history" style="margin-top:12px"></div></div>';
   return h;
 }
 
@@ -745,6 +747,7 @@ function renderCkKPIs(ticker,d){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
   }
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">1 = &lt;−10%   2 = −10% to −5%   3 = &plusmn;5%   4 = +5% to +10%   5 = &gt;+10%</div>';
   h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>#</th><th>KPI</th>';periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});h+='<th></th></tr></thead><tbody>';
   h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
   kpis.forEach((k,idx)=>{h+='<tr><td style="color:var(--text4);font-size:12px">'+(idx+1)+'</td><td class="kn" style="cursor:pointer" onclick="editKPI(\''+ticker+'\',\''+k.id+'\',\''+esc(k.kpi_name).replace(/'/g,"\\'")+'\',\''+esc(k.unit||'').replace(/'/g,"\\'")+'\')">'+esc(k.kpi_name)+(k.unit?' <span style="color:var(--text4);font-size:11px">('+esc(k.unit)+')</span>':'')+'<span style="color:var(--text4);font-size:10px;margin-left:6px">✎</span></td>';
@@ -760,7 +763,7 @@ function renderCkResults(ticker,d){
   const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
   let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:0">';
   h+='<div class="ptabs" id="res-ptabs" style="margin-bottom:0;flex:1">';
-  if(allPeriods.length){allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(p)+'</button>';});}
+  if(allPeriods.length){allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(normalisePeriodLabel(p)||p)+'</button>';});}
   else{h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';}
   h+='</div><button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
@@ -772,7 +775,7 @@ function renderCkResults(ticker,d){
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button class="btn2" style="color:var(--red);border-color:#3d1f23;font-size:11px;padding:5px 12px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     const pdocs=dbp[p]||[];
     if(pdocs.length){h+='<h2>Documents Used</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
@@ -967,8 +970,9 @@ async function askQuestion(ticker,period){
 
 // ── Decisions tab ────────────────────────────────────────────
 function renderCkDecisions(ticker,d){
-  let h='<div style="margin-bottom:20px"><div class="form-row"><select id="dec-action"><option value="hold">Hold</option><option value="add">Add</option><option value="trim">Trim</option><option value="exit">Exit</option><option value="initiate">Initiate</option><option value="watchlist">Watchlist</option></select><input id="dec-conviction" type="number" min="1" max="5" placeholder="Conviction 1-5" style="max-width:120px"><input id="dec-author" placeholder="Your name" style="max-width:140px"></div><div class="form-row" style="margin-top:6px"><textarea id="dec-rationale" placeholder="Rationale…" style="min-height:50px"></textarea><button onclick="addDecision(\''+ticker+'\')">Log Decision</button></div></div>';
-  h+='<h2>Add Note</h2><div class="form-row"><select id="note-type"><option value="general">General</option><option value="call_note">Call Note</option><option value="meeting">Meeting</option><option value="thesis_update">Thesis Update</option></select><input id="note-title" placeholder="Title" style="max-width:200px"><input id="note-author" placeholder="Author" style="max-width:120px"></div><div class="form-row" style="margin-top:6px"><textarea id="note-content" placeholder="Note…" style="min-height:50px"></textarea><button onclick="addNote(\''+ticker+'\')">Add Note</button></div>';
+  const savedAuthor=localStorage.getItem('op_author')||'';
+  let h='<div style="margin-bottom:20px"><div class="form-row"><select id="dec-action"><option value="hold">Hold</option><option value="add">Add</option><option value="trim">Trim</option><option value="exit">Exit</option><option value="initiate">Initiate</option><option value="watchlist">Watchlist</option></select><input id="dec-conviction" type="number" min="1" max="5" placeholder="Conviction 1-5" style="max-width:120px"><input id="dec-author" placeholder="Your name" style="max-width:140px" value="'+esc(savedAuthor)+'"></div><div class="form-row" style="margin-top:6px"><textarea id="dec-rationale" placeholder="Rationale…" style="min-height:50px"></textarea><button onclick="addDecision(\''+ticker+'\')">Log Decision</button></div></div>';
+  h+='<h2>Add Note</h2><div class="form-row"><select id="note-type"><option value="general">General</option><option value="call_note">Call Note</option><option value="meeting">Meeting</option><option value="thesis_update">Thesis Update</option></select><input id="note-title" placeholder="Title" style="max-width:200px"><input id="note-author" placeholder="Author" style="max-width:120px" value="'+esc(savedAuthor)+'"></div><div class="form-row" style="margin-top:6px"><textarea id="note-content" placeholder="Note…" style="min-height:50px"></textarea><button onclick="addNote(\''+ticker+'\')">Add Note</button></div>';
   if(d.decisions?.length){h+='<h2 style="margin-top:28px">Decision History</h2>';d.decisions.forEach(dec=>{h+='<div class="dl-item"><div class="dl-action '+esc(dec.action)+'">'+esc(dec.action)+(dec.conviction?' · Conviction '+dec.conviction+'/5':'')+'</div><div class="dl-rat">'+esc(dec.rationale)+'</div><div class="dl-meta">'+esc(dec.author||'')+(dec.created_at?' · '+dec.created_at.split('T')[0]:'')+'</div></div>';});}
   if(d.notes?.length){h+='<h2 style="margin-top:28px">Research Notes</h2>';d.notes.forEach(n=>{h+='<div class="note-item"><div class="note-title">'+(esc(n.title)||esc(n.note_type))+'</div><div class="note-body">'+esc(n.content)+'</div><div class="note-meta">'+esc(n.author||'')+(n.created_at?' · '+n.created_at.split('T')[0]:'')+'</div></div>';});}
   return h;
@@ -983,8 +987,8 @@ async function editKPI(t,k,currentName,currentUnit){
   const newUnit=prompt('Unit:',currentUnit);
   if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});loadCockpit();}catch(e){alert('Failed: '+e.message);}}
 }
-async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){alert('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});loadCockpit();}catch(e){}}
-async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){alert('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});loadCockpit();}catch(e){}}
+async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){alert('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){alert('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
 
 // ── Renderers for new analysis results ──────────────────────
 
