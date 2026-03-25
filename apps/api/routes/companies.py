@@ -157,6 +157,9 @@ async def merge_companies(
         except Exception as e:
             errors.append(f"{model.__tablename__}: {str(e)[:100]}")
 
+    # Commit the moves before deleting the source company
+    await db.commit()
+
     # Delete the source company
     try:
         await db.delete(source)
