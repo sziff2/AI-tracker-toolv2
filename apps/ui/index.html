@@ -747,7 +747,7 @@ function renderCkKPIs(ticker,d){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
   }
-  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">1 = &lt;\u221210%   2 = \u221210% to \u22125%   3 = \u00B15%   4 = +5% to +10%   5 = &gt;+10%</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">1 = &lt;−10%   2 = −10% to −5%   3 = ±5%   4 = +5% to +10%   5 = &gt;+10%</div>';
   h+='<div style="overflow-x:auto"><table class="kt"><thead><tr><th>#</th><th>KPI</th>';periods.forEach(p=>{h+='<th class="kv">'+esc(p)+'</th>';});h+='<th></th></tr></thead><tbody>';
   h+='<tr style="border-bottom:2px solid var(--border)"><td></td><td class="kn">Score</td>';periods.forEach(p=>{const s=overall[p];h+='<td class="kv"><div style="display:flex;justify-content:center;gap:2px">';for(let i=1;i<=5;i++)h+='<button class="sb'+(s!==null&&Math.round(s)===i?' on':'')+'" disabled>'+i+'</button>';h+='</div></td>';});h+='<td></td></tr>';
   kpis.forEach((k,idx)=>{h+='<tr><td style="color:var(--text4);font-size:12px">'+(idx+1)+'</td><td class="kn" style="cursor:pointer" onclick="editKPI(\''+ticker+'\',\''+k.id+'\',\''+esc(k.kpi_name).replace(/'/g,"\\'")+'\',\''+esc(k.unit||'').replace(/'/g,"\\'")+'\')">'+esc(k.kpi_name)+(k.unit?' <span style="color:var(--text4);font-size:11px">('+esc(k.unit)+')</span>':'')+'<span style="color:var(--text4);font-size:10px;margin-left:6px">✎</span></td>';
