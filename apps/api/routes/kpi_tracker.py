@@ -194,12 +194,23 @@ async def get_kpi_tracker(ticker: str, db: AsyncSession = Depends(get_db)):
                 # Try to find matching extracted metric
                 match = await _find_matching_metric(db, company.id, kpi.kpi_name, period)
                 if match:
+                    # Get document title for source reference
+                    doc_title = None
+                    if match.document_id:
+                        from apps.api.models import Document
+                        doc_q = await db.execute(select(Document).where(Document.id == match.document_id))
+                        doc = doc_q.scalar_one_or_none()
+                        if doc:
+                            doc_title = doc.title
                     row["periods"][period] = {
                         "value": float(match.metric_value) if match.metric_value else None,
                         "value_text": match.metric_text,
                         "score": None,
                         "comment": None,
                         "auto_matched": True,
+                        "source_doc": doc_title,
+                        "source_page": match.page_number,
+                        "source_snippet": match.source_snippet[:100] if match.source_snippet else None,
                     }
                 else:
                     row["periods"][period] = {"value": None, "value_text": None, "score": None, "comment": None}
