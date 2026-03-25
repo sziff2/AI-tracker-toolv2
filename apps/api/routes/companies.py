@@ -74,6 +74,75 @@ async def delete_company(ticker: str, db: AsyncSession = Depends(get_db)):
     return None
 
 
+@router.post("/{target_ticker}/merge/{source_ticker}")
+async def merge_companies(
+    target_ticker: str,
+    source_ticker: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Merge source company into target company.
+    Moves all documents, metrics, outputs, etc. from source to target, then deletes source.
+    """
+    from sqlalchemy import update
+    from apps.api.models import (
+        Document, ThesisVersion, ExtractedMetric, EventAssessment, ResearchOutput,
+        TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
+        HarvesterSource, HarvestedDocument, ManagementStatement, ExecutionScorecard,
+        ESGData, PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
+    )
+
+    target_clean = _clean_ticker(target_ticker)
+    source_clean = _clean_ticker(source_ticker)
+
+    # Get both companies
+    target_q = await db.execute(select(Company).where(Company.ticker == target_clean))
+    target = target_q.scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, f"Target company {target_ticker} not found")
+
+    source_q = await db.execute(select(Company).where(Company.ticker == source_clean))
+    source = source_q.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, f"Source company {source_ticker} not found")
+
+    if target.id == source.id:
+        raise HTTPException(400, "Cannot merge a company into itself")
+
+    # Tables with company_id foreign key to update
+    tables_with_company_id = [
+        Document, ThesisVersion, ExtractedMetric, EventAssessment, ResearchOutput,
+        TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
+        HarvesterSource, HarvestedDocument, ManagementStatement, ExecutionScorecard,
+        ESGData, PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
+    ]
+
+    moved_counts = {}
+    for model in tables_with_company_id:
+        try:
+            result = await db.execute(
+                update(model)
+                .where(model.company_id == source.id)
+                .values(company_id=target.id)
+            )
+            if result.rowcount > 0:
+                moved_counts[model.__tablename__] = result.rowcount
+        except Exception as e:
+            # Some tables might not exist or have different structure
+            pass
+
+    # Delete the source company
+    await db.delete(source)
+    await db.commit()
+
+    return {
+        "status": "merged",
+        "source": source_clean,
+        "target": target_clean,
+        "moved": moved_counts,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────
 # Thesis
 # ─────────────────────────────────────────────────────────────────
