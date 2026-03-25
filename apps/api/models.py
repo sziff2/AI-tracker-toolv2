@@ -244,6 +244,7 @@ class ProcessingJob(Base, TimestampMixin):
     current_step = Column(Text)                      # upload | parse | extract | compare | surprises | briefing | ir_questions | synthesis
     steps_completed = Column(Text, default="[]")     # JSON array of completed step names
     progress_pct = Column(Integer, default=0)
+    log_entries = Column(Text, default="[]")         # JSON array of {ts, level, message} log entries
     result_json = Column(Text)                       # full output JSON when done
     error_message = Column(Text)
 

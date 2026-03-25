@@ -46,6 +46,25 @@ async def _update_step(job_id: uuid.UUID, step: str, pct: int, completed_steps: 
     )
 
 
+async def _add_log(job_id: uuid.UUID, message: str, level: str = "info"):
+    """Append a timestamped log entry to the job."""
+    from datetime import datetime
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(ProcessingJob).where(ProcessingJob.id == job_id))
+        job = result.scalar_one_or_none()
+        if not job:
+            return
+        existing = json.loads(job.log_entries) if job.log_entries else []
+        existing.append({
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "level": level,
+            "message": message,
+        })
+        # Keep only last 100 entries to avoid bloating
+        job.log_entries = json.dumps(existing[-100:])
+        await db.commit()
+
+
 async def _run_generation_steps(
     company_id: uuid.UUID, doc_id: uuid.UUID, period_label: str
 ) -> dict:
@@ -238,6 +257,8 @@ async def run_batch_pipeline(
 
     try:
         await _update_job(job_id, status="processing", current_step="processing_documents", progress_pct=5)
+        await _add_log(job_id, f"Starting analysis for {ticker} / {period_label}")
+        await _add_log(job_id, f"Processing {len(doc_ids)} documents: {', '.join(doc_types)}")
 
         async with AsyncSessionLocal() as db:
             company_q = await db.execute(select(Company).where(Company.id == company_id))
@@ -360,6 +381,7 @@ async def run_batch_pipeline(
 
                 logger.info("Aggregating doc %d: title=%s, dtype=%s, items=%d",
                             i, title[:50] if title else "?", dtype, len(items) if items else 0)
+                await _add_log(job_id, f"✓ Processed: {title[:40] if title else 'doc_'+str(i)} ({dtype}) — {len(items) if items else 0} items extracted")
 
                 if res.get("esg"):
                     output["esg_extraction"] = res["esg"]
@@ -393,6 +415,7 @@ async def run_batch_pipeline(
             # Log aggregation totals for debugging
             logger.info("Aggregated: earnings=%d, transcript=%d, broker=%d, presentation=%d",
                         len(earnings_data), len(transcript_data), len(broker_data), len(presentation_data))
+            await _add_log(job_id, f"Extraction complete: {len(earnings_data)} earnings, {len(transcript_data)} transcript, {len(broker_data)} broker, {len(presentation_data)} presentation data blocks")
 
             # Include extraction stats in output for UI visibility
             output["extraction_stats"] = {
@@ -408,6 +431,7 @@ async def run_batch_pipeline(
 
             # ── Thesis comparison + Surprises (parallel) ─────────
             await _update_step(job_id, "comparing thesis", 60, completed)
+            await _add_log(job_id, "Running thesis comparison and surprise detection...")
 
             async def _do_compare():
                 try:
@@ -440,6 +464,7 @@ async def run_batch_pipeline(
 
             # ── Synthesis + IR Questions (parallel) ─────────
             await _update_step(job_id, "synthesising", 75, completed)
+            await _add_log(job_id, "Starting synthesis — generating analysis output...")
 
             # Compress extraction data — preserve key details and source context
             def _compress_items(items_list, label, max_items=40):
@@ -549,11 +574,20 @@ async def run_batch_pipeline(
             for key, val in gen_results:
                 output[key] = val
                 completed.append(key)
+                if key == "synthesis":
+                    if isinstance(val, dict) and val.get("error"):
+                        await _add_log(job_id, f"⚠ Synthesis error: {val.get('error', '')[:100]}", "warn")
+                    else:
+                        await _add_log(job_id, "✓ Synthesis complete — generated analysis output")
+                elif key == "ir_questions":
+                    await _add_log(job_id, f"✓ Generated {len(val) if isinstance(val, list) else 0} IR questions")
 
             # ── Save ─────────────────────────────────────────
             await _update_step(job_id, "saving", 95, completed)
+            await _add_log(job_id, "Saving results to database...")
             await _save_research_output(company_id, period_label, output, "batch_synthesis")
 
+        await _add_log(job_id, "✓ Analysis complete!")
         await _update_job(
             job_id, status="completed", current_step="done", progress_pct=100,
             steps_completed=json.dumps(completed), result_json=json.dumps(output, default=str),
@@ -562,6 +596,7 @@ async def run_batch_pipeline(
 
     except Exception as e:
         logger.error("Batch job %s failed: %s", job_id, str(e))
+        await _add_log(job_id, f"✕ Failed: {str(e)[:200]}", "error")
         await _update_job(
             job_id, status="failed", error_message=str(e)[:500],
             result_json=json.dumps(output, default=str) if output else None,

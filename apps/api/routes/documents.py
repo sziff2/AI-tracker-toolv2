@@ -239,6 +239,7 @@ async def get_job_status(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         "current_step": job.current_step,
         "progress_pct": job.progress_pct,
         "steps_completed": _json.loads(job.steps_completed) if job.steps_completed else [],
+        "log_entries": _json.loads(job.log_entries) if job.log_entries else [],
         "error_message": job.error_message,
     }
 

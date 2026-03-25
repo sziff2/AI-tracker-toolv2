@@ -571,11 +571,13 @@ async function submitForm(){
   else{const f=UF[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
   if(!jobId){showErr('No job ID');btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}ld.style.display='block';
-  const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0,step=j.current_step||'processing',steps=j.steps_completed||[];
-    ld.innerHTML='<div style="margin-bottom:12px">'+esc(step.replace(/_/g,' '))+'… '+pct+'%</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div style="margin-top:8px;font-size:12px;color:var(--text4)">'+steps.join(' → ')+'</div>';
+  ld.innerHTML='<div style="margin-bottom:12px">Starting…</div><div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:12px"><div id="sub-prog-bar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:3px;transition:width .5s"></div></div><div id="sub-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:200px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div>';
+  const poll=setInterval(async()=>{try{const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;const j=await r.json();const pct=j.progress_pct||0;
+    const bar=E('sub-prog-bar');if(bar)bar.style.width=pct+'%';
+    const logEl=E('sub-log');if(logEl&&j.log_entries?.length){let logHtml='';j.log_entries.forEach(entry=>{const ts=entry.ts?entry.ts.split('T')[1]?.substring(0,8)||'':'';const lvl=entry.level||'info';const color=lvl==='error'?'var(--red)':lvl==='warn'?'var(--amber)':'var(--text2)';logHtml+='<div style="color:'+color+'"><span style="color:var(--text4);margin-right:8px">'+ts+'</span>'+esc(entry.message||'')+'</div>';});logEl.innerHTML=logHtml;logEl.scrollTop=logEl.scrollHeight;}
     if(j.status==='completed'){clearInterval(poll);ld.style.display='none';if(j.result){E('form-section').style.display='none';const c=E('result-section');c.style.display='block';c.innerHTML=(j.result.synthesis?renderBatchHTML(j.result):renderSingleHTML(j.result))+'<div style="margin-top:40px;display:flex;gap:12px;justify-content:center"><button class="btn" onclick="E(\'ck-company\').value=\''+esc(t)+'\';showPage(\'cockpit\');loadCockpit();">View Research</button><button class="btn2" onclick="resetForm()">New Analysis</button></div>';}btn.disabled=false;btn.textContent='Analyse & Synthesise';}
     else if(j.status==='failed'){clearInterval(poll);ld.style.display='none';showErr(j.error_message||'Failed');btn.disabled=false;btn.textContent='Analyse & Synthesise';}
-  }catch(e){}},3000);
+  }catch(e){}},2000);
 }
 function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();}
 
@@ -963,10 +965,10 @@ async function uploadAddDocs(ticker,period,count){
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Upload failed');}
     const d=await r.json();
     window._addDocFiles=null;
-    // Show progress polling
+    // Show progress polling with log stream
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">📄 Uploaded '+count+' documents. Processing…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">📄 Uploaded '+count+' documents. Processing…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
     }
     pollReprocess(d.job_id,ticker,period);
   }catch(e){listEl.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
@@ -977,10 +979,10 @@ async function reprocessPeriod(ticker,period){
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
     const d=await r.json();
-    // Show progress bar in the results area
+    // Show progress bar with log stream in the results area
     const resDiv=E('res-'+period);
     if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px;text-align:center"><div style="font-family:var(--sans);font-size:14px;color:var(--gold);margin-bottom:12px">🔄 Reprocessing '+d.documents+' documents…</div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:8px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4)">Starting…</div></div>';
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">🔄 Reprocessing '+d.documents+' documents…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
     }
     // Poll for progress
     pollReprocess(d.job_id,ticker,period);
@@ -991,19 +993,31 @@ function pollReprocess(jobId,ticker,period){
     try{
       const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
       const j=await r.json();
-      const bar=E('reprocess-bar');const step=E('reprocess-step');
+      const bar=E('reprocess-bar');const step=E('reprocess-step');const logEl=E('reprocess-log');
       if(bar)bar.style.width=(j.progress_pct||0)+'%';
       if(step)step.textContent=(j.current_step||'Processing…')+' — '+(j.progress_pct||0)+'%';
+      // Update log stream
+      if(logEl&&j.log_entries?.length){
+        let logHtml='';
+        j.log_entries.forEach(entry=>{
+          const ts=entry.ts?entry.ts.split('T')[1]?.substring(0,8)||'':'';
+          const lvl=entry.level||'info';
+          const color=lvl==='error'?'var(--red)':lvl==='warn'?'var(--amber)':'var(--text2)';
+          logHtml+='<div style="color:'+color+'"><span style="color:var(--text4);margin-right:8px">'+ts+'</span>'+esc(entry.message||'')+'</div>';
+        });
+        logEl.innerHTML=logHtml;
+        logEl.scrollTop=logEl.scrollHeight;
+      }
       if(j.status==='completed'){
         clearInterval(poll);
         if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
         setTimeout(()=>loadCockpit(),1500);
       }else if(j.status==='failed'){
         clearInterval(poll);
-        if(step)step.innerHTML='<span style="color:var(--red)">✕ Failed: '+(j.error||'Unknown error').substring(0,100)+'</span>';
+        if(step)step.innerHTML='<span style="color:var(--red)">✕ Failed: '+(j.error_message||'Unknown error').substring(0,100)+'</span>';
       }
     }catch(e){}
-  },3000);
+  },2000);
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
