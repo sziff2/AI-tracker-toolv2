@@ -53,7 +53,10 @@ usage_tracker = _UsageTracker()
 def get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        _client = anthropic.Anthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=25.0,  # 25 second timeout to stay under Railway's 30s limit
+        )
     return _client
 
 
