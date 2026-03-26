@@ -71,6 +71,17 @@ async def ingest_document(
     # ── Copy to structured storage ───────────────────────────────
     dest_dir = _storage_dir(ticker, period_label)
     dest_path = dest_dir / filename
+
+    # Never overwrite existing files - add unique suffix if needed
+    if dest_path.exists():
+        stem = dest_path.stem
+        suffix = dest_path.suffix
+        counter = 1
+        while dest_path.exists():
+            dest_path = dest_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+        logger.info("File existed, using unique name: %s", dest_path.name)
+
     shutil.copy2(file_path, dest_path)
     logger.info("Stored %s → %s", filename, dest_path)
 

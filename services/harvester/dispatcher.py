@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import AsyncSessionLocal
-from apps.api.models import Company, HarvestedDocument, ProcessingJob
+from apps.api.models import Company, Document, HarvestedDocument, ProcessingJob
 from services.document_ingestion import ingest_document
 from services.background_processor import run_single_pipeline, start_background_job
 
@@ -135,6 +135,24 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
             c["period_label"] = period_label  # Ensure period is stored in harvested_documents
             document_type = c.get("document_type", "earnings_release")
             download_url  = c.get("pdf_url") or source_url
+
+            # Skip if manual document already exists for this company + period
+            # Manual uploads should never be overwritten by harvester
+            existing_manual = await db.execute(
+                select(Document).where(
+                    Document.company_id == company.id,
+                    Document.period_label == period_label,
+                    Document.source == "manual",
+                )
+            )
+            if existing_manual.scalar_one_or_none():
+                logger.info(
+                    "[DISPATCH] Skipping %s %s — manual document already exists for this period",
+                    ticker, period_label
+                )
+                await _record(db, c, company.id, None, False, "skipped: manual document exists")
+                summary["skipped"] += 1
+                continue
 
             # Download
             try:
