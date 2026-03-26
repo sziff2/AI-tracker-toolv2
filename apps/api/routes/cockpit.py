@@ -467,7 +467,12 @@ async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession =
 
     doc_texts = []
     sources_used = []
+    total_doc_chars = 0
+    max_total_chars = 40000  # Keep total prompt size manageable for fast response
+
     for doc in docs:
+        if total_doc_chars >= max_total_chars:
+            break
         sections_q = await db.execute(
             select(DocumentSection.text_content)
             .where(DocumentSection.document_id == doc.id)
@@ -476,11 +481,15 @@ async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession =
         pages = [row[0] for row in sections_q.all() if row[0]]
         if pages:
             doc_text = "\n".join(pages)
-            # Truncate very long documents to keep prompt manageable
-            if len(doc_text) > 15000:
-                doc_text = doc_text[:15000] + "\n[... truncated]"
+            # Truncate per-document to 8000 chars for faster processing
+            if len(doc_text) > 8000:
+                doc_text = doc_text[:8000] + "\n[... truncated]"
+            remaining = max_total_chars - total_doc_chars
+            if len(doc_text) > remaining:
+                doc_text = doc_text[:remaining] + "\n[... truncated due to size limit]"
             doc_texts.append(f"=== {doc.title or doc.document_type} ({doc.document_type}) ===\n{doc_text}")
             sources_used.append(doc.title or doc.document_type)
+            total_doc_chars += len(doc_text)
 
     # 2. Extracted metrics for this period
     metrics_q = await db.execute(
@@ -562,8 +571,10 @@ Answer the question directly and specifically. Reference the source documents wh
 If quoting numbers, cite which document they came from."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=4096)
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25)
         return {"answer": answer, "sources_used": sources_used, "period": period}
+    except TimeoutError:
+        return {"answer": "The analysis is taking longer than expected. Please try a more specific question.", "sources_used": sources_used, "period": period}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
 
@@ -730,8 +741,10 @@ Use ONLY the data provided below. Do not use external knowledge.
 Answer directly and specifically. Reference which period data comes from. Highlight trends across periods where relevant."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=4096)
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25)
         return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched}
+    except TimeoutError:
+        return {"answer": "The analysis is taking longer than expected. Please try a more specific question.", "sources_used": sources_used[:10], "periods_searched": periods_searched}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
 

@@ -144,10 +144,17 @@ def call_llm_json(prompt: str, **kwargs) -> Any:
     return _parse_json(raw)
 
 
-async def call_llm_async(prompt: str, **kwargs) -> str:
-    """Run LLM call in thread pool so it doesn't block the event loop."""
+async def call_llm_async(prompt: str, timeout_seconds: int = 25, **kwargs) -> str:
+    """Run LLM call in thread pool with timeout for Railway compatibility."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_executor, lambda: call_llm(prompt, **kwargs))
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_executor, lambda: call_llm(prompt, **kwargs)),
+            timeout=timeout_seconds
+        )
+    except asyncio.TimeoutError:
+        logger.warning("LLM call timed out after %ds", timeout_seconds)
+        raise TimeoutError(f"LLM request timed out after {timeout_seconds}s")
 
 
 async def call_llm_json_async(prompt: str, **kwargs) -> Any:
