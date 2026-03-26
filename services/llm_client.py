@@ -60,9 +60,9 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None) -> str:
+def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None, model: str | None = None) -> str:
     client = get_client()
-    model = settings.llm_model
+    model = model or settings.llm_model
 
     try:
         resp = client.messages.create(

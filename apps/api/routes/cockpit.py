@@ -432,12 +432,20 @@ class ChatRequest(BaseModel):
     question: str
     period_label: str
     include_thesis: bool = True
+    model: str = "standard"  # "fast", "standard", or "deep"
 
 
 class ChatResponse(BaseModel):
     answer: str
     sources_used: list[str]
     period: str
+
+
+MODEL_MAP = {
+    "fast": "claude-3-5-haiku-20241022",
+    "standard": "claude-sonnet-4-20250514",
+    "deep": "claude-opus-4-20250514",
+}
 
 
 @router.post("/companies/{ticker}/chat")
@@ -448,6 +456,9 @@ async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession =
     """
     from apps.api.models import DocumentSection
     from services.llm_client import call_llm_async
+
+    # Resolve model from user selection
+    model = MODEL_MAP.get(body.model, MODEL_MAP["standard"])
 
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -571,14 +582,14 @@ Answer the question directly and specifically. Reference the source documents wh
 If quoting numbers, cite which document they came from."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25)
-        return {"answer": answer, "sources_used": sources_used, "period": period}
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model)
+        return {"answer": answer, "sources_used": sources_used, "period": period, "model": body.model}
     except TimeoutError:
-        return {"answer": "The analysis is taking longer than expected. Please try a more specific question.", "sources_used": sources_used, "period": period}
+        return {"answer": "The analysis is taking longer than expected. Please try a more specific question or use 'Fast' mode.", "sources_used": sources_used, "period": period, "model": body.model}
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Chat endpoint error: %s — prompt length: %d", str(e), len(prompt))
-        return {"answer": f"Error: {str(e)[:150]}. Try a simpler question.", "sources_used": sources_used, "period": period}
+        return {"answer": f"Error: {str(e)[:150]}. Try a simpler question.", "sources_used": sources_used, "period": period, "model": body.model}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -587,6 +598,7 @@ If quoting numbers, cite which document they came from."""
 class GlobalChatRequest(BaseModel):
     question: str
     include_thesis: bool = True
+    model: str = "standard"  # "fast", "standard", or "deep"
 
 
 @router.post("/companies/{ticker}/chat-all")
@@ -597,6 +609,9 @@ async def chat_all_periods(ticker: str, body: GlobalChatRequest, db: AsyncSessio
     decisions, and notes — a full company picture.
     """
     from services.llm_client import call_llm_async
+
+    # Resolve model from user selection
+    model = MODEL_MAP.get(body.model, MODEL_MAP["standard"])
 
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -743,10 +758,10 @@ Use ONLY the data provided below. Do not use external knowledge.
 Answer directly and specifically. Reference which period data comes from. Highlight trends across periods where relevant."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25)
-        return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched}
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model)
+        return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched, "model": body.model}
     except TimeoutError:
-        return {"answer": "The analysis is taking longer than expected. Please try a more specific question.", "sources_used": sources_used[:10], "periods_searched": periods_searched}
+        return {"answer": "The analysis is taking longer than expected. Please try a more specific question or use 'Fast' mode.", "sources_used": sources_used[:10], "periods_searched": periods_searched, "model": body.model}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
 
