@@ -62,19 +62,32 @@ def get_client() -> anthropic.Anthropic:
 
 def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None) -> str:
     client = get_client()
+    model = settings.llm_model
+
     try:
         resp = client.messages.create(
-            model=settings.llm_model,
+            model=model,
             max_tokens=max_tokens or settings.llm_max_tokens,
             temperature=temperature if temperature is not None else settings.llm_temperature,
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.BadRequestError as e:
-        logger.error("Anthropic 400 error: %s — prompt length: %d chars", e.message, len(prompt))
-        raise
+        logger.error("Anthropic 400 error with model %s: %s — prompt length: %d chars", model, e.message, len(prompt))
+        # Try fallback model if primary fails
+        if "model" in str(e.message).lower():
+            logger.info("Trying fallback model claude-3-5-sonnet-20241022")
+            resp = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_tokens or settings.llm_max_tokens,
+                temperature=temperature if temperature is not None else settings.llm_temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        else:
+            raise
     except anthropic.APIError as e:
         logger.error("Anthropic API error: %s", e.message)
         raise
+
     text = resp.content[0].text.strip()
     usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
     logger.debug(
