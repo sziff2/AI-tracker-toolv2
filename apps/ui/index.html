@@ -2126,6 +2126,121 @@ function renderPortfolio(portId,d){
   });
   h+='</tbody></table></div>';
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // PORTFOLIO CHARTS — Risk/Reward Map & Expected Return Bar — added 2026-03-26
+  // ══════════════════════════════════════════════════════════════════════════
+  (function(){
+    const activeTicker=(E('ck-company')&&E('ck-company').value)||'';
+    const chartData=sorted.map(function(ho){
+      var bear=ho.scenarios?.bear,base=ho.scenarios?.base,bull=ho.scenarios?.bull;
+      var cp=ho.current_price;
+      if(!cp||cp===0)return null;
+      var bearRet=bear?.target_price!=null?((bear.target_price-cp)/cp*100)*(bear.probability||0)/100:0;
+      var baseRet=base?.target_price!=null?((base.target_price-cp)/cp*100)*(base.probability||0)/100:0;
+      var bullRet=bull?.target_price!=null?((bull.target_price-cp)/cp*100)*(bull.probability||0)/100:0;
+      var expRet=bearRet+baseRet+bullRet;
+      var downRisk=bear?.target_price!=null?Math.abs((bear.target_price-cp)/cp*100):0;
+      return{ticker:ho.ticker.split(' ')[0],weight:ho.weight,expRet:expRet,downRisk:downRisk,
+             isActive:ho.ticker===activeTicker};
+    }).filter(Boolean);
+
+    if(chartData.length>1){
+      // ── 1. Risk / Reward Scatter Map ──────────────────────────────
+      h+='<h2 style="margin-top:24px">Risk / Reward Map</h2>';
+      h+='<div class="cd" style="padding:20px">';
+      var svgW=720,svgH=360,padT=20,padR=30,padB=44,padL=56;
+      var pW=svgW-padL-padR,pH=svgH-padT-padB;
+      var maxDown=Math.max.apply(null,chartData.map(function(d){return d.downRisk;}).concat([10]))*1.15;
+      var allExp=chartData.map(function(d){return d.expRet;});
+      var minExp=Math.min.apply(null,allExp.concat([0]))*1.15;
+      var maxExp=Math.max.apply(null,allExp.concat([5]))*1.15;
+      if(minExp===maxExp){minExp-=5;maxExp+=5;}
+      var maxWt=Math.max.apply(null,chartData.map(function(d){return d.weight;}).concat([1]));
+
+      var svg='<svg viewBox="0 0 '+svgW+' '+svgH+'" style="width:100%;max-width:'+svgW+'px;font-family:var(--sans)">';
+      // Grid lines
+      for(var gi=0;gi<=5;gi++){
+        var gv=minExp+(maxExp-minExp)*gi/5;
+        var gy=padT+pH-((gv-minExp)/(maxExp-minExp))*pH;
+        svg+='<line x1="'+padL+'" y1="'+gy+'" x2="'+(svgW-padR)+'" y2="'+gy+'" stroke="rgba(255,255,255,0.06)"/>';
+        svg+='<text x="'+(padL-8)+'" y="'+(gy+3)+'" fill="#6B7A8D" font-size="10" text-anchor="end">'+gv.toFixed(0)+'%</text>';
+      }
+      for(var gi2=0;gi2<=5;gi2++){
+        var gv2=maxDown*gi2/5;
+        var gx=padL+(gv2/maxDown)*pW;
+        svg+='<line x1="'+gx+'" y1="'+padT+'" x2="'+gx+'" y2="'+(svgH-padB)+'" stroke="rgba(255,255,255,0.06)"/>';
+        svg+='<text x="'+gx+'" y="'+(svgH-padB+16)+'" fill="#6B7A8D" font-size="10" text-anchor="middle">'+gv2.toFixed(0)+'%</text>';
+      }
+      // Zero line
+      if(minExp<0&&maxExp>0){
+        var zy=padT+pH-((0-minExp)/(maxExp-minExp))*pH;
+        svg+='<line x1="'+padL+'" y1="'+zy+'" x2="'+(svgW-padR)+'" y2="'+zy+'" stroke="rgba(255,255,255,0.15)" stroke-dasharray="4,3"/>';
+      }
+      // Axis labels
+      svg+='<text x="'+(padL+pW/2)+'" y="'+(svgH-4)+'" fill="#6B7A8D" font-size="11" text-anchor="middle">Downside Risk %</text>';
+      svg+='<text x="14" y="'+(padT+pH/2)+'" fill="#6B7A8D" font-size="11" text-anchor="middle" transform="rotate(-90,14,'+(padT+pH/2)+')">Expected Return %</text>';
+      // Bubbles
+      chartData.forEach(function(dd){
+        var cx=padL+(dd.downRisk/maxDown)*pW;
+        var cy=padT+pH-((dd.expRet-minExp)/(maxExp-minExp))*pH;
+        var r=Math.max(6,Math.min(28,(dd.weight/maxWt)*22));
+        var fill=dd.expRet>=0?'rgba(34,197,94,0.55)':'rgba(239,68,68,0.55)';
+        var stroke=dd.isActive?'#ffffff':dd.expRet>=0?'#22C55E':'#EF4444';
+        var sw=dd.isActive?2.5:1;
+        svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
+        svg+='<text x="'+cx+'" y="'+(cy-r-4)+'" fill="'+(dd.isActive?'#C4A45A':'#A8B2BF')+'" font-size="9" font-weight="'+(dd.isActive?700:500)+'" text-anchor="middle">'+esc(dd.ticker)+'</text>';
+      });
+      svg+='</svg>';
+      h+=svg;
+      h+='<div style="display:flex;gap:14px;margin-top:8px;font-family:var(--sans);font-size:10px;color:var(--text3)">';
+      h+='<span>Bubble size = weight</span>';
+      h+='<span style="color:var(--green)">● Positive exp. return</span>';
+      h+='<span style="color:var(--red)">● Negative exp. return</span>';
+      h+='</div>';
+      h+='</div>';
+
+      // ── 2. Expected Return by Holding — horizontal bar chart ──────
+      h+='<h2 style="margin-top:24px">Expected Return by Holding</h2>';
+      h+='<div class="cd" style="padding:20px">';
+      var barData=[].concat(chartData).sort(function(a,b){return b.expRet-a.expRet;});
+      var barMaxAbs=Math.max.apply(null,barData.map(function(d){return Math.abs(d.expRet);}).concat([1]))*1.15;
+      var barH=Math.max(barData.length*30+40,120);
+      var bPadT=10,bPadR=60,bPadB=24,bPadL=70;
+      var bpW=svgW-bPadL-bPadR;
+      var bpH=barH-bPadT-bPadB;
+      var barHt=Math.min(22,Math.floor(bpH/barData.length)-4);
+      var zeroX=bPadL+bpW/2;
+
+      var bsvg='<svg viewBox="0 0 '+svgW+' '+barH+'" style="width:100%;max-width:'+svgW+'px;font-family:var(--sans)">';
+      // Zero line
+      bsvg+='<line x1="'+zeroX+'" y1="'+bPadT+'" x2="'+zeroX+'" y2="'+(barH-bPadB)+'" stroke="rgba(255,255,255,0.15)" stroke-dasharray="4,3"/>';
+      // X axis ticks
+      for(var xi=-2;xi<=2;xi++){
+        var xv=barMaxAbs*xi/2;
+        var xx=zeroX+(xv/barMaxAbs)*(bpW/2);
+        if(xx<bPadL-5||xx>svgW-bPadR+5)continue;
+        bsvg+='<text x="'+xx+'" y="'+(barH-6)+'" fill="#6B7A8D" font-size="10" text-anchor="middle">'+xv.toFixed(0)+'%</text>';
+        if(xi!==0)bsvg+='<line x1="'+xx+'" y1="'+bPadT+'" x2="'+xx+'" y2="'+(barH-bPadB)+'" stroke="rgba(255,255,255,0.04)"/>';
+      }
+      // Bars
+      barData.forEach(function(dd,i){
+        var yy=bPadT+i*(bpH/barData.length)+(bpH/barData.length-barHt)/2;
+        var barW=Math.abs(dd.expRet)/barMaxAbs*(bpW/2);
+        var xStart=dd.expRet>=0?zeroX:zeroX-barW;
+        var fill=dd.isActive?'#C4A45A':dd.expRet>=0?'#22C55E':'#EF4444';
+        var opacity=dd.isActive?0.9:0.7;
+        bsvg+='<rect x="'+xStart+'" y="'+yy+'" width="'+barW+'" height="'+barHt+'" rx="3" fill="'+fill+'" opacity="'+opacity+'"/>';
+        bsvg+='<text x="'+(bPadL-6)+'" y="'+(yy+barHt/2+4)+'" fill="'+(dd.isActive?'#C4A45A':'#A8B2BF')+'" font-size="10" font-weight="'+(dd.isActive?700:400)+'" text-anchor="end">'+esc(dd.ticker)+'</text>';
+        var labelX=dd.expRet>=0?xStart+barW+4:xStart-4;
+        var anchor=dd.expRet>=0?'start':'end';
+        bsvg+='<text x="'+labelX+'" y="'+(yy+barHt/2+4)+'" fill="#A8B2BF" font-size="9" text-anchor="'+anchor+'">'+dd.expRet.toFixed(1)+'%  ('+dd.weight.toFixed(1)+'%)</text>';
+      });
+      bsvg+='</svg>';
+      h+=bsvg;
+      h+='</div>';
+    }
+  })();
+
   // Add holding form
   h+='<h2 style="margin-top:24px">Add Holding</h2>';
   h+='<div class="form-row"><input id="ph-ticker" placeholder="Ticker (e.g. BNZL)"><input id="ph-weight" type="number" step="0.1" placeholder="Weight %" style="max-width:100px"><input id="ph-cost" type="number" step="0.01" placeholder="Cost basis" style="max-width:130px"><button onclick="addHolding(\''+portId+'\')">+ Add</button></div>';
