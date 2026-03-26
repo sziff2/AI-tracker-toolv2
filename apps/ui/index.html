@@ -225,6 +225,14 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div id="file-list"></div>
     <button class="af" onclick="addFile()"><span style="font-size:18px">+</span> Add document</button>
     <input type="file" id="hfi" accept=".pdf,.docx,.txt" style="display:none" multiple>
+    <div style="margin-top:20px;display:flex;align-items:center;gap:12px">
+      <div class="fl" style="margin:0">Model</div>
+      <select id="proc-model" class="fi" style="width:auto;flex:1">
+        <option value="fast">⚡ Fast (Haiku) — cheapest</option>
+        <option value="standard" selected>⚖️ Standard (Sonnet)</option>
+        <option value="deep">🧠 Deep (Opus) — most capable</option>
+      </select>
+    </div>
     <button class="btn btn-full" id="sub-btn" onclick="submitForm()">Analyse & Synthesise</button>
     <div class="ld" id="loading" style="display:none"></div>
     <div class="err" id="error" style="display:none"></div>
@@ -549,10 +557,11 @@ async function ckSubmitNewPeriod(ticker){
   const pt=E('np-type')?.value,yr=E('np-year')?.value,errEl=E('np-error'),ldEl=E('np-loading'),btn=E('np-submit');
   if(!pt||!yr){errEl.textContent='Select period type and year.';errEl.style.display='block';return;}
   const period=yr+'_'+pt;
+  const modelSel=E('np-model');const model=modelSel?modelSel.value:'standard';
   if(!NP_FILES.length){errEl.textContent='Add at least one document.';errEl.style.display='block';return;}
   errEl.style.display='none';btn.disabled=true;btn.textContent='Uploading…';ldEl.style.display='block';ldEl.innerHTML='Uploading documents…';
   try{
-    const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));NP_FILES.forEach(f=>fd.append('files',f.file));
+    const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));fd.append('model',model);NP_FILES.forEach(f=>fd.append('files',f.file));
     const ru=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
     if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
     const jobId=(await ru.json()).job_id;
@@ -585,7 +594,8 @@ async function submitForm(){
   const btn=E('sub-btn'),ld=E('loading');E('error').style.display='none';E('status').style.display='none';btn.disabled=true;btn.textContent='Setting up…';
   if(!await ensureCo(t)){btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}await saveThesis(t);btn.textContent='Uploading…';
   const batch=UF.length>1;let jobId;
-  if(batch){const fd=new FormData();fd.append('period_label',p);fd.append('document_types',UF.map(f=>f.docType).join(','));fd.append('titles',UF.map(f=>f.file.name).join(','));UF.forEach(f=>{fd.append('files',f.file);});
+  const modelSel=E('proc-model');const model=modelSel?modelSel.value:'standard';
+  if(batch){const fd=new FormData();fd.append('period_label',p);fd.append('document_types',UF.map(f=>f.docType).join(','));fd.append('titles',UF.map(f=>f.file.name).join(','));fd.append('model',model);UF.forEach(f=>{fd.append('files',f.file);});
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/batch-upload',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
   else{const f=UF[0],fd=new FormData();fd.append('file',f.file);fd.append('document_type',f.docType);fd.append('period_label',p);fd.append('title',f.file.name);
     try{const r=await fetch('/api/v1/companies/'+enc(t)+'/documents/upload-and-process',{method:'POST',body:fd});if(!r.ok){const e=await r.json().catch(()=>({}));const m=e.detail||'Error';if(m.includes('uplicate')||m.includes('checksum')){showDupErr(t);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}throw new Error(m);}jobId=(await r.json()).job_id;}catch(e){showErr(e.message);btn.disabled=false;btn.textContent='Analyse & Synthesise';return;}}
@@ -879,6 +889,7 @@ function renderCkResults(ticker,d){
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Upload New Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">✕ Cancel</button></div>';
   h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year"></select></div></div>';
   h+='<div style="margin-top:14px"><div class="fl">Documents</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
+  h+='<div style="margin-top:14px;display:flex;align-items:center;gap:10px"><div class="fl" style="margin:0">Model</div><select id="np-model" class="fi" style="width:auto;flex:1"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select></div>';
   h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button></div>';
   h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div></div>';
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';

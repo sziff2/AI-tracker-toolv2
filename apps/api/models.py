@@ -247,6 +247,7 @@ class ProcessingJob(Base, TimestampMixin):
     log_entries = Column(Text, default="[]")         # JSON array of {ts, level, message} log entries
     result_json = Column(Text)                       # full output JSON when done
     error_message = Column(Text)
+    model = Column(Text, default="standard")         # fast | standard | deep — controls LLM model used
 
     company = relationship("Company")
 

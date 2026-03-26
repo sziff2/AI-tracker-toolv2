@@ -151,6 +151,7 @@ async def batch_upload_and_process(
     period_label: str = Form(...),
     document_types: str = Form(...),
     titles: str = Form(""),
+    model: str = Form("standard"),  # fast | standard | deep
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -202,13 +203,14 @@ async def batch_upload_and_process(
         status="queued",
         current_step="queued",
         progress_pct=0,
+        model=model,  # fast | standard | deep
     )
     db.add(job)
     await db.commit()
 
     # Launch background processing
     start_background_job(
-        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types_list[:len(doc_ids)], period_label)
+        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types_list[:len(doc_ids)], period_label, model=model)
     )
 
     return {

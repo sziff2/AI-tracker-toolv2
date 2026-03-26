@@ -247,11 +247,21 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
         )
 
 
+MODEL_MAP = {
+    "fast": "claude-3-5-haiku-20241022",
+    "standard": "claude-sonnet-4-20250514",
+    "deep": "claude-opus-4-20250514",
+}
+
+
 async def run_batch_pipeline(
     job_id: uuid.UUID, company_id: uuid.UUID, ticker: str,
     doc_ids: list[uuid.UUID], doc_types: list[str], period_label: str,
+    model: str = "standard",
 ):
     """Run the full batch pipeline in the background."""
+    # Resolve model ID from user selection
+    model_id = MODEL_MAP.get(model, MODEL_MAP["standard"])
     completed = []
     output = {}
 
@@ -554,7 +564,7 @@ async def run_batch_pipeline(
                     except KeyError as ke:
                         logger.warning("Synthesis prompt format failed (bad placeholder %s), falling back to default", ke)
                         synthesis_prompt = SYNTHESIS_BRIEFING.format(**format_args)
-                    synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192)
+                    synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192, model=model_id)
                     return ("synthesis", synthesis)
                 except Exception as e:
                     logger.error("Synthesis failed for %s/%s: %s", ticker, period_label, str(e)[:500])
