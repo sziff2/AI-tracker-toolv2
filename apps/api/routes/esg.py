@@ -181,7 +181,7 @@ async def upsert_esg(ticker: str, body: ESGUpsertRequest, db: AsyncSession = Dep
 
 @router.post("/companies/{ticker}/esg/ask")
 async def ask_esg(ticker: str, body: ESGAskRequest, db: AsyncSession = Depends(get_db)):
-    from services.llm_client import call_llm
+    from services.llm_client import call_llm_async
     company = await _get_company(db, ticker)
     row = await _get_or_create_esg(db, company)
     esg_context = _build_esg_context(_parse_data(row), company)
@@ -197,14 +197,17 @@ Be concise and investment-focused. When data is missing, say so and suggest wher
 
 User: {body.question}"""
     try:
-        return {"answer": call_llm(prompt, max_tokens=1024)}
+        answer = await call_llm_async(prompt, max_tokens=1024, timeout_seconds=25)
+        return {"answer": answer}
+    except TimeoutError:
+        return {"answer": "The analysis is taking too long. Please try a simpler question."}
     except Exception as e:
         raise HTTPException(502, f"LLM error: {str(e)[:200]}")
 
 
 @router.post("/companies/{ticker}/esg/analyse")
 async def analyse_esg(ticker: str, db: AsyncSession = Depends(get_db)):
-    from services.llm_client import call_llm_json
+    from services.llm_client import call_llm_json_async
     company = await _get_company(db, ticker)
     row = await _get_or_create_esg(db, company)
     data = _parse_data(row)
@@ -227,7 +230,7 @@ Return a JSON object:
 }}
 Respond ONLY with JSON. No preamble."""
     try:
-        parsed = call_llm_json(prompt, max_tokens=2048)
+        parsed = await call_llm_json_async(prompt, max_tokens=2048)
     except Exception as e:
         raise HTTPException(502, f"Analysis failed: {str(e)[:200]}")
     row.ai_summary = parsed.get("summary", "")
