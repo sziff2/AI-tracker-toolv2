@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(findstr:*)",
+      "Bash(powershell -Command \"Select-String -Path ''apps/ui/index.html'' -Pattern ''moat'' -CaseSensitive:$false | Select-Object -First 5\")",
+      "Bash(powershell -Command \"Select-String -Path ''apps/ui/index.html'' -Pattern ''moat''\")",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(dir /b \"C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\scripts\")",
+      "Bash(dir /b \"C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\services\")",
+      "Bash(powershell -Command \"Select-String -Path ''C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\scripts\\\\autorun.py'' -Pattern ''OUTPUT_RUBRIC_WEIGHTS_BY_TYPE|WEAKEST DIMENSION'' -Context 0,2\")",
+      "Bash(powershell -Command \"Select-String -Path ''C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\services\\\\surprise_detector.py'' -Pattern ''call_llm'' | Select-Object -First 5\")",
+      "Bash(powershell -Command \"Select-String -Path ''C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\services\\\\output_generator.py'' -Pattern ''call_llm'' | Select-Object -First 5\")",
+      "Bash(powershell -Command \"Select-String -Path ''C:\\\\Users\\\\sam\\\\OneDrive - Oldfield Partners\\\\Reading\\\\AI agent\\\\AI-tracker-toolv2\\\\services\\\\metric_extractor.py'' -Pattern ''async def extract_by_document_type'' -Context 0,3\")",
+      "Bash(dir:*)",
+      "Bash(curl -X POST \"https://ai-tracker-tool-production.up.railway.app/api/v1/companies/LKQ/periods/Q4%202025/reprocess\")",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(for i in 1 2 3 4 5)",
+      "Bash(do sleep 60)",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "Bash(for i in 1 2 3 4)",
+      "Bash(do sleep 45)",
+      "Bash(echo:*)",
+      "Bash(railway logs --help:*)",
+      "Bash(for i in 1 2 3 4 5 6)",
+      "Bash(do sleep 30)",
+      "Bash(find:*)",
+      "Bash(railway:*)"
+    ]
+  }
+}

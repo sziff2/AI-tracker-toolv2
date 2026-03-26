@@ -62,12 +62,19 @@ def get_client() -> anthropic.Anthropic:
 
 def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None) -> str:
     client = get_client()
-    resp = client.messages.create(
-        model=settings.llm_model,
-        max_tokens=max_tokens or settings.llm_max_tokens,
-        temperature=temperature if temperature is not None else settings.llm_temperature,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        resp = client.messages.create(
+            model=settings.llm_model,
+            max_tokens=max_tokens or settings.llm_max_tokens,
+            temperature=temperature if temperature is not None else settings.llm_temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.BadRequestError as e:
+        logger.error("Anthropic 400 error: %s — prompt length: %d chars", e.message, len(prompt))
+        raise
+    except anthropic.APIError as e:
+        logger.error("Anthropic API error: %s", e.message)
+        raise
     text = resp.content[0].text.strip()
     usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
     logger.debug(
