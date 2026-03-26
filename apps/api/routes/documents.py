@@ -2,11 +2,14 @@
 Document endpoints (§8): upload, list, process, extract, compare.
 """
 
+import logging
 import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -173,14 +176,15 @@ async def batch_upload_and_process(
     # Ingest all files first (fast) with size limit
     doc_ids = []
     for i, file in enumerate(files):
-        suffix = Path(file.filename).suffix if file.filename else ".pdf"
-        content = await file.read()
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(413, f"File '{file.filename}' too large. Maximum size is {settings.max_upload_size_mb} MB.")
-        with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
         try:
+            suffix = Path(file.filename).suffix if file.filename else ".pdf"
+            content = await file.read()
+            logger.info("Processing file %s (%d bytes)", file.filename, len(content))
+            if len(content) > settings.max_upload_bytes:
+                raise HTTPException(413, f"File '{file.filename}' too large. Maximum size is {settings.max_upload_size_mb} MB.")
+            with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
             doc = await ingest_document(
                 db=db, company_id=company.id, ticker=company.ticker,
                 file_path=tmp_path, filename=file.filename or f"upload_{i}{suffix}",
@@ -188,8 +192,13 @@ async def batch_upload_and_process(
                 title=titles_list[i] or (file.filename if file.filename else None),
             )
             doc_ids.append(doc.id)
-        except ValueError:
+            logger.info("Ingested document %s as %s", file.filename, doc.id)
+        except ValueError as e:
+            logger.warning("Skipping duplicate document %s: %s", file.filename, str(e))
             continue  # skip duplicates
+        except Exception as e:
+            logger.error("Error ingesting file %s: %s", file.filename, str(e))
+            raise HTTPException(500, f"Error processing file '{file.filename}': {str(e)}")
 
     if not doc_ids:
         raise HTTPException(409, "All documents are duplicates")

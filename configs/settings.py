@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     s3_bucket: Optional[str] = None
     s3_region: Optional[str] = None
 
+    # ── Upload limits ────────────────────────────────────────────
+    max_upload_size_mb: int = 50  # Maximum file size in MB
+    max_upload_bytes: int = 50 * 1024 * 1024  # 50 MB in bytes
+
     # ── LLM ──────────────────────────────────────────────────────
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-20250514"
