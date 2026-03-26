@@ -188,9 +188,10 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         latest_briefing = analyses_by_period[latest_period]
 
     # ── Documents timeline ────────────────────────────────────
+    # No limit — show all documents grouped by period in UI
     docs_q = await db.execute(
         select(Document).where(Document.company_id == cid)
-        .order_by(Document.created_at.desc()).limit(20)
+        .order_by(Document.period_label.desc(), Document.created_at.desc())
     )
     docs = [{
         "id": str(d.id), "title": d.title, "document_type": d.document_type,
