@@ -447,7 +447,7 @@ async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession =
     The LLM receives ONLY data from the requested period — no cross-contamination.
     """
     from apps.api.models import DocumentSection
-    from services.llm_client import call_llm
+    from services.llm_client import call_llm_async
 
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -562,7 +562,7 @@ Answer the question directly and specifically. Reference the source documents wh
 If quoting numbers, cite which document they came from."""
 
     try:
-        answer = call_llm(prompt, max_tokens=4096)
+        answer = await call_llm_async(prompt, max_tokens=4096)
         return {"answer": answer, "sources_used": sources_used, "period": period}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")
@@ -583,7 +583,7 @@ async def chat_all_periods(ticker: str, body: GlobalChatRequest, db: AsyncSessio
     Receives thesis, all analysis summaries, key metrics per period,
     decisions, and notes — a full company picture.
     """
-    from services.llm_client import call_llm
+    from services.llm_client import call_llm_async
 
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -730,7 +730,7 @@ Use ONLY the data provided below. Do not use external knowledge.
 Answer directly and specifically. Reference which period data comes from. Highlight trends across periods where relevant."""
 
     try:
-        answer = call_llm(prompt, max_tokens=4096)
+        answer = await call_llm_async(prompt, max_tokens=4096)
         return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched}
     except Exception as e:
         raise HTTPException(500, f"Chat failed: {str(e)[:200]}")

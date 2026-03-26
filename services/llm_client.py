@@ -144,6 +144,12 @@ def call_llm_json(prompt: str, **kwargs) -> Any:
     return _parse_json(raw)
 
 
+async def call_llm_async(prompt: str, **kwargs) -> str:
+    """Run LLM call in thread pool so it doesn't block the event loop."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(_executor, lambda: call_llm(prompt, **kwargs))
+
+
 async def call_llm_json_async(prompt: str, **kwargs) -> Any:
     """Run LLM call in thread pool so multiple can run in parallel."""
     loop = asyncio.get_event_loop()
