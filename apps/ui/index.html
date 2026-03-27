@@ -1988,7 +1988,16 @@ function handleDHFile(input,type){
 
 function parseCSVLine(line){
   if(line.includes('\t'))return line.split('\t').map(c=>c.trim().replace(/^"|"$/g,''));
-  return line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+  // Handle quoted fields with internal commas
+  const result=[];let current='';let inQuotes=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){inQuotes=!inQuotes;}
+    else if(ch===','&&!inQuotes){result.push(current.trim());current='';}
+    else{current+=ch;}
+  }
+  result.push(current.trim());
+  return result;
 }
 
 async function importPAIFromHub(text){
