@@ -296,9 +296,12 @@ async def run_batch_pipeline(
             await _update_step(job_id, f"processing {total_docs} documents", 10, completed)
 
             async def _process_one_doc(did, dtype, idx):
-                """Process a single document (parse + extract) with its own DB session."""
+                """Process a single document (parse + extract) with its own DB session.
+                Skips parsing and extraction if the document already has sections and metrics."""
                 from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
                 from services.document_parser import process_document
+                from apps.api.models import DocumentSection, ExtractedMetric
+                from sqlalchemy import func as sa_func
 
                 doc_result = {"document_type": dtype, "steps": []}
                 items = []
@@ -312,6 +315,43 @@ async def run_batch_pipeline(
                             return None
 
                         doc_result["filename"] = doc.title
+
+                        # Check if document already has sections (parsed) and metrics (extracted)
+                        sections_count_q = await doc_db.execute(
+                            select(sa_func.count(DocumentSection.id)).where(DocumentSection.document_id == did)
+                        )
+                        sections_count = sections_count_q.scalar() or 0
+
+                        metrics_count_q = await doc_db.execute(
+                            select(sa_func.count(ExtractedMetric.id)).where(ExtractedMetric.document_id == did)
+                        )
+                        metrics_count = metrics_count_q.scalar() or 0
+
+                        if sections_count > 0 and metrics_count > 0:
+                            # Already parsed and extracted — load existing metrics as items
+                            logger.info("Doc %s already has %d sections and %d metrics — skipping parse/extract",
+                                        did, sections_count, metrics_count)
+                            doc_result["steps"].append({"step": "parse", "status": "skipped", "reason": "already parsed"})
+                            doc_result["steps"].append({"step": "extract", "status": "skipped", "reason": "already extracted"})
+
+                            metrics_q = await doc_db.execute(
+                                select(ExtractedMetric).where(ExtractedMetric.document_id == did)
+                            )
+                            existing_metrics = metrics_q.scalars().all()
+                            items = [
+                                {
+                                    "metric_name": m.metric_name,
+                                    "metric_value": float(m.metric_value) if m.metric_value is not None else None,
+                                    "metric_text": m.metric_text,
+                                    "unit": m.unit,
+                                    "segment": m.segment,
+                                    "geography": m.geography,
+                                    "source_snippet": m.source_snippet,
+                                    "confidence": float(m.confidence) if m.confidence is not None else 1.0,
+                                }
+                                for m in existing_metrics
+                            ]
+                            return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title}
 
                         # Parse - returns full_text directly now
                         try:
