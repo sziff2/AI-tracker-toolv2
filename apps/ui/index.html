@@ -2455,13 +2455,12 @@ async function importPortfolioCSV(input){
     try{
       const lines=e.target.result.split('\n').filter(l=>l.trim());
       if(!lines.length){alert('Empty file.');return;}
-      const delim=lines[0].includes('\t')?'\t':',';
-      const header=lines[0].split(delim).map(c=>c.trim().replace(/^"|"$/g,'').toLowerCase());
+      const header=parseCSVLine(lines[0]).map(c=>c.trim().toLowerCase());
       const col=name=>header.indexOf(name);
       if(col('ticker')<0){alert('CSV must have a "Ticker" column. Headers found: '+header.join(', '));return;}
       const holdings=[],prices=[],scenarios=[];
       for(let i=1;i<lines.length;i++){
-        const cells=lines[i].split(delim).map(c=>c.trim().replace(/^"|"$/g,''));
+        const cells=parseCSVLine(lines[i]);
         const get=name=>{const idx=col(name);return idx>=0?(cells[idx]||'').trim():''};
         // Strip Bloomberg Equity suffix, normalise ticker
         const rawTicker=get('ticker')||'';
@@ -2501,10 +2500,12 @@ async function importPortfolioCSV(input){
         const geoTp  =cleanNum(geoRaw);
         const skewVal=get('skew');
         const scens=[];
-        if(baseTp)scens.push({scenario_type:'base',target_price:baseTp,probability:basePb??75,methodology_detail:baseUp?parseFloat(baseUp.replace('%','')):null});
-        if(bearTp)scens.push({scenario_type:'bear',target_price:bearTp,probability:bearPb??25,methodology_detail:bearDn?parseFloat(bearDn.replace('%','')):null,key_assumptions:skewVal||null});
-        if(bfTp)scens.push({scenario_type:'buffett',target_price:bfTp,probability:null,methodology_detail:bfUD?parseFloat(bfUD.replace('%','')):null});
-        if(geoTp)scens.push({scenario_type:'geometric',target_price:geoTp,probability:null,methodology_detail:null});
+        if(baseTp)scens.push({scenario_type:'bull',target_price:baseTp,probability:basePb??75});
+        if(bearTp)scens.push({scenario_type:'bear',target_price:bearTp,probability:bearPb??25});
+        if(baseTp&&bearTp){
+          const midTarget=Math.round((baseTp+bearTp)/2*100)/100;
+          scens.push({scenario_type:'base',target_price:midTarget,probability:0});
+        }
         if(scens.length)scenarios.push({ticker,scens});
       }
       if(!holdings.length){alert('No valid rows found.');return;}
