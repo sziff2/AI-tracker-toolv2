@@ -637,7 +637,18 @@ function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','
 function renderCkThesis(d,companyName,ticker){
   if(!ticker)ticker=E('ck-company').value;
   if(!companyName)companyName=d.company?.name||'';
-  if(!d.thesis)return card('blue','Investment Thesis','No thesis on file. Upload documents and generate one from the New Analysis page.');
+  if(!d.thesis){
+    let h='<div class="cd blue" style="padding:20px 24px"><div class="cd-t">Investment Thesis</div>';
+    h+='<p style="color:var(--text4);margin:8px 0 16px">No thesis on file. Create one below or auto-generate from uploaded documents.</p>';
+    h+='<div style="margin-bottom:12px"><div class="fl">Core Thesis</div><textarea class="fi" id="ck-create-th-core" placeholder="What is the investment case?" style="min-height:80px"></textarea></div>';
+    h+='<div style="margin-bottom:12px"><div class="fl">Key Risks</div><textarea class="fi" id="ck-create-th-risks" placeholder="What could go wrong?" style="min-height:60px"></textarea></div>';
+    h+='<div style="margin-bottom:12px"><div class="fl">Valuation Framework</div><textarea class="fi" id="ck-create-th-val" placeholder="How do you value this?" style="min-height:60px"></textarea></div>';
+    h+='<div style="display:flex;gap:10px">';
+    h+='<button class="btn" onclick="ckCreateThesis(\''+ticker+'\')">Save Thesis</button>';
+    h+='<button class="btn2" onclick="ckAutoGenThesis(\''+ticker+'\')">✨ Auto-generate</button>';
+    h+='</div></div>';
+    return h;
+  }
   const t=d.thesis;let h='';
   const a=d.thesis_assessment||{};
   const dir=a.thesis_direction||'—';const dirCls=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
@@ -768,6 +779,23 @@ async function runLLMUpdateThesis(ticker){
     alert('Update failed: '+e.message);
     btn.textContent='Update from Analysis';btn.disabled=false;
   }
+}
+
+async function ckCreateThesis(ticker){
+  const core=E('ck-create-th-core').value.trim();
+  if(!core){alert('Enter a core thesis.');return;}
+  try{
+    await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:E('ck-create-th-risks').value.trim()||null,valuation_framework:E('ck-create-th-val').value.trim()||null})});
+    loadCockpit();
+  }catch(e){alert('Failed: '+e.message);}
+}
+async function ckAutoGenThesis(ticker){
+  const btn=event.target;btn.disabled=true;btn.textContent='Generating…';
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/generate-thesis',{method:'POST'});
+    if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
+    btn.textContent='Done!';loadCockpit();
+  }catch(e){alert('Failed: '+e.message);btn.textContent='✨ Auto-generate';btn.disabled=false;}
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────
