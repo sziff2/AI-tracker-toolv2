@@ -2457,7 +2457,7 @@ function renderPortfolio(portId,d){
     const pnlClr=parseFloat(pnl)>0?'var(--green)':parseFloat(pnl)<0?'var(--red)':'var(--text3)';
     h+='<tr>';
     h+='<td class="kn" style="cursor:pointer" onclick="sideSelectCo(\''+esc(ho.ticker)+'\')">'+esc(ho.ticker.split(' ')[0])+'</td>';
-    h+='<td style="font-size:12px">'+esc(ho.name)+'</td>';
+    h+='<td style="font-size:12px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)" onclick="sideSelectCo(\''+esc(ho.ticker)+'\')">'+esc(ho.name)+'</td>';
     h+='<td style="font-size:11px;color:var(--text3)">'+esc(ho.sector||'')+'</td>';
     h+='<td style="font-weight:600">'+ho.weight.toFixed(1)+'%</td>';
     h+='<td>'+(ho.current_price!=null?ho.current_price.toFixed(2):'—')+'</td>';
