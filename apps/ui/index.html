@@ -628,7 +628,7 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-documents" style="display:none"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}}
+function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d,companyName,ticker){
@@ -1153,7 +1153,42 @@ async function askQuestion(ticker,period){
 // ── Valuation tab ────────────────────────────────────────────
 function renderCkDecisions(ticker,d){
   const savedAuthor=localStorage.getItem('op_author')||'';
-  let h='<div id="scenario-history-chart" style="margin-bottom:20px"></div>';
+  let h='';
+  // ── Scenario input form ──
+  h+='<div id="scenario-form" class="cd" style="padding:20px;margin-bottom:20px">';
+  h+='<div class="cd-t">Valuation Scenarios</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px">';
+  // Bull
+  h+='<div style="border-left:3px solid var(--green);padding-left:12px">';
+  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Bull Case</div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bull-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bull-prob" type="number" step="1" min="0" max="100" placeholder="75" style="font-size:13px"></div></div>';
+  h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-bull-rationale" placeholder="Key assumptions for bull case…" style="font-size:12px;min-height:60px"></textarea>';
+  h+='</div>';
+  // Base
+  h+='<div style="border-left:3px solid var(--gold);padding-left:12px">';
+  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Base Case</div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-base-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-base-prob" type="number" step="1" min="0" max="100" placeholder="0" style="font-size:13px"></div></div>';
+  h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-base-rationale" placeholder="Key assumptions for base case…" style="font-size:12px;min-height:60px"></textarea>';
+  h+='</div>';
+  // Bear
+  h+='<div style="border-left:3px solid var(--red);padding-left:12px">';
+  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Bear Case</div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bear-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bear-prob" type="number" step="1" min="0" max="100" placeholder="25" style="font-size:13px"></div></div>';
+  h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-bear-rationale" placeholder="Key assumptions for bear case…" style="font-size:12px;min-height:60px"></textarea>';
+  h+='</div>';
+  h+='</div>';
+  // Buffett formula row
+  h+='<div style="border-left:3px solid #8b5cf6;padding-left:12px;margin-top:16px">';
+  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:#8b5cf6;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Buffett Formula</div>';
+  h+='<div style="display:flex;gap:8px"><div style="width:140px"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-buffett-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
+  h+='<div style="flex:1"><div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-buffett-rationale" placeholder="Buffett formula assumptions…" style="font-size:12px;min-height:36px"></textarea></div></div>';
+  h+='</div>';
+  h+='<div style="margin-top:16px;display:flex;gap:10px;align-items:center"><button class="btn" onclick="saveScenarios(\''+ticker+'\')">Save Scenarios</button><span id="sc-save-status" style="font-family:var(--sans);font-size:12px;color:var(--text4)"></span></div>';
+  h+='</div>';
+  h+='<div id="scenario-history-chart" style="margin-bottom:20px"></div>';
   // Load scenario history chart
   (async function(){
     try{
@@ -1223,6 +1258,55 @@ function renderCkDecisions(ticker,d){
   if(d.decisions?.length){h+='<h2 style="margin-top:28px">Decision History</h2>';d.decisions.forEach(dec=>{h+='<div class="dl-item"><div class="dl-action '+esc(dec.action)+'">'+esc(dec.action)+(dec.conviction?' · Conviction '+dec.conviction+'/5':'')+'</div><div class="dl-rat">'+esc(dec.rationale)+'</div><div class="dl-meta">'+esc(dec.author||'')+(dec.created_at?' · '+dec.created_at.split('T')[0]:'')+'</div></div>';});}
   if(d.notes?.length){h+='<h2 style="margin-top:28px">Research Notes</h2>';d.notes.forEach(n=>{h+='<div class="note-item"><div class="note-title">'+(esc(n.title)||esc(n.note_type))+'</div><div class="note-body">'+esc(n.content)+'</div><div class="note-meta">'+esc(n.author||'')+(n.created_at?' · '+n.created_at.split('T')[0]:'')+'</div></div>';});}
   return h;
+}
+
+// ── Scenario form load/save ──────────────────────────────────
+async function loadScenarioForm(ticker){
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/scenarios');
+    if(!r.ok)return;const scenarios=await r.json();
+    scenarios.forEach(function(s){
+      var t=s.scenario_type;
+      var tpEl=document.getElementById('sc-'+t+'-tp');
+      var probEl=document.getElementById('sc-'+t+'-prob');
+      var ratEl=document.getElementById('sc-'+t+'-rationale');
+      if(tpEl&&s.target_price!=null)tpEl.value=s.target_price;
+      if(probEl&&s.probability!=null)probEl.value=s.probability;
+      if(ratEl&&s.key_assumptions)ratEl.value=s.key_assumptions;
+      if(ratEl&&s.methodology_detail&&!s.key_assumptions)ratEl.value=s.methodology_detail;
+    });
+  }catch(e){}
+}
+async function saveScenarios(ticker){
+  var status=document.getElementById('sc-save-status');
+  status.textContent='Saving…';status.style.color='var(--gold)';
+  var scenarios=[];
+  ['bull','base','bear'].forEach(function(t){
+    var tp=document.getElementById('sc-'+t+'-tp');
+    var prob=document.getElementById('sc-'+t+'-prob');
+    var rat=document.getElementById('sc-'+t+'-rationale');
+    var tpVal=tp?parseFloat(tp.value):null;
+    var probVal=prob?parseFloat(prob.value):null;
+    var ratVal=rat?rat.value.trim():'';
+    if(tpVal&&!isNaN(tpVal)){
+      scenarios.push({scenario_type:t,target_price:tpVal,probability:isNaN(probVal)?null:probVal,key_assumptions:ratVal||null});
+    }
+  });
+  // Buffett formula
+  var bfTp=document.getElementById('sc-buffett-tp');
+  var bfRat=document.getElementById('sc-buffett-rationale');
+  var bfVal=bfTp?parseFloat(bfTp.value):null;
+  if(bfVal&&!isNaN(bfVal)){
+    scenarios.push({scenario_type:'buffett',target_price:bfVal,probability:null,key_assumptions:bfRat?bfRat.value.trim():null});
+  }
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios:scenarios})});
+    if(!r.ok)throw new Error('Failed');
+    status.textContent='Saved';status.style.color='var(--green)';
+    setTimeout(function(){status.textContent='';},2000);
+    // Reload chart
+    loadCockpit();
+  }catch(e){status.textContent='Error: '+e.message;status.style.color='var(--red)';}
 }
 
 // ── Actions ──────────────────────────────────────────────────
