@@ -2616,17 +2616,6 @@ function renderPortfolio(portId,d){
   h+='<h2 style="margin-top:24px">Add Holding</h2>';
   h+='<div class="form-row"><input id="ph-ticker" placeholder="Ticker (e.g. BNZL)"><input id="ph-weight" type="number" step="0.1" placeholder="Weight %" style="max-width:100px"><input id="ph-cost" type="number" step="0.01" placeholder="Cost basis" style="max-width:130px"><button onclick="addHolding(\''+portId+'\')">+ Add</button></div>';
 
-  // Price & scenario editor
-  h+='<h2 style="margin-top:28px">Set Price & Scenarios</h2>';
-  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-bottom:8px">Enter a ticker then set its current price and bear/base/bull targets with probabilities.</div>';
-  h+='<div class="form-row"><input id="vs-ticker" placeholder="Ticker" style="max-width:130px"><input id="vs-price" type="number" step="0.01" placeholder="Current price" style="max-width:130px"><button onclick="setPrice(\''+portId+'\')">Set Price</button></div>';
-  h+='<div class="g3" style="margin-top:12px">';
-  h+='<div class="cd" style="border-left-color:var(--red);padding:16px"><div class="cd-t" style="color:var(--red)">Bear Case</div><input class="fi" id="vs-bear" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bp" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
-  h+='<div class="cd" style="border-left-color:var(--text3);padding:16px"><div class="cd-t">Base Case</div><input class="fi" id="vs-base" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bap" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
-  h+='<div class="cd" style="border-left-color:var(--green);padding:16px"><div class="cd-t" style="color:var(--green)">Bull Case</div><input class="fi" id="vs-bull" type="number" step="0.01" placeholder="Target price" style="margin-bottom:6px;font-size:12px"><input class="fi" id="vs-bup" type="number" step="5" placeholder="Probability %" style="font-size:12px"></div>';
-  h+='</div>';
-  h+='<button class="btn" style="margin-top:12px" onclick="setScenarios(\''+portId+'\')">Save Scenarios</button>';
-
   c.innerHTML=h;
 }
 
