@@ -1168,8 +1168,8 @@ function renderCkDecisions(ticker,d){
   // Base
   h+='<div style="border-left:3px solid var(--gold);padding-left:12px">';
   h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Base Case</div>';
-  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-base-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
-  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-base-prob" type="number" step="1" min="0" max="100" placeholder="0" style="font-size:13px"></div></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-base-tp" type="number" step="any" placeholder="0.00" style="font-size:13px" oninput="calcBuffett()"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-base-prob" type="number" step="1" min="0" max="100" placeholder="0" style="font-size:13px" oninput="calcBuffett()"></div></div>';
   h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-base-rationale" placeholder="Key assumptions for base case…" style="font-size:12px;min-height:60px"></textarea>';
   h+='</div>';
   // Bear
@@ -1333,18 +1333,24 @@ async function reloadScenarioChart(ticker){
 function calcBuffett(){
   var bullTp=parseFloat((document.getElementById('sc-bull-tp')||{}).value);
   var bullProb=parseFloat((document.getElementById('sc-bull-prob')||{}).value);
+  var baseTp=parseFloat((document.getElementById('sc-base-tp')||{}).value);
+  var baseProb=parseFloat((document.getElementById('sc-base-prob')||{}).value);
   var bearTp=parseFloat((document.getElementById('sc-bear-tp')||{}).value);
   var bearProb=parseFloat((document.getElementById('sc-bear-prob')||{}).value);
   var el=document.getElementById('sc-buffett-tp');
   var detail=document.getElementById('sc-buffett-detail');
   if(!el)return;
-  if(isNaN(bullTp)||isNaN(bearTp)){el.textContent='—';if(detail)detail.textContent='Enter bull and bear targets';return;}
+  // Need at least bear + one upside case (base or bull)
+  var upsideTp=!isNaN(bullTp)?bullTp:(!isNaN(baseTp)?baseTp:NaN);
+  var upsideProb=!isNaN(bullTp)?bullProb:(!isNaN(baseTp)?baseProb:NaN);
+  if(isNaN(upsideTp)||isNaN(bearTp)){el.textContent='—';if(detail)detail.textContent='Enter at least base/bull and bear targets';return;}
   // Default probabilities if not set
-  if(isNaN(bullProb))bullProb=75;
-  if(isNaN(bearProb))bearProb=25;
-  var bf=bullTp*(bullProb/100)+bearTp*(bearProb/100);
+  if(isNaN(upsideProb))upsideProb=75;
+  if(isNaN(bearProb))bearProb=100-upsideProb;
+  var bf=upsideTp*(upsideProb/100)+bearTp*(bearProb/100);
+  var upsideLabel=!isNaN(bullTp)?'Bull':'Base';
   el.textContent=Math.round(bf*100)/100;
-  if(detail)detail.textContent=bullTp+' × '+bullProb+'% + '+bearTp+' × '+bearProb+'% = '+Math.round(bf*100)/100;
+  if(detail)detail.textContent=upsideLabel+' '+upsideTp+' × '+upsideProb+'% + Bear '+bearTp+' × '+bearProb+'% = '+Math.round(bf*100)/100;
 }
 
 // ── Scenario form load/save ──────────────────────────────────
