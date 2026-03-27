@@ -123,4 +123,7 @@ async def health():
 async def ui():
     """Serve the research analyst UI."""
     html_path = Path(__file__).parent.parent / "ui" / "index.html"
-    return HTMLResponse(html_path.read_text())
+    return HTMLResponse(
+        content=html_path.read_text(),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
