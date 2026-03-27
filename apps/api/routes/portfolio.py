@@ -492,22 +492,24 @@ async def scenario_history(ticker: str, db: AsyncSession = Depends(get_db)):
         "current_price": float(s.current_price) if s.current_price else None,
     } for s in snapshots]
 
-    # Always append current scenarios as the latest point
-    now = datetime.now(timezone.utc).isoformat()
-    price_rec = await _get_latest_price(db, company.id)
-    current_price = float(price_rec.price) if price_rec else None
-    scenarios_q = await db.execute(
-        select(ValuationScenario).where(ValuationScenario.company_id == company.id)
-    )
-    for s in scenarios_q.scalars().all():
-        if s.target_price is not None:
-            out.append({
-                "date": now,
-                "scenario_type": s.scenario_type,
-                "target_price": float(s.target_price),
-                "probability": float(s.probability) if s.probability else None,
-                "current_price": current_price,
-            })
+    # Append current scenarios as "now" only if no snapshots exist yet
+    # (once snapshots exist, they already include the latest state)
+    if not snapshots:
+        now = datetime.now(timezone.utc).isoformat()
+        price_rec = await _get_latest_price(db, company.id)
+        current_price = float(price_rec.price) if price_rec else None
+        scenarios_q = await db.execute(
+            select(ValuationScenario).where(ValuationScenario.company_id == company.id)
+        )
+        for s in scenarios_q.scalars().all():
+            if s.target_price is not None:
+                out.append({
+                    "date": now,
+                    "scenario_type": s.scenario_type,
+                    "target_price": float(s.target_price),
+                    "probability": float(s.probability) if s.probability else None,
+                    "current_price": current_price,
+                })
 
     return out
 

@@ -1268,7 +1268,17 @@ async function reloadScenarioChart(ticker){
     var el=document.getElementById('scenario-history-chart');
     if(!el)return;
     if(!data.length){el.innerHTML='<div style="text-align:center;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px"><div style="font-family:var(--sans);font-size:13px;color:var(--text3)">No scenario history yet.</div></div>';return;}
-    var dates=[...new Set(data.map(function(d){return d.date.split('T')[0]}))];
+    // Group by unique timestamp (not just date) to show intraday changes
+    var dateKeys=[...new Set(data.map(function(d){return d.date}))];
+    var dates=dateKeys.map(function(d){
+      var dt=new Date(d);
+      var day=d.split('T')[0];
+      // If multiple entries on same day, show time too
+      var sameDay=dateKeys.filter(function(k){return k.startsWith(day)}).length;
+      return sameDay>1?day+' '+dt.toTimeString().slice(0,5):day;
+    });
+    // Remap data to use the display date keys
+    var dateMap={};dateKeys.forEach(function(k,i){dateMap[k]=i;});
     var types=['bull','base','bear','buffett'];
     var colors={bull:'var(--green)',base:'var(--gold)',bear:'var(--red)',buffett:'#8b5cf6'};
     var labels={bull:'Bull',base:'Base',bear:'Bear',buffett:'Buffett'};
@@ -1299,8 +1309,8 @@ async function reloadScenarioChart(ticker){
       svg+='<text x="'+(W-pad.r+2)+'" y="'+(cy+4)+'" fill="var(--text4)" font-size="9">Price</text>';
     }
     types.forEach(function(type){
-      var pts=dates.map(function(d,i){
-        var match=data.find(function(s){return s.date.startsWith(d)&&s.scenario_type===type});
+      var pts=dateKeys.map(function(dk,i){
+        var match=data.find(function(s){return s.date===dk&&s.scenario_type===type});
         return match?{x:xScale(i),y:yScale(match.target_price),v:match.target_price}:null;
       }).filter(Boolean);
       if(!pts.length)return;
