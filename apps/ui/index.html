@@ -923,7 +923,7 @@ function renderCkResults(ticker,d){
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Analysis</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Synthesis</button><button class="btn2" style="font-size:11px;padding:5px 12px;opacity:0.7" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">📄 Reprocess Documents</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
     // Ask a Question at top
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
     // Analysis Output
@@ -1032,8 +1032,21 @@ async function uploadAddDocs(ticker,period,count){
     pollReprocess(d.job_id,ticker,period);
   }catch(e){listEl.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
+async function resynthesisePeriod(ticker,period){
+  if(!confirm('Re-run synthesis for '+period+'? This will regenerate the analysis output using your updated thesis context. Existing metrics and extractions are preserved.'))return;
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/resynthesise',{method:'POST'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    const d=await r.json();
+    const resDiv=E('res-'+period);
+    if(resDiv){
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">🔄 Re-synthesising with updated thesis…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
+    }
+    pollReprocess(d.job_id,ticker,period);
+  }catch(e){alert('Re-synthesis failed: '+e.message);}
+}
 async function reprocessPeriod(ticker,period){
-  if(!confirm('Re-run analysis for '+period+'? This will clear existing metrics and outputs, then reprocess stored documents with the latest extraction pipeline.'))return;
+  if(!confirm('Reprocess documents for '+period+'? This will clear existing metrics and outputs, then re-parse and re-extract all documents from scratch.'))return;
   try{
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}

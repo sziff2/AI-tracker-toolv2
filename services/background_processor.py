@@ -613,6 +613,213 @@ async def run_batch_pipeline(
         )
 
 
+async def run_resynthesise_pipeline(
+    job_id: uuid.UUID, company_id: uuid.UUID, ticker: str,
+    period_label: str, model: str = "standard",
+):
+    """Re-run only synthesis, thesis comparison, surprises, and IR questions.
+    Skips document parsing and extraction — uses existing extracted metrics from DB."""
+    model_id = MODEL_MAP.get(model, MODEL_MAP["standard"])
+    completed = []
+    output = {}
+
+    try:
+        await _update_job(job_id, status="processing", current_step="loading_data", progress_pct=10)
+        await _add_log(job_id, f"Re-synthesising {ticker} / {period_label} with updated thesis context")
+
+        async with AsyncSessionLocal() as db:
+            company_q = await db.execute(select(Company).where(Company.id == company_id))
+            company = company_q.scalar_one_or_none()
+
+            # Load thesis
+            thesis_q = await db.execute(
+                select(ThesisVersion).where(
+                    ThesisVersion.company_id == company_id, ThesisVersion.active == True
+                ).order_by(ThesisVersion.thesis_date.desc()).limit(1)
+            )
+            thesis = thesis_q.scalar_one_or_none()
+
+            output["company"] = {"ticker": ticker, "name": company.name if company else ticker}
+            output["period"] = period_label
+
+            # Load existing extracted metrics from DB
+            from apps.api.models import ExtractedMetric, Document
+            docs_q = await db.execute(
+                select(Document).where(
+                    Document.company_id == company_id,
+                    Document.period_label == period_label,
+                )
+            )
+            docs = docs_q.scalars().all()
+            if not docs:
+                await _update_job(job_id, status="failed", error_message="No documents found for this period")
+                return
+
+            last_doc_id = docs[-1].id
+            doc_types = [d.document_type or "other" for d in docs]
+
+            metrics_q = await db.execute(
+                select(ExtractedMetric).where(
+                    ExtractedMetric.company_id == company_id,
+                    ExtractedMetric.period_label == period_label,
+                ).order_by(ExtractedMetric.confidence.desc()).limit(60)
+            )
+            db_metrics = metrics_q.scalars().all()
+
+            # Build extraction data from existing metrics
+            earnings_data, transcript_data, broker_data, presentation_data = [], [], [], []
+            if db_metrics:
+                await _add_log(job_id, f"Loaded {len(db_metrics)} existing metrics from database")
+                lines = []
+                for m in db_metrics:
+                    val = f"{m.metric_value} {m.unit}" if m.metric_value else m.metric_text
+                    lines.append({"metric_name": m.metric_name, "metric_value": val,
+                                  "segment": m.segment, "source_snippet": m.source_snippet})
+                earnings_data.append(json.dumps(lines))
+            else:
+                await _add_log(job_id, "⚠ No existing metrics found — synthesis may be limited", "warn")
+
+            output["documents_processed"] = [{"document_type": d.document_type, "filename": d.title} for d in docs]
+
+            # ── Thesis comparison + Surprises (parallel) ─────────
+            await _update_step(job_id, "comparing thesis", 30, completed)
+            await _add_log(job_id, "Running thesis comparison and surprise detection with updated thesis...")
+
+            async def _do_compare():
+                try:
+                    async with AsyncSessionLocal() as db2:
+                        from services.thesis_comparator import compare_thesis
+                        c = await compare_thesis(db2, company_id, last_doc_id, period_label)
+                        return ("thesis_comparison", c.model_dump())
+                except ValueError:
+                    return ("thesis_comparison", None)
+                except Exception as e:
+                    return ("thesis_comparison", {"error": str(e)[:200]})
+
+            async def _do_surprises():
+                try:
+                    async with AsyncSessionLocal() as db2:
+                        from services.surprise_detector import detect_surprises
+                        s = await detect_surprises(db2, company_id, last_doc_id, period_label)
+                        return ("surprises", [x.model_dump() for x in s])
+                except Exception:
+                    return ("surprises", [])
+
+            results = await asyncio.gather(_do_compare(), _do_surprises())
+            for key, val in results:
+                output[key] = val
+                if key == "thesis_comparison" and val:
+                    completed.append("compare")
+                elif key == "surprises":
+                    completed.append("surprises")
+
+            # ── Synthesis + IR Questions (parallel) ─────────
+            await _update_step(job_id, "synthesising", 60, completed)
+            await _add_log(job_id, "Generating synthesis with updated thesis context...")
+
+            def _compress_items(items_list, label, max_items=40):
+                if not items_list:
+                    return f"No {label} data."
+                try:
+                    all_items = []
+                    for block in items_list:
+                        parsed = json.loads(block) if isinstance(block, str) else block
+                        if isinstance(parsed, list):
+                            all_items.extend(parsed)
+                    lines = []
+                    for item in all_items[:max_items]:
+                        name = item.get("metric_name") or item.get("topic") or item.get("category", "")
+                        val = item.get("metric_value") or item.get("metric_text") or item.get("description") or ""
+                        unit = item.get("unit") or ""
+                        segment = item.get("segment") or item.get("geography") or ""
+                        snippet = item.get("source_snippet") or ""
+                        line = f"• {name}: {val} {unit}".strip()
+                        if segment:
+                            line += f" [{segment}]"
+                        if snippet and len(snippet) < 200:
+                            line += f" — \"{snippet[:150]}\""
+                        lines.append(line)
+                    return "\n".join(lines)
+                except Exception:
+                    return "\n".join(items_list)[:5000]
+
+            async def _do_synthesis():
+                try:
+                    from services.llm_client import call_llm_json_async
+                    from prompts import SYNTHESIS_BRIEFING
+                    from services.context_builder import build_thesis_context
+                    from services.prompt_registry import get_active_prompt
+
+                    async with AsyncSessionLocal() as db_ctx:
+                        thesis_ctx = await build_thesis_context(db_ctx, company_id)
+                        synthesis_template = await get_active_prompt(db_ctx, "synthesis", SYNTHESIS_BRIEFING)
+
+                    format_args = {
+                        "company": company.name if company else ticker,
+                        "ticker": ticker,
+                        "period": period_label,
+                        "thesis": thesis_ctx,
+                        "earnings_data": _compress_items(earnings_data, "earnings"),
+                        "transcript_data": _compress_items(transcript_data, "transcript"),
+                        "broker_data": _compress_items(broker_data, "broker"),
+                        "presentation_data": _compress_items(presentation_data, "presentation"),
+                        "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:2500] if output.get("thesis_comparison") else "Not available.",
+                        "surprises": json.dumps(output.get("surprises"), default=str)[:2000] if output.get("surprises") else "None detected.",
+                        "text": _compress_items(earnings_data + transcript_data, "all"),
+                    }
+                    try:
+                        synthesis_prompt = synthesis_template.format(**format_args)
+                    except KeyError as ke:
+                        logger.warning("Synthesis prompt format failed (bad placeholder %s), falling back to default", ke)
+                        synthesis_prompt = SYNTHESIS_BRIEFING.format(**format_args)
+                    synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192, model=model_id)
+                    return ("synthesis", synthesis)
+                except Exception as e:
+                    logger.error("Resynthesis failed for %s/%s: %s", ticker, period_label, str(e)[:500])
+                    return ("synthesis", {"error": str(e)[:200]})
+
+            async def _do_ir_questions():
+                try:
+                    async with AsyncSessionLocal() as db2:
+                        from services.output_generator import generate_ir_questions
+                        questions = await generate_ir_questions(db2, company_id, period_label)
+                        return ("ir_questions", [q.model_dump() for q in questions])
+                except Exception:
+                    return ("ir_questions", [])
+
+            gen_results = await asyncio.gather(_do_synthesis(), _do_ir_questions())
+            for key, val in gen_results:
+                output[key] = val
+                completed.append(key)
+                if key == "synthesis":
+                    if isinstance(val, dict) and val.get("error"):
+                        await _add_log(job_id, f"⚠ Synthesis error: {val.get('error', '')[:100]}", "warn")
+                    else:
+                        await _add_log(job_id, "✓ Synthesis complete — generated with updated thesis context")
+                elif key == "ir_questions":
+                    await _add_log(job_id, f"✓ Generated {len(val) if isinstance(val, list) else 0} IR questions")
+
+            # ── Save ─────────────────────────────────────────
+            await _update_step(job_id, "saving", 95, completed)
+            await _add_log(job_id, "Saving results to database...")
+            await _save_research_output(company_id, period_label, output, "batch_synthesis")
+
+        await _add_log(job_id, "✓ Re-synthesis complete!")
+        await _update_job(
+            job_id, status="completed", current_step="done", progress_pct=100,
+            steps_completed=json.dumps(completed), result_json=json.dumps(output, default=str),
+        )
+        logger.info("Resynthesis job %s completed: %s / %s", job_id, ticker, period_label)
+
+    except Exception as e:
+        logger.error("Resynthesis job %s failed: %s", job_id, str(e))
+        await _add_log(job_id, f"✕ Failed: {str(e)[:200]}", "error")
+        await _update_job(
+            job_id, status="failed", error_message=str(e)[:500],
+            result_json=json.dumps(output, default=str) if output else None,
+        )
+
+
 def start_background_job(coro):
     """Launch a background coroutine as an asyncio task."""
     task = asyncio.get_event_loop().create_task(coro)
