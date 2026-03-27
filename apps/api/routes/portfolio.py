@@ -475,7 +475,8 @@ async def valuation_summary(ticker: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/companies/{ticker}/scenario-history")
 async def scenario_history(ticker: str, db: AsyncSession = Depends(get_db)):
-    """Get historical scenario snapshots for charting over time."""
+    """Get historical scenario snapshots for charting over time.
+    Always includes current scenarios as the latest data point."""
     company = await _get_company(db, ticker)
     result = await db.execute(
         select(ScenarioSnapshot)
@@ -483,13 +484,32 @@ async def scenario_history(ticker: str, db: AsyncSession = Depends(get_db)):
         .order_by(ScenarioSnapshot.snapshot_date.asc())
     )
     snapshots = result.scalars().all()
-    return [{
+    out = [{
         "date": s.snapshot_date.isoformat() if s.snapshot_date else None,
         "scenario_type": s.scenario_type,
         "target_price": float(s.target_price) if s.target_price else None,
         "probability": float(s.probability) if s.probability else None,
         "current_price": float(s.current_price) if s.current_price else None,
     } for s in snapshots]
+
+    # Always append current scenarios as the latest point
+    now = datetime.now(timezone.utc).isoformat()
+    price_rec = await _get_latest_price(db, company.id)
+    current_price = float(price_rec.price) if price_rec else None
+    scenarios_q = await db.execute(
+        select(ValuationScenario).where(ValuationScenario.company_id == company.id)
+    )
+    for s in scenarios_q.scalars().all():
+        if s.target_price is not None:
+            out.append({
+                "date": now,
+                "scenario_type": s.scenario_type,
+                "target_price": float(s.target_price),
+                "probability": float(s.probability) if s.probability else None,
+                "current_price": current_price,
+            })
+
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════
