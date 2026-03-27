@@ -1161,8 +1161,8 @@ function renderCkDecisions(ticker,d){
   // Bull
   h+='<div style="border-left:3px solid var(--green);padding-left:12px">';
   h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Bull Case</div>';
-  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bull-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
-  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bull-prob" type="number" step="1" min="0" max="100" placeholder="75" style="font-size:13px"></div></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bull-tp" type="number" step="any" placeholder="0.00" style="font-size:13px" oninput="calcBuffett()"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bull-prob" type="number" step="1" min="0" max="100" placeholder="75" style="font-size:13px" oninput="calcBuffett()"></div></div>';
   h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-bull-rationale" placeholder="Key assumptions for bull case…" style="font-size:12px;min-height:60px"></textarea>';
   h+='</div>';
   // Base
@@ -1175,17 +1175,18 @@ function renderCkDecisions(ticker,d){
   // Bear
   h+='<div style="border-left:3px solid var(--red);padding-left:12px">';
   h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Bear Case</div>';
-  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bear-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
-  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bear-prob" type="number" step="1" min="0" max="100" placeholder="25" style="font-size:13px"></div></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:6px"><div style="flex:1"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-bear-tp" type="number" step="any" placeholder="0.00" style="font-size:13px" oninput="calcBuffett()"></div>';
+  h+='<div style="width:70px"><div class="fl" style="font-size:10px">Prob %</div><input class="fi" id="sc-bear-prob" type="number" step="1" min="0" max="100" placeholder="25" style="font-size:13px" oninput="calcBuffett()"></div></div>';
   h+='<div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-bear-rationale" placeholder="Key assumptions for bear case…" style="font-size:12px;min-height:60px"></textarea>';
   h+='</div>';
   h+='</div>';
-  // Buffett formula row
+  // Buffett formula row — auto-calculated
   h+='<div style="border-left:3px solid #8b5cf6;padding-left:12px;margin-top:16px">';
-  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:#8b5cf6;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Buffett Formula</div>';
-  h+='<div style="display:flex;gap:8px"><div style="width:140px"><div class="fl" style="font-size:10px">Target Price</div><input class="fi" id="sc-buffett-tp" type="number" step="any" placeholder="0.00" style="font-size:13px"></div>';
-  h+='<div style="flex:1"><div class="fl" style="font-size:10px">Rationale</div><textarea class="fi" id="sc-buffett-rationale" placeholder="Buffett formula assumptions…" style="font-size:12px;min-height:36px"></textarea></div></div>';
-  h+='</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;color:#8b5cf6;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Buffett Formula <span style="font-weight:400;color:var(--text4)">(auto: Bull × Prob + Bear × Prob)</span></div>';
+  h+='<div style="display:flex;gap:16px;align-items:center">';
+  h+='<div style="font-family:var(--mono);font-size:20px;font-weight:700;color:#8b5cf6;min-width:120px" id="sc-buffett-tp">—</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)" id="sc-buffett-detail"></div>';
+  h+='</div></div>';
   h+='<div style="margin-top:16px;display:flex;gap:10px;align-items:center"><button class="btn" onclick="saveScenarios(\''+ticker+'\')">Save Scenarios</button><span id="sc-save-status" style="font-family:var(--sans);font-size:12px;color:var(--text4)"></span></div>';
   h+='</div>';
   h+='<div id="scenario-history-chart" style="margin-bottom:20px"></div>';
@@ -1328,6 +1329,24 @@ async function reloadScenarioChart(ticker){
   }catch(e){}
 }
 
+// ── Buffett formula auto-calc ────────────────────────────────
+function calcBuffett(){
+  var bullTp=parseFloat((document.getElementById('sc-bull-tp')||{}).value);
+  var bullProb=parseFloat((document.getElementById('sc-bull-prob')||{}).value);
+  var bearTp=parseFloat((document.getElementById('sc-bear-tp')||{}).value);
+  var bearProb=parseFloat((document.getElementById('sc-bear-prob')||{}).value);
+  var el=document.getElementById('sc-buffett-tp');
+  var detail=document.getElementById('sc-buffett-detail');
+  if(!el)return;
+  if(isNaN(bullTp)||isNaN(bearTp)){el.textContent='—';if(detail)detail.textContent='Enter bull and bear targets';return;}
+  // Default probabilities if not set
+  if(isNaN(bullProb))bullProb=75;
+  if(isNaN(bearProb))bearProb=25;
+  var bf=bullTp*(bullProb/100)+bearTp*(bearProb/100);
+  el.textContent=Math.round(bf*100)/100;
+  if(detail)detail.textContent=bullTp+' × '+bullProb+'% + '+bearTp+' × '+bearProb+'% = '+Math.round(bf*100)/100;
+}
+
 // ── Scenario form load/save ──────────────────────────────────
 async function loadScenarioForm(ticker){
   try{
@@ -1343,6 +1362,7 @@ async function loadScenarioForm(ticker){
       if(ratEl&&s.key_assumptions)ratEl.value=s.key_assumptions;
       if(ratEl&&s.methodology_detail&&!s.key_assumptions)ratEl.value=s.methodology_detail;
     });
+    calcBuffett();
   }catch(e){}
 }
 async function saveScenarios(ticker){
@@ -1360,12 +1380,11 @@ async function saveScenarios(ticker){
       scenarios.push({scenario_type:t,target_price:tpVal,probability:isNaN(probVal)?null:probVal,key_assumptions:ratVal||null});
     }
   });
-  // Buffett formula
-  var bfTp=document.getElementById('sc-buffett-tp');
-  var bfRat=document.getElementById('sc-buffett-rationale');
-  var bfVal=bfTp?parseFloat(bfTp.value):null;
+  // Buffett formula — auto-calculated
+  var bfEl=document.getElementById('sc-buffett-tp');
+  var bfVal=bfEl?parseFloat(bfEl.textContent):null;
   if(bfVal&&!isNaN(bfVal)){
-    scenarios.push({scenario_type:'buffett',target_price:bfVal,probability:null,key_assumptions:bfRat?bfRat.value.trim():null});
+    scenarios.push({scenario_type:'buffett',target_price:bfVal,probability:null});
   }
   try{
     var r=await fetch('/api/v1/companies/'+enc(ticker)+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios:scenarios})});
