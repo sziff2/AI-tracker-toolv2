@@ -383,6 +383,25 @@ class PortfolioHolding(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Scenario History — track bear/base/bull/buffett changes over time
+# ─────────────────────────────────────────────────────────────────
+class ScenarioSnapshot(Base, TimestampMixin):
+    __tablename__ = "scenario_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    snapshot_date = Column(DateTime(timezone=True), nullable=False)
+    scenario_type = Column(Text, nullable=False)       # bear | base | bull | buffett
+    target_price = Column(Numeric)
+    probability = Column(Numeric)
+    current_price = Column(Numeric)                    # price at time of snapshot
+    currency = Column(Text, default="USD")
+    source = Column(Text, default="manual")            # manual | csv_import
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
 # Price History — track current and historical prices
 # ─────────────────────────────────────────────────────────────────
 class PriceRecord(Base, TimestampMixin):

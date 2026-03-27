@@ -1153,7 +1153,71 @@ async function askQuestion(ticker,period){
 // ── Valuation tab ────────────────────────────────────────────
 function renderCkDecisions(ticker,d){
   const savedAuthor=localStorage.getItem('op_author')||'';
-  let h='<div style="text-align:center;padding:20px;margin-bottom:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px"><div style="font-size:24px;margin-bottom:8px">📊</div><div style="font-family:var(--sans);font-size:13px;color:var(--text3)">Bull/Bear case and BF with tracking over time to come</div></div>';
+  let h='<div id="scenario-history-chart" style="margin-bottom:20px"></div>';
+  // Load scenario history chart
+  (async function(){
+    try{
+      const r=await fetch('/api/v1/companies/'+enc(ticker)+'/scenario-history');
+      if(!r.ok)return;const data=await r.json();
+      const el=document.getElementById('scenario-history-chart');
+      if(!data.length){el.innerHTML='<div style="text-align:center;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px"><div style="font-family:var(--sans);font-size:13px;color:var(--text3)">No scenario history yet. Update scenarios to start tracking over time.</div></div>';return;}
+      // Group by date
+      const dates=[...new Set(data.map(d=>d.date.split('T')[0]))];
+      const types=['bull','base','bear','buffett'];
+      const colors={bull:'var(--green)',base:'var(--gold)',bear:'var(--red)',buffett:'#8b5cf6'};
+      const labels={bull:'Bull',base:'Base',bear:'Bear',buffett:'Buffett'};
+      // Get min/max for scaling
+      const allPrices=data.filter(d=>d.target_price).map(d=>d.target_price);
+      const cpPrices=data.filter(d=>d.current_price).map(d=>d.current_price);
+      allPrices.push(...cpPrices);
+      if(!allPrices.length){el.innerHTML='';return;}
+      const minP=Math.min(...allPrices)*0.9,maxP=Math.max(...allPrices)*1.1;
+      const W=700,H=300,pad={t:30,r:20,b:50,l:60};
+      const cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
+      const xScale=i=>pad.l+(i/(Math.max(dates.length-1,1)))*cw;
+      const yScale=v=>pad.t+ch-(((v-minP)/(maxP-minP))*ch);
+      let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;font-family:var(--sans)">';
+      // Grid lines
+      const yTicks=5;
+      for(let i=0;i<=yTicks;i++){
+        const v=minP+(maxP-minP)*(i/yTicks);const y=yScale(v);
+        svg+='<line x1="'+pad.l+'" y1="'+y+'" x2="'+(W-pad.r)+'" y2="'+y+'" stroke="var(--border)" stroke-width="0.5"/>';
+        svg+='<text x="'+(pad.l-8)+'" y="'+(y+4)+'" fill="var(--text4)" font-size="10" text-anchor="end">'+Math.round(v)+'</text>';
+      }
+      // X axis labels
+      dates.forEach((d,i)=>{
+        const x=xScale(i);
+        svg+='<text x="'+x+'" y="'+(H-pad.b+20)+'" fill="var(--text4)" font-size="9" text-anchor="middle">'+d.slice(5)+'</text>';
+      });
+      // Current price line
+      if(cpPrices.length){
+        const lastCp=data.filter(d=>d.current_price).slice(-1)[0].current_price;
+        const cy=yScale(lastCp);
+        svg+='<line x1="'+pad.l+'" y1="'+cy+'" x2="'+(W-pad.r)+'" y2="'+cy+'" stroke="var(--text4)" stroke-width="1" stroke-dasharray="4,4"/>';
+        svg+='<text x="'+(W-pad.r+2)+'" y="'+(cy+4)+'" fill="var(--text4)" font-size="9">Price</text>';
+      }
+      // Lines per scenario type
+      types.forEach(type=>{
+        const pts=dates.map((d,i)=>{
+          const match=data.find(s=>s.date.startsWith(d)&&s.scenario_type===type);
+          return match?{x:xScale(i),y:yScale(match.target_price),v:match.target_price}:null;
+        }).filter(Boolean);
+        if(!pts.length)return;
+        const path=pts.map((p,i)=>(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+        svg+='<path d="'+path+'" fill="none" stroke="'+colors[type]+'" stroke-width="2"/>';
+        pts.forEach(p=>{svg+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="'+colors[type]+'"/>';});
+        // Label at end
+        const last=pts[pts.length-1];
+        svg+='<text x="'+(last.x+6)+'" y="'+(last.y+4)+'" fill="'+colors[type]+'" font-size="10" font-weight="600">'+labels[type]+' '+Math.round(last.v)+'</text>';
+      });
+      svg+='</svg>';
+      // Legend
+      let legend='<div style="display:flex;gap:16px;justify-content:center;margin-top:8px">';
+      types.forEach(t=>{if(data.some(d=>d.scenario_type===t))legend+='<span style="font-family:var(--sans);font-size:11px;color:'+colors[t]+'">● '+labels[t]+'</span>';});
+      legend+='</div>';
+      el.innerHTML='<div class="cd" style="padding:20px"><div class="cd-t">Scenario History</div>'+svg+legend+'</div>';
+    }catch(e){}
+  })();
   h+='<div style="margin-bottom:20px"><div class="form-row"><select id="dec-action"><option value="hold">Hold</option><option value="add">Add</option><option value="trim">Trim</option><option value="exit">Exit</option><option value="initiate">Initiate</option><option value="watchlist">Watchlist</option></select><input id="dec-conviction" type="number" min="1" max="5" placeholder="Conviction 1-5" style="max-width:120px"><input id="dec-author" placeholder="Your name" style="max-width:140px" value="'+esc(savedAuthor)+'"></div><div class="form-row" style="margin-top:6px"><textarea id="dec-rationale" placeholder="Rationale…" style="min-height:50px"></textarea><button onclick="addDecision(\''+ticker+'\')">Log Decision</button></div></div>';
   h+='<h2>Add Note</h2><div class="form-row"><select id="note-type"><option value="general">General</option><option value="call_note">Call Note</option><option value="meeting">Meeting</option><option value="thesis_update">Thesis Update</option></select><input id="note-title" placeholder="Title" style="max-width:200px"><input id="note-author" placeholder="Author" style="max-width:120px" value="'+esc(savedAuthor)+'"></div><div class="form-row" style="margin-top:6px"><textarea id="note-content" placeholder="Note…" style="min-height:50px"></textarea><button onclick="addNote(\''+ticker+'\')">Add Note</button></div>';
   if(d.decisions?.length){h+='<h2 style="margin-top:28px">Decision History</h2>';d.decisions.forEach(dec=>{h+='<div class="dl-item"><div class="dl-action '+esc(dec.action)+'">'+esc(dec.action)+(dec.conviction?' · Conviction '+dec.conviction+'/5':'')+'</div><div class="dl-rat">'+esc(dec.rationale)+'</div><div class="dl-meta">'+esc(dec.author||'')+(dec.created_at?' · '+dec.created_at.split('T')[0]:'')+'</div></div>';});}

@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db
 from apps.api.models import (
-    Company, Portfolio, PortfolioHolding, PriceRecord, ValuationScenario,
+    Company, Portfolio, PortfolioHolding, PriceRecord, ValuationScenario, ScenarioSnapshot,
 )
 
 router = APIRouter(tags=["portfolio"])
@@ -405,6 +405,10 @@ async def get_scenarios(ticker: str, db: AsyncSession = Depends(get_db)):
 @router.put("/companies/{ticker}/scenarios")
 async def set_scenarios(ticker: str, body: ScenariosUpdate, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
+    # Get current price for snapshot
+    price_rec = await _get_latest_price(db, company.id)
+    current_price = float(price_rec.price) if price_rec else None
+    now = datetime.now(timezone.utc)
     # Delete existing and replace
     await db.execute(delete(ValuationScenario).where(ValuationScenario.company_id == company.id))
     for s in body.scenarios:
@@ -413,8 +417,16 @@ async def set_scenarios(ticker: str, body: ScenariosUpdate, db: AsyncSession = D
             probability=s.probability, target_price=s.target_price, currency=s.currency,
             methodology=s.methodology, methodology_detail=s.methodology_detail,
             key_assumptions=s.key_assumptions, time_horizon=s.time_horizon,
-            author=s.author, last_reviewed=datetime.now(timezone.utc),
+            author=s.author, last_reviewed=now,
         ))
+        # Save snapshot for historical tracking
+        if s.target_price is not None:
+            db.add(ScenarioSnapshot(
+                id=uuid.uuid4(), company_id=company.id, snapshot_date=now,
+                scenario_type=s.scenario_type, target_price=s.target_price,
+                probability=s.probability, current_price=current_price,
+                currency=s.currency or "USD", source="manual",
+            ))
     await db.commit()
     return {"status": "saved", "scenarios": len(body.scenarios)}
 
@@ -459,6 +471,25 @@ async def valuation_summary(ticker: str, db: AsyncSession = Depends(get_db)):
             result["upside_downside_ratio"] = round(abs(result["bull"]["return_pct"] / result["bear"]["return_pct"]), 2)
 
     return result
+
+
+@router.get("/companies/{ticker}/scenario-history")
+async def scenario_history(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get historical scenario snapshots for charting over time."""
+    company = await _get_company(db, ticker)
+    result = await db.execute(
+        select(ScenarioSnapshot)
+        .where(ScenarioSnapshot.company_id == company.id)
+        .order_by(ScenarioSnapshot.snapshot_date.asc())
+    )
+    snapshots = result.scalars().all()
+    return [{
+        "date": s.snapshot_date.isoformat() if s.snapshot_date else None,
+        "scenario_type": s.scenario_type,
+        "target_price": float(s.target_price) if s.target_price else None,
+        "probability": float(s.probability) if s.probability else None,
+        "current_price": float(s.current_price) if s.current_price else None,
+    } for s in snapshots]
 
 
 # ═══════════════════════════════════════════════════════════════
