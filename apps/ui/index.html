@@ -2083,11 +2083,84 @@ async function importHoldings(text){
   const portId=E('dh-port-select').value;if(!portId){E('dh-holdings-result').innerHTML='<div class="err">Select a portfolio first.</div>';return;}
   const res=E('dh-holdings-result');res.innerHTML='<div class="ld">Importing…</div>';
   try{
-    const lines=text.split('\n').filter(l=>l.trim());const holdings=[];
-    for(const line of lines){const cols=parseCSVLine(line);if(cols.length<2)continue;const ticker=cols[0];if(!ticker||ticker.toLowerCase()==='ticker')continue;const row={ticker:ticker.toUpperCase(),weight:parseFloat(cols[1])||0,cost_basis:cols[2]?parseFloat(cols[2]):null,status:'active'};if(cols[3])row.name=cols[3].trim();if(cols[4])row.sector=cols[4].trim();if(cols[5])row.country=cols[5].trim();holdings.push(row);}
+    const lines=text.split('\n').filter(l=>l.trim());
+    if(!lines.length){res.innerHTML='<div class="err">Empty file.</div>';return;}
+    // Parse header row to map columns by name
+    const headerCols=parseCSVLine(lines[0]).map(h=>h.trim().toLowerCase().replace(/[%\s]+/g,'_'));
+    const col=name=>{
+      const variants={'ticker':['ticker'],'name':['name','company'],'sector':['sector'],'country':['country'],
+        'weight':['weight','weight_'],'cost_basis':['cost_basis','costbasis','cost'],'current_price':['current_price','currentprice','price'],
+        'currency':['currency','ccy'],'base_target':['base_target','basetarget','base'],'base_prob':['base_prob','baseprob','base_prob_'],
+        'bear_target':['bear_target','beartarget','bear'],'bear_prob':['bear_prob','bearprob','bear_prob_'],
+        'bull_target':['bull_target','bulltarget','bull'],'bull_prob':['bull_prob','bullprob','bull_prob_'],
+        'status':['status']};
+      const keys=variants[name]||[name];
+      for(const k of keys){const i=headerCols.indexOf(k);if(i>=0)return i;}
+      // Fuzzy match: check if header contains the key
+      for(const k of keys){const i=headerCols.findIndex(h=>h.includes(k));if(i>=0)return i;}
+      return -1;
+    };
+    const getVal=(cols,name)=>{const i=col(name);return i>=0&&i<cols.length?cols[i].trim():null;};
+    const getNum=(cols,name)=>{const v=getVal(cols,name);if(!v)return null;const n=parseFloat(v.replace('%',''));return isNaN(n)?null:n;};
+    const holdings=[];const scenarios=[];const prices=[];
+    for(let li=1;li<lines.length;li++){
+      const cols=parseCSVLine(lines[li]);if(cols.length<2)continue;
+      const ticker=getVal(cols,'ticker');if(!ticker)continue;
+      // Strip " Equity" / " equity" suffix from tickers
+      const cleanTicker=ticker.replace(/\s*equity$/i,'').toUpperCase();
+      const row={ticker:cleanTicker,weight:getNum(cols,'weight')||0,cost_basis:getNum(cols,'cost_basis'),status:getVal(cols,'status')||'active'};
+      const name=getVal(cols,'name');if(name)row.name=name;
+      const sector=getVal(cols,'sector');if(sector)row.sector=sector;
+      const country=getVal(cols,'country');if(country)row.country=country;
+      holdings.push(row);
+      // Collect scenario data
+      const baseT=getNum(cols,'base_target'),baseP=getNum(cols,'base_prob');
+      const bearT=getNum(cols,'bear_target'),bearP=getNum(cols,'bear_prob');
+      // Infer bull from base probability (bull = 1 - bear - base, or just use remaining)
+      if(baseT||bearT){
+        scenarios.push({ticker:cleanTicker,base_target:baseT,base_prob:baseP!=null?(baseP>1?baseP:baseP*100):null,
+          bear_target:bearT,bear_prob:bearP!=null?(bearP>1?bearP:bearP*100):null});
+      }
+      // Collect price data
+      const cp=getNum(cols,'current_price'),ccy=getVal(cols,'currency');
+      if(cp)prices.push({ticker:cleanTicker,price:cp,currency:ccy||'USD'});
+    }
     if(!holdings.length){res.innerHTML='<div class="err">No valid rows.</div>';return;}
-    const r=await fetch('/api/v1/portfolios/'+portId+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});if(!r.ok)throw new Error('Failed');const d=await r.json();
-    let h='<div class="ok">Imported '+d.imported+' holdings</div><div style="margin-top:8px">';d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status!=='company_not_found'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.ticker)+' — '+esc(r.status)+'</div>';});res.innerHTML=h+'</div>';
+    // Import holdings
+    const r=await fetch('/api/v1/portfolios/'+portId+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});if(!r.ok)throw new Error('Holdings import failed');const d=await r.json();
+    let h='<div class="ok">Imported '+d.imported+' holdings</div><div style="margin-top:8px">';d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status!=='company_not_found'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.ticker)+' — '+esc(r.status)+'</div>';});
+    // Import scenarios per company via PUT (replaces existing)
+    // CSV "Base Target" = bull (upside) scenario, "Bear Target" = bear (downside)
+    let scnCount=0;
+    for(const sc of scenarios){
+      try{
+        const scs=[];
+        const bearProb=sc.bear_prob||25;
+        const bullProb=sc.base_prob||(100-bearProb);
+        if(sc.bear_target!=null)scs.push({scenario_type:'bear',target_price:sc.bear_target,probability:bearProb});
+        if(sc.base_target!=null)scs.push({scenario_type:'bull',target_price:sc.base_target,probability:bullProb});
+        if(sc.bear_target!=null&&sc.base_target!=null){
+          // Derive base case as midpoint
+          const midTarget=Math.round((sc.bear_target+sc.base_target)/2*100)/100;
+          scs.push({scenario_type:'base',target_price:midTarget,probability:0});
+        }
+        if(scs.length){
+          await fetch('/api/v1/companies/'+enc(sc.ticker)+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios:scs})});scnCount++;
+        }
+      }catch(e){}
+    }
+    // Bulk import prices
+    let priceCount=0;
+    if(prices.length){
+      try{
+        const r2=await fetch('/api/v1/prices/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(prices)});
+        if(r2.ok){const pr=await r2.json();priceCount=pr.updated||0;}
+      }catch(e){}
+    }
+    if(scnCount)h+='<div style="font-size:12px;color:var(--green);margin-top:4px">Set '+scnCount+' valuation scenarios</div>';
+    if(priceCount)h+='<div style="font-size:12px;color:var(--green);margin-top:2px">Set '+priceCount+' prices</div>';
+    res.innerHTML=h+'</div>';
+    loadPortfolioDetail();
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
