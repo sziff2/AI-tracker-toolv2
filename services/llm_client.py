@@ -55,7 +55,7 @@ def get_client() -> anthropic.Anthropic:
     if _client is None:
         _client = anthropic.Anthropic(
             api_key=settings.anthropic_api_key,
-            timeout=25.0,  # 25 second timeout to stay under Railway's 30s limit
+            timeout=120.0,  # 120 second timeout for large synthesis/extraction calls
         )
     return _client
 
@@ -167,7 +167,7 @@ def call_llm_json(prompt: str, **kwargs) -> Any:
     return _parse_json(raw)
 
 
-async def call_llm_async(prompt: str, timeout_seconds: int = 25, **kwargs) -> str:
+async def call_llm_async(prompt: str, timeout_seconds: int = 90, **kwargs) -> str:
     """Run LLM call in thread pool with timeout for Railway compatibility."""
     loop = asyncio.get_event_loop()
     try:
@@ -186,7 +186,7 @@ async def call_llm_json_async(prompt: str, **kwargs) -> Any:
     return await loop.run_in_executor(_executor, lambda: call_llm_json(prompt, **kwargs))
 
 
-async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 3, timeout_seconds: int = 60, **kwargs) -> list[Any]:
+async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 3, timeout_seconds: int = 120, **kwargs) -> list[Any]:
     """Run multiple LLM calls with limited concurrency and timeout per call."""
     semaphore = asyncio.Semaphore(max_concurrency)
 
