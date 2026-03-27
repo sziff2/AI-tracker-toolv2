@@ -55,7 +55,8 @@ def _previous_period(period_label: str) -> str:
         elif suffix == "H2":
             return f"{year}_H1"
         elif suffix == "FY":
-            return f"{year - 1}_FY"
+            # FY is equivalent to Q4 — prior period is Q3 of same year
+            return f"{year}_Q3"
         else:
             return f"{year - 1}_{suffix}"
     except Exception:
@@ -91,6 +92,9 @@ def _comparable_periods(period_label: str) -> list[str]:
             candidates.append(f"{year}_H1")
             candidates.append(f"{year-1}_H2")
         elif suffix == "FY":
+            # FY is equivalent to Q4 — compare against Q3 (sequential), Q4 prior year (YoY), and prior FY
+            candidates.append(f"{year}_Q3")
+            candidates.append(f"{year-1}_Q4")
             candidates.append(f"{year-1}_FY")
             candidates.append(f"{year-1}_H2")
         return candidates

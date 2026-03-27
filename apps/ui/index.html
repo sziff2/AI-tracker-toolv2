@@ -800,7 +800,7 @@ function renderCkKPIs(ticker,d){
   const tr=d.kpi_tracker||{};const kpis=tr.kpis||[],overall=tr.overall_scores||{};
   // Use periods from analyses (Results tab) instead of metrics
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
-  const periods=Object.keys({...abp,...dbp}).sort().reverse();
+  const periods=sortPeriods(Object.keys({...abp,...dbp}));
   let h='';
   // Always show add form at top
   h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><input id="nkn" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="nku" placeholder="Unit (e.g. %)" style="max-width:120px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
@@ -904,7 +904,7 @@ function renderProbabilisticHTML(p){
 // ── Results tab (sub-tabs per period, with docs used) ────────
 function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
-  const allPeriods=Object.keys({...abp,...dbp}).sort().reverse();
+  const allPeriods=sortPeriods(Object.keys({...abp,...dbp}));
   let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:0">';
   h+='<div class="ptabs" id="res-ptabs" style="margin-bottom:0;flex:1">';
   if(allPeriods.length){allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(normalisePeriodLabel(p)||p)+'</button>';});}
@@ -1520,6 +1520,16 @@ async function loadMetrics(ticker){
   try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metrics');if(!r.ok)throw new Error('Failed');const d=await r.json();renderMetrics(ticker,d);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
+function periodSortKey(p){
+  // Convert period label to a sortable string where FY sorts just after Q4
+  if(!p)return p;
+  const m=p.match(/^(\d{4})_(Q[1-4]|FY|HY|H[12])$/i);
+  if(!m)return p;
+  const year=m[1],suffix=m[2].toUpperCase();
+  const order={'Q1':'1','Q2':'2','Q3':'3','Q4':'4','FY':'5','H1':'3','H2':'5','HY':'5'};
+  return year+'_'+(order[suffix]||'9')+'_'+suffix;
+}
+function sortPeriods(periods){return periods.slice().sort((a,b)=>periodSortKey(b).localeCompare(periodSortKey(a)));}
 function normalisePeriodLabel(p){
   // Normalise messy period labels to standard format
   if(!p)return p;
