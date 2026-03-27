@@ -70,16 +70,57 @@ async def save_feedback(body: FeedbackCreate, db: AsyncSession = Depends(get_db)
         document_id=uuid.UUID(body.document_id) if body.document_id else None,
         prompt_type=body.prompt_type,
         author=body.author,
-        promoted=False,
+        promoted=True,  # auto-promote to Prompt Lab
     )
     db.add(fb)
+
+    # Auto-promote: create ABExperiment record so feedback flows into Prompt Lab immediately
+    prompt_type = body.prompt_type or "unknown"
+    snippet_ref = f" [snippet: \"{body.source_snippet[:80]}…\"]" if body.source_snippet else ""
+    comment_line = f": {body.comment}" if body.comment else ""
+    feedback_text = (
+        f"Inline feedback for {body.ticker} {body.period_label} "
+        f"(prompt_type: {prompt_type}).\n"
+        f"Tag: {body.tag}.\n"
+        f"Section: {body.section}.\n"
+        f"- [{body.tag.upper()}] {body.section}{snippet_ref}{comment_line}"
+    )
+
+    # Find active variant for this prompt type
+    variant_q = await db.execute(
+        select(PromptVariant).where(
+            PromptVariant.prompt_type == prompt_type,
+            PromptVariant.is_active == True,
+        ).limit(1)
+    )
+    active_variant = variant_q.scalar_one_or_none()
+
+    if active_variant:
+        exp = ABExperiment(
+            id=uuid.uuid4(),
+            company_id=company.id,
+            prompt_type=prompt_type,
+            period_label=body.period_label,
+            variant_a_id=active_variant.id,
+            variant_b_id=active_variant.id,
+            output_a=feedback_text,
+            output_b=None,
+            winner="tie",
+            rating_a=3 if body.tag in ("correct", "good") else 1,
+            rating_b=None,
+            analyst_feedback=feedback_text,
+            status="completed",
+        )
+        db.add(exp)
+
     await db.commit()
 
     return {
         "id": str(fb.id),
-        "status": "saved",
+        "status": "saved_and_promoted",
         "tag": fb.tag,
         "section": fb.section,
+        "promoted": True,
     }
 
 
