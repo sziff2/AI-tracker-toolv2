@@ -377,7 +377,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <!-- Portfolio Holdings -->
     <div class="cd" style="margin-bottom:20px">
       <div class="cd-t">💼 Portfolio Holdings</div>
-      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Import holdings for a portfolio. Select portfolio first, then upload. Columns: Ticker, Weight %, Cost Basis (optional).</div>
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Import holdings for a portfolio. Select portfolio first, then upload. Columns: Ticker, Weight %, Cost Basis (optional), Name (optional), Sector (optional), Country (optional).</div>
       <div style="margin-bottom:8px"><select class="fi" id="dh-port-select" style="max-width:250px"><option value="">— Select portfolio —</option></select></div>
       <div class="af" onclick="if(!E('dh-port-select').value){alert('Select a portfolio first.');return;}E('dh-holdings-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
       <input type="file" id="dh-holdings-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'holdings')">
@@ -2084,7 +2084,7 @@ async function importHoldings(text){
   const res=E('dh-holdings-result');res.innerHTML='<div class="ld">Importing…</div>';
   try{
     const lines=text.split('\n').filter(l=>l.trim());const holdings=[];
-    for(const line of lines){const cols=parseCSVLine(line);if(cols.length<2)continue;const ticker=cols[0];if(!ticker||ticker.toLowerCase()==='ticker')continue;holdings.push({ticker:ticker.toUpperCase(),weight:parseFloat(cols[1])||0,cost_basis:cols[2]?parseFloat(cols[2]):null,status:'active'});}
+    for(const line of lines){const cols=parseCSVLine(line);if(cols.length<2)continue;const ticker=cols[0];if(!ticker||ticker.toLowerCase()==='ticker')continue;const row={ticker:ticker.toUpperCase(),weight:parseFloat(cols[1])||0,cost_basis:cols[2]?parseFloat(cols[2]):null,status:'active'};if(cols[3])row.name=cols[3].trim();if(cols[4])row.sector=cols[4].trim();if(cols[5])row.country=cols[5].trim();holdings.push(row);}
     if(!holdings.length){res.innerHTML='<div class="err">No valid rows.</div>';return;}
     const r=await fetch('/api/v1/portfolios/'+portId+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});if(!r.ok)throw new Error('Failed');const d=await r.json();
     let h='<div class="ok">Imported '+d.imported+' holdings</div><div style="margin-top:8px">';d.results.forEach(r=>{h+='<div style="font-family:var(--sans);font-size:12px;color:'+(r.status!=='company_not_found'?'var(--green)':'var(--red)')+';padding:2px 0">'+esc(r.ticker)+' — '+esc(r.status)+'</div>';});res.innerHTML=h+'</div>';

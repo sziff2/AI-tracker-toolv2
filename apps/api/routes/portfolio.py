@@ -296,6 +296,13 @@ async def bulk_import_holdings(portfolio_id: uuid.UUID, body: BulkHoldingsImport
                 continue
         else:
             auto_created = False
+            # Update sector/country if provided and currently missing
+            if row.sector and not company.sector:
+                company.sector = row.sector
+            if row.country and not company.country:
+                company.country = row.country
+            if row.name and not company.name:
+                company.name = row.name
 
         # Upsert holding
         existing_q = await db.execute(
