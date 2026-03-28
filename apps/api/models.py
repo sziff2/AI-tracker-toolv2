@@ -25,6 +25,7 @@ class Company(Base, TimestampMixin):
     country = Column(Text)
     coverage_status = Column(Text, default="active")       # active | dropped | watchlist
     primary_analyst = Column(Text)
+    cik = Column(Text)                                     # SEC CIK number for EDGAR lookups
 
     # relationships
     documents = relationship("Document", back_populates="company", lazy="selectin")

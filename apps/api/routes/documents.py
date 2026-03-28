@@ -675,6 +675,48 @@ async def resynthesise_period(ticker: str, period_label: str, db: AsyncSession =
 # EDGAR FILING BROWSER — browse and selectively ingest SEC filings
 # ═══════════════════════════════════════════════════════════════
 
+@router.get("/edgar/lookup/{ticker}")
+async def lookup_cik(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Look up SEC CIK by ticker. Tries company_tickers.json from EDGAR."""
+    import httpx
+
+    # Check if already stored
+    company = await get_company_or_404(db, ticker)
+    if company.cik:
+        return {"ticker": ticker, "cik": company.cik, "source": "cached"}
+
+    # Strip exchange suffix (e.g. "LKQ US" → "LKQ", "ALLY US" → "ALLY")
+    clean_ticker = ticker.split()[0].upper()
+
+    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.get("https://www.sec.gov/files/company_tickers.json", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            raise HTTPException(502, f"EDGAR lookup failed: {str(exc)[:200]}")
+
+    # Search by ticker
+    for entry in data.values():
+        if entry.get("ticker", "").upper() == clean_ticker:
+            cik = str(entry["cik_str"]).zfill(10)
+            company.cik = cik
+            await db.commit()
+            return {"ticker": ticker, "cik": cik, "company_name": entry.get("title"), "source": "edgar_lookup"}
+
+    return {"ticker": ticker, "cik": None, "source": "not_found"}
+
+
+@router.post("/companies/{ticker}/set-cik")
+async def set_cik(ticker: str, cik: str = Form(...), db: AsyncSession = Depends(get_db)):
+    """Manually set the CIK for a company."""
+    company = await get_company_or_404(db, ticker)
+    company.cik = cik.strip().zfill(10)
+    await db.commit()
+    return {"ticker": ticker, "cik": company.cik}
+
+
 @router.get("/edgar/browse/{cik}")
 async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20-F,40-F,6-K"):
     """Browse available SEC EDGAR filings for a given CIK. Returns a list for human review."""
