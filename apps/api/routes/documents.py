@@ -669,3 +669,137 @@ async def resynthesise_period(ticker: str, period_label: str, db: AsyncSession =
         "status": "queued",
         "message": f"Re-synthesising {ticker} / {period_label} with updated thesis context",
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# EDGAR FILING BROWSER — browse and selectively ingest SEC filings
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/edgar/browse/{cik}")
+async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20-F,40-F,6-K"):
+    """Browse available SEC EDGAR filings for a given CIK. Returns a list for human review."""
+    import httpx
+    from datetime import datetime, timezone
+
+    cik_padded = cik.lstrip("0").zfill(10)
+    target_forms = set(f.strip() for f in form_types.split(","))
+    headers = {
+        "User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com",
+        "Accept": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
+        try:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            raise HTTPException(502, f"EDGAR fetch failed: {str(exc)[:200]}")
+
+    company_name = data.get("name", "")
+    filings = data.get("filings", {}).get("recent", {})
+    forms = filings.get("form", [])
+    dates = filings.get("filingDate", [])
+    accessions = filings.get("accessionNumber", [])
+    periods = filings.get("periodOfReport", [])
+    primary_docs = filings.get("primaryDocument", [])
+    descriptions = filings.get("primaryDocDescription", [])
+
+    cik_int = int(cik.lstrip("0"))
+    cutoff_year = datetime.now(timezone.utc).year - 3
+    results = []
+
+    for i, form in enumerate(forms):
+        if form not in target_forms:
+            continue
+        filing_date = dates[i] if i < len(dates) else ""
+        try:
+            if int(filing_date[:4]) < cutoff_year:
+                continue
+        except (ValueError, IndexError):
+            pass
+
+        accession = accessions[i] if i < len(accessions) else ""
+        period = periods[i] if i < len(periods) else ""
+        primary_doc = primary_docs[i] if i < len(primary_docs) else ""
+        desc = descriptions[i] if i < len(descriptions) else form
+
+        # Build document URL
+        accession_nodash = accession.replace("-", "")
+        doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_nodash}/{primary_doc}" if primary_doc else None
+        index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_nodash}/{accession}-index.htm"
+
+        results.append({
+            "form_type": form,
+            "filing_date": filing_date,
+            "period_of_report": period,
+            "description": desc,
+            "accession": accession,
+            "doc_url": doc_url,
+            "index_url": index_url,
+        })
+
+    return {
+        "company_name": company_name,
+        "cik": cik,
+        "total_filings": len(results),
+        "filings": results,
+    }
+
+
+@router.post("/companies/{ticker}/ingest-edgar")
+async def ingest_edgar_filing(
+    ticker: str,
+    doc_url: str = Form(...),
+    form_type: str = Form(...),
+    filing_date: str = Form(""),
+    period_label: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a specific EDGAR filing and ingest it."""
+    import httpx
+    from datetime import datetime, timezone
+
+    company = await get_company_or_404(db, ticker)
+
+    # Map form type to document type
+    doc_type_map = {
+        "10-K": "annual_report", "10-Q": "earnings_release", "8-K": "earnings_release",
+        "20-F": "annual_report", "40-F": "annual_report", "6-K": "earnings_release",
+        "ARS": "annual_report", "DEF 14A": "proxy_statement",
+    }
+    document_type = doc_type_map.get(form_type, "other")
+
+    # Download the filing
+    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        try:
+            resp = await client.get(doc_url, headers=headers)
+            resp.raise_for_status()
+            content = resp.content
+        except Exception as exc:
+            raise HTTPException(502, f"Failed to download filing: {str(exc)[:200]}")
+
+    # Save to temp file and ingest
+    filename = doc_url.split("/")[-1] or f"{form_type}_{filing_date}.htm"
+    suffix = Path(filename).suffix or ".htm"
+
+    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        doc = await ingest_document(
+            db=db, company_id=company.id, ticker=ticker,
+            file_path=tmp_path, filename=filename,
+            document_type=document_type, period_label=period_label,
+            title=f"{form_type} {filing_date}", source="edgar", source_url=doc_url,
+        )
+        return {"status": "ingested", "document_id": str(doc.id), "title": doc.title}
+    except ValueError as e:
+        return {"status": "duplicate", "message": str(e)}
+    except Exception as e:
+        raise HTTPException(500, f"Ingestion failed: {str(e)[:200]}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)

@@ -3603,6 +3603,17 @@ async function loadCkDocuments(ticker){
     }
     h+='</div>';
 
+    // EDGAR browser section
+    h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:20px">';
+    h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">🏛 Browse SEC EDGAR</div>';
+    h+='<div style="display:flex;gap:8px;align-items:center">';
+    h+='<input id="ck-edgar-cik" class="fi" placeholder="Enter CIK (e.g. 0001065696)" style="max-width:200px;font-size:12px">';
+    h+='<button class="btn2" style="font-size:11px;padding:7px 12px" onclick="browseEdgar(\''+esc(ticker)+'\')">Browse Filings</button>';
+    h+='<span style="font-family:var(--sans);font-size:11px;color:var(--text4)">Find CIK at <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" style="color:var(--gold)">sec.gov</a></span>';
+    h+='</div>';
+    h+='<div id="edgar-results" style="margin-top:12px"></div>';
+    h+='</div>';
+
     // Load harvested documents for this company
     var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=200');
     if(!r.ok)throw new Error('Failed to load harvested documents');
@@ -3669,6 +3680,47 @@ async function loadCkDocuments(ticker){
   }
 }
 
+async function browseEdgar(ticker){
+  var cik=(E('ck-edgar-cik')||{}).value;if(!cik){alert('Enter a CIK number.');return;}
+  var el=E('edgar-results');if(!el)return;
+  el.innerHTML='<div class="ld">Fetching filings…</div>';
+  try{
+    var r=await fetch('/api/v1/edgar/browse/'+encodeURIComponent(cik.trim()));
+    if(!r.ok)throw new Error('Failed to fetch');
+    var d=await r.json();
+    if(!d.filings.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4)">No filings found.</div>';return;}
+    var h='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:8px">'+esc(d.company_name)+' — '+d.total_filings+' filings found</div>';
+    h+='<div style="max-height:400px;overflow-y:auto">';
+    h+='<table class="kt" style="font-size:12px"><thead><tr><th>Date</th><th>Type</th><th>Period</th><th>Description</th><th></th></tr></thead><tbody>';
+    d.filings.forEach(function(f){
+      var period=f.period_of_report||'';
+      h+='<tr>';
+      h+='<td style="white-space:nowrap">'+esc(f.filing_date)+'</td>';
+      h+='<td><span style="font-weight:600;color:var(--gold)">'+esc(f.form_type)+'</span></td>';
+      h+='<td>'+esc(period)+'</td>';
+      h+='<td>'+esc(f.description)+'</td>';
+      h+='<td style="white-space:nowrap">';
+      if(f.doc_url)h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="ingestEdgarFiling(\''+esc(ticker)+'\',\''+esc(f.doc_url)+'\',\''+esc(f.form_type)+'\',\''+esc(f.filing_date)+'\',\''+esc(period)+'\',this)">Ingest</button> ';
+      h+='<a href="'+esc(f.index_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="View on EDGAR">↗</a>';
+      h+='</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
+async function ingestEdgarFiling(ticker,docUrl,formType,filingDate,period,btn){
+  btn.disabled=true;btn.textContent='…';
+  try{
+    var fd=new FormData();
+    fd.append('doc_url',docUrl);fd.append('form_type',formType);
+    fd.append('filing_date',filingDate);fd.append('period_label',period);
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-edgar',{method:'POST',body:fd});
+    var d=await r.json();
+    if(d.status==='ingested'){btn.textContent='✓';btn.style.color='var(--green)';}
+    else if(d.status==='duplicate'){btn.textContent='Dup';btn.style.color='var(--amber)';}
+    else{btn.textContent='✕';btn.style.color='var(--red)';}
+  }catch(e){btn.textContent='✕';btn.style.color='var(--red)';}
+}
 function toggleDocRow(row){
   var cb=row.querySelector('input[type=checkbox]');
   if(cb){cb.checked=!cb.checked;updateDocSelBar();}
