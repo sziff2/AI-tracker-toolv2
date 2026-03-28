@@ -823,6 +823,17 @@ async def ingest_edgar_filing(
 
     company = await get_company_or_404(db, ticker)
 
+    # Derive period_label from URL if not provided (e.g. lkq-20250930.htm → 2025_Q3)
+    if not period_label and doc_url:
+        import re
+        date_match = re.search(r'(\d{4})(\d{2})(\d{2})\.\w+$', doc_url)
+        if date_match:
+            py, pm = int(date_match.group(1)), int(date_match.group(2))
+            if form_type in ("10-K", "20-F", "40-F", "ARS"):
+                period_label = f"{py}_FY"
+            else:
+                period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
+
     # Map form type to document type
     doc_type_map = {
         "10-K": "annual_report", "10-Q": "earnings_release", "8-K": "earnings_release",
