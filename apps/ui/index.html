@@ -503,8 +503,15 @@ function showPage(p){['new','cockpit','lab','data','portfolio','analytics','opti
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
-// Populate year dropdown
-(function(){const sel=E('period-year');const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}})();
+// Populate year dropdown and auto-suggest period
+(function(){
+  const sel=E('period-year');const yr=new Date().getFullYear();
+  for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;sel.appendChild(o);}
+  var s=suggestPeriod();
+  var typeEl=E('period-type');
+  if(typeEl)typeEl.value=s.type;
+  if(sel)sel.value=s.year;
+})();
 
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
@@ -542,10 +549,23 @@ async function ckSubmitNewCo(){
   btn.disabled=false;btn.textContent='Analyse &amp; Synthesise';
 }
 var NP_FILES=[];
+function suggestPeriod(){
+  // Based on filing date lag: Jan-Mar → Q4 prev year, Apr-Jun → Q1, Jul-Sep → Q2, Oct-Dec → Q3
+  var now=new Date();var m=now.getMonth()+1;var yr=now.getFullYear();
+  if(m>=1&&m<=3)return{type:'Q4',year:yr-1};
+  if(m>=4&&m<=6)return{type:'Q1',year:yr};
+  if(m>=7&&m<=9)return{type:'Q2',year:yr};
+  return{type:'Q3',year:yr};
+}
 function ckShowNewPeriod(ticker){
   const panel=E('ck-new-period-panel');if(!panel)return;
   panel.style.display='block';NP_FILES=[];npRenderFL();
-  const sel=E('np-year');if(sel&&!sel.options.length){const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===yr)o.selected=true;sel.appendChild(o);}}
+  const sel=E('np-year');if(sel&&!sel.options.length){const yr=new Date().getFullYear();for(let y=yr+1;y>=yr-5;y--){const o=document.createElement('option');o.value=y;o.textContent=y;sel.appendChild(o);}}
+  // Auto-suggest period based on current date
+  var suggested=suggestPeriod();
+  var typeEl=E('np-type'),yearEl=E('np-year');
+  if(typeEl)typeEl.value=suggested.type;
+  if(yearEl)yearEl.value=suggested.year;
   const hfi=E('np-hfi');if(hfi&&!hfi._npBound){hfi._npBound=true;hfi.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';NP_FILES.push({file:f,docType:dt});}this.value='';npRenderFL();});}
 }
 function ckHideNewPeriod(){const p=E('ck-new-period-panel');if(p)p.style.display='none';NP_FILES=[];}
