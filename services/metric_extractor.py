@@ -342,7 +342,7 @@ async def extract_combined(db: AsyncSession, document: Document, text: str) -> d
         "metrics": metrics,
         "guidance": guidance_raw,
         "total_items": len(all_items),
-        "raw_items": all_items,
+        "raw_items": metrics_raw + guidance_raw,
     }
 
 
