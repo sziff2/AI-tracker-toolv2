@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(sa_text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS log_entries TEXT DEFAULT '[]'"))
         # Model selection for processing jobs (cost control)
         await conn.execute(sa_text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS model TEXT DEFAULT 'standard'"))
+        # CIK on companies
+        await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS cik TEXT"))
         # Harvester tables
         await conn.execute(sa_text("""
             CREATE TABLE IF NOT EXISTS harvester_sources (
