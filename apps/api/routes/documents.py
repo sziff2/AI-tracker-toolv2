@@ -772,10 +772,28 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
         doc_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_nodash}/{primary_doc}" if primary_doc else None
         index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_nodash}/{accession}-index.htm"
 
+        # Convert period_of_report to standard label
+        period_label = ""
+        if period:
+            try:
+                pdt = datetime.strptime(period, "%Y-%m-%d")
+                py, pm = pdt.year, pdt.month
+                if form in ("10-K", "20-F", "40-F", "ARS"):
+                    period_label = f"{py}_FY"
+                elif form in ("10-Q", "6-K"):
+                    period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
+                elif form == "8-K":
+                    period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
+                else:
+                    period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
+            except ValueError:
+                period_label = period
+
         results.append({
             "form_type": form,
             "filing_date": filing_date,
             "period_of_report": period,
+            "period_label": period_label,
             "description": desc,
             "accession": accession,
             "doc_url": doc_url,

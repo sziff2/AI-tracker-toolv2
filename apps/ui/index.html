@@ -3709,14 +3709,14 @@ async function browseEdgar(ticker){
     h+='<div style="max-height:400px;overflow-y:auto">';
     h+='<table class="kt" style="font-size:12px"><thead><tr><th>Date</th><th>Type</th><th>Period</th><th>Description</th><th></th></tr></thead><tbody>';
     d.filings.forEach(function(f){
-      var period=f.period_of_report||'';
+      var periodLabel=f.period_label||f.period_of_report||'';
       h+='<tr>';
       h+='<td style="white-space:nowrap">'+esc(f.filing_date)+'</td>';
       h+='<td><span style="font-weight:600;color:var(--gold)">'+esc(f.form_type)+'</span></td>';
-      h+='<td>'+esc(period)+'</td>';
+      h+='<td style="font-weight:600">'+esc(periodLabel)+'</td>';
       h+='<td>'+esc(f.description)+'</td>';
       h+='<td style="white-space:nowrap">';
-      if(f.doc_url)h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="ingestEdgarFiling(\''+esc(ticker)+'\',\''+esc(f.doc_url)+'\',\''+esc(f.form_type)+'\',\''+esc(f.filing_date)+'\',\''+esc(period)+'\',this)">Ingest</button> ';
+      if(f.doc_url)h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="ingestEdgarFiling(\''+esc(ticker)+'\',\''+esc(f.doc_url)+'\',\''+esc(f.form_type)+'\',\''+esc(f.filing_date)+'\',\''+esc(periodLabel)+'\',this)">Ingest</button> ';
       h+='<a href="'+esc(f.index_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="View on EDGAR">↗</a>';
       h+='</td></tr>';
     });
