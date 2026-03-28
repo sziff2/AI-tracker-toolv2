@@ -3613,22 +3613,6 @@ async function loadCkDocuments(ticker){
     h+='</div>';
     h+='<div id="edgar-results" style="margin-top:12px"></div>';
     h+='</div>';
-    // Auto-lookup CIK
-    (async function(){
-      try{
-        var lr=await fetch('/api/v1/edgar/lookup/'+enc(ticker));
-        if(!lr.ok)return;var ld=await lr.json();
-        var cikEl=E('ck-edgar-cik'),statusEl=E('edgar-status');
-        if(ld.cik){
-          if(cikEl){cikEl.value=ld.cik;cikEl.placeholder='CIK';}
-          if(statusEl)statusEl.innerHTML=esc(ld.company_name||'')+' <span style="color:var(--green)">✓</span>';
-          browseEdgar(''+ticker+'');
-        }else{
-          if(cikEl)cikEl.placeholder='Not found — enter CIK manually';
-          if(statusEl)statusEl.innerHTML='No SEC filing found. <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" style="color:var(--gold)">Look up CIK</a>';
-        }
-      }catch(e){}
-    })();
 
     // Load harvested documents for this company
     var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=200');
@@ -3691,9 +3675,26 @@ async function loadCkDocuments(ticker){
 
     el.innerHTML=h;
     updateDocSelBar();
+    // Auto-lookup CIK and browse EDGAR (runs after HTML is rendered)
+    autoLoadEdgar(ticker);
   }catch(e){
     if(E('ck-documents'))E('ck-documents').innerHTML='<div class="err">'+esc(e.message)+'</div>';
   }
+}
+async function autoLoadEdgar(ticker){
+  try{
+    var lr=await fetch('/api/v1/edgar/lookup/'+enc(ticker));
+    if(!lr.ok)return;var ld=await lr.json();
+    var cikEl=E('ck-edgar-cik'),statusEl=E('edgar-status');
+    if(ld.cik){
+      if(cikEl){cikEl.value=ld.cik;cikEl.placeholder='CIK';}
+      if(statusEl)statusEl.innerHTML=esc(ld.company_name||'')+' <span style="color:var(--green)">\u2713</span>';
+      browseEdgar(ticker);
+    }else{
+      if(cikEl)cikEl.placeholder='Not found \u2014 enter CIK manually';
+      if(statusEl)statusEl.innerHTML='No SEC filing found. <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" style="color:var(--gold)">Look up CIK</a>';
+    }
+  }catch(e){}
 }
 
 async function browseEdgar(ticker){
