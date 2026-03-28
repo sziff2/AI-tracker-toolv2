@@ -3697,46 +3697,92 @@ async function autoLoadEdgar(ticker){
   }catch(e){}
 }
 
+function edgarPeriodOpts(selected){
+  var yr=new Date().getFullYear();var opts=['<option value="">— period —</option>'];
+  for(var y=yr;y>=yr-3;y--){
+    ['FY','Q4','Q3','Q2','Q1'].forEach(function(q){opts.push('<option value="'+y+'_'+q+'"'+(y+'_'+q===selected?' selected':'')+'>'+q+' '+y+'</option>');});
+  }
+  return opts.join('');
+}
+function edgarDocTypeOpts(selected){
+  var types=[['annual_report','Annual Report'],['earnings_release','Earnings Release'],['proxy_statement','Proxy Statement'],['presentation','Presentation'],['transcript','Transcript'],['other','Other']];
+  return types.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===selected?' selected':'')+'>'+t[1]+'</option>';}).join('');
+}
+var _edgarFilings=[];var _edgarTicker='';
 async function browseEdgar(ticker){
   var cik=(E('ck-edgar-cik')||{}).value;if(!cik){alert('Enter a CIK number.');return;}
+  _edgarTicker=ticker;
   var el=E('edgar-results');if(!el)return;
   el.innerHTML='<div class="ld">Fetching filings…</div>';
   try{
     var r=await fetch('/api/v1/edgar/browse/'+encodeURIComponent(cik.trim()));
     if(!r.ok)throw new Error('Failed to fetch');
-    var d=await r.json();
-    if(!d.filings.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4)">No filings found.</div>';return;}
-    var h='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:8px">'+esc(d.company_name)+' — '+d.total_filings+' filings found</div>';
-    h+='<div style="max-height:400px;overflow-y:auto">';
-    h+='<table class="kt" style="font-size:12px"><thead><tr><th>Date</th><th>Type</th><th>Period</th><th>Description</th><th></th></tr></thead><tbody>';
-    d.filings.forEach(function(f){
-      var periodLabel=f.period_label||f.period_of_report||'';
-      h+='<tr>';
+    var d=await r.json();_edgarFilings=d.filings;
+    if(!d.filings.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);text-align:center;padding:20px">No filings found for this CIK.</div>';return;}
+    var docTypeMap={'10-K':'annual_report','10-Q':'earnings_release','8-K':'earnings_release','20-F':'annual_report','40-F':'annual_report','6-K':'earnings_release','ARS':'annual_report','DEF 14A':'proxy_statement'};
+    var h='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:8px">'+esc(d.company_name)+' — '+d.total_filings+' filings</div>';
+    // Bulk controls
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">';
+    h+='<input type="checkbox" id="edgar-chk-all" onclick="edgarToggleAll(this)" title="Select all">';
+    h+='<select id="edgar-bulk-period" class="fi" style="width:auto;font-size:11px;padding:4px 8px">'+edgarPeriodOpts('')+'</select>';
+    h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="edgarApplyBulkPeriod()">Apply period</button>';
+    h+='<span style="flex:1"></span>';
+    h+='<button class="btn" style="font-size:11px;padding:5px 14px" onclick="edgarIngestSelected()">Ingest Selected</button>';
+    h+='<span id="edgar-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
+    h+='</div>';
+    h+='<div style="max-height:500px;overflow-y:auto">';
+    h+='<table class="kt" style="font-size:12px"><thead><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:30px"></th></tr></thead><tbody>';
+    d.filings.forEach(function(f,i){
+      var periodLabel=f.period_label||'';
+      var docType=docTypeMap[f.form_type]||'other';
+      h+='<tr data-idx="'+i+'">';
+      h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'"></td>';
       h+='<td style="white-space:nowrap">'+esc(f.filing_date)+'</td>';
       h+='<td><span style="font-weight:600;color:var(--gold)">'+esc(f.form_type)+'</span></td>';
-      h+='<td style="font-weight:600">'+esc(periodLabel)+'</td>';
-      h+='<td>'+esc(f.description)+'</td>';
-      h+='<td style="white-space:nowrap">';
-      if(f.doc_url)h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="ingestEdgarFiling(\''+esc(ticker)+'\',\''+esc(f.doc_url)+'\',\''+esc(f.form_type)+'\',\''+esc(f.filing_date)+'\',\''+esc(periodLabel)+'\',this)">Ingest</button> ';
-      h+='<a href="'+esc(f.index_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="View on EDGAR">↗</a>';
-      h+='</td></tr>';
+      h+='<td><select class="fi edgar-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(periodLabel)+'</select></td>';
+      h+='<td><select class="fi edgar-dtype" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarDocTypeOpts(docType)+'</select></td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(f.description)+'</td>';
+      h+='<td><a href="'+esc(f.index_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="View on EDGAR">↗</a></td>';
+      h+='</tr>';
     });
     h+='</tbody></table></div>';
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
-async function ingestEdgarFiling(ticker,docUrl,formType,filingDate,period,btn){
-  btn.disabled=true;btn.textContent='…';
-  try{
-    var fd=new FormData();
-    fd.append('doc_url',docUrl);fd.append('form_type',formType);
-    fd.append('filing_date',filingDate);fd.append('period_label',period);
-    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-edgar',{method:'POST',body:fd});
-    var d=await r.json();
-    if(d.status==='ingested'){btn.textContent='✓';btn.style.color='var(--green)';}
-    else if(d.status==='duplicate'){btn.textContent='Dup';btn.style.color='var(--amber)';}
-    else{btn.textContent='✕';btn.style.color='var(--red)';}
-  }catch(e){btn.textContent='✕';btn.style.color='var(--red)';}
+function edgarToggleAll(cb){document.querySelectorAll('.edgar-chk').forEach(function(c){c.checked=cb.checked;});}
+function edgarApplyBulkPeriod(){
+  var period=E('edgar-bulk-period').value;if(!period){alert('Select a period first.');return;}
+  document.querySelectorAll('.edgar-chk:checked').forEach(function(c){
+    var sel=document.querySelector('.edgar-period[data-idx="'+c.dataset.idx+'"]');
+    if(sel)sel.value=period;
+  });
+}
+async function edgarIngestSelected(){
+  var checked=[].slice.call(document.querySelectorAll('.edgar-chk:checked'));
+  if(!checked.length){alert('Select at least one filing.');return;}
+  var statusEl=E('edgar-ingest-status');
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting…</span>';
+  var ok=0,dup=0,fail=0;
+  for(var ci=0;ci<checked.length;ci++){
+    var idx=parseInt(checked[ci].dataset.idx);
+    var f=_edgarFilings[idx];if(!f||!f.doc_url)continue;
+    var periodSel=document.querySelector('.edgar-period[data-idx="'+idx+'"]');
+    var dtypeSel=document.querySelector('.edgar-dtype[data-idx="'+idx+'"]');
+    var period=periodSel?periodSel.value:'';
+    var dtype=dtypeSel?dtypeSel.value:'';
+    try{
+      var fd=new FormData();
+      fd.append('doc_url',f.doc_url);fd.append('form_type',dtype||f.form_type);
+      fd.append('filing_date',f.filing_date);fd.append('period_label',period);
+      var r=await fetch('/api/v1/companies/'+enc(_edgarTicker)+'/ingest-edgar',{method:'POST',body:fd});
+      var d=await r.json();
+      var row=checked[ci].closest('tr');
+      if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
+      else if(d.status==='duplicate'){dup++;if(row)row.style.background='rgba(196,164,90,.08)';}
+      else{fail++;}
+    }catch(e){fail++;}
+  }
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
 }
 function toggleDocRow(row){
   var cb=row.querySelector('input[type=checkbox]');
