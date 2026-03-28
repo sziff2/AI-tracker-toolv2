@@ -3717,6 +3717,22 @@ async function autoLoadEdgar(ticker){
   }catch(e){}
 }
 
+function suggestPeriodFromDate(filingDate,formType){
+  // Derive likely reporting period from filing date and form type
+  if(!filingDate)return '';
+  try{
+    var parts=filingDate.split('-');var yr=parseInt(parts[0]);var m=parseInt(parts[1]);
+    if(formType==='10-K'||formType==='20-F'||formType==='40-F'||formType==='ARS'){
+      // Annual reports filed Jan-Mar report on prior FY, Apr+ on current FY
+      return m<=3?(yr-1)+'_FY':yr+'_FY';
+    }
+    // Quarterly: filing date lags the reporting quarter
+    if(m>=1&&m<=3)return(yr-1)+'_Q4';
+    if(m>=4&&m<=6)return yr+'_Q1';
+    if(m>=7&&m<=9)return yr+'_Q2';
+    return yr+'_Q3';
+  }catch(e){return '';}
+}
 function edgarPeriodOpts(selected){
   var yr=new Date().getFullYear();var opts=['<option value="">— period —</option>'];
   for(var y=yr;y>=yr-3;y--){
@@ -3753,7 +3769,7 @@ async function browseEdgar(ticker){
     h+='<div style="max-height:500px;overflow-y:auto">';
     h+='<table class="kt" style="font-size:12px"><thead><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:30px"></th></tr></thead><tbody>';
     d.filings.forEach(function(f,i){
-      var periodLabel=f.period_label||'';
+      var periodLabel=f.period_label||suggestPeriodFromDate(f.filing_date,f.form_type);
       var docType=docTypeMap[f.form_type]||'other';
       h+='<tr data-idx="'+i+'">';
       h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'"></td>';
