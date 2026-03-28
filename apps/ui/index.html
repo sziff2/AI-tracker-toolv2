@@ -3741,7 +3741,7 @@ function edgarPeriodOpts(selected){
   return opts.join('');
 }
 function edgarDocTypeOpts(selected){
-  var types=[['annual_report','Annual Report'],['earnings_release','Earnings Release'],['proxy_statement','Proxy Statement'],['presentation','Presentation'],['transcript','Transcript'],['other','Other']];
+  var types=[['earnings_release','Earnings Release'],['transcript','Transcript'],['broker_note','Broker Note'],['presentation','Presentation'],['10-Q','10-Q'],['10-K','10-K'],['annual_report','Annual Report'],['proxy_statement','Proxy Statement'],['sustainability_report','Sustainability Report'],['other','Other']];
   return types.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===selected?' selected':'')+'>'+t[1]+'</option>';}).join('');
 }
 var _edgarFilings=[];var _edgarTicker='';
@@ -3755,7 +3755,7 @@ async function browseEdgar(ticker){
     if(!r.ok)throw new Error('Failed to fetch');
     var d=await r.json();_edgarFilings=d.filings;
     if(!d.filings.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);text-align:center;padding:20px">No filings found for this CIK.</div>';return;}
-    var docTypeMap={'10-K':'annual_report','10-Q':'earnings_release','8-K':'earnings_release','20-F':'annual_report','40-F':'annual_report','6-K':'earnings_release','ARS':'annual_report','DEF 14A':'proxy_statement'};
+    var docTypeMap={'10-K':'10-K','10-Q':'10-Q','8-K':'other','20-F':'annual_report','40-F':'annual_report','6-K':'other','ARS':'annual_report','DEF 14A':'proxy_statement'};
     var h='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:8px">'+esc(d.company_name)+' — '+d.total_filings+' filings</div>';
     // Bulk controls
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">';
