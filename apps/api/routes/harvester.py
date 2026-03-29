@@ -149,6 +149,49 @@ async def _run_harvest_bg(tickers):
     logger.info("[HARVEST] Manual run complete: %s", result)
 
 
+# ── POST /harvester/llm-scan — LLM-powered IR page scan ───────────
+
+@router.post("/harvester/llm-scan/{ticker}")
+async def llm_scan_ir(ticker: str, db: AsyncSession = Depends(get_db)):
+    """
+    Use the LLM to scan a company's IR page and find all documents.
+    Returns the list for human review — does NOT auto-ingest.
+    """
+    from apps.api.models import Company, HarvesterSource
+    comp_q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = comp_q.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    src_q = await db.execute(select(HarvesterSource).where(HarvesterSource.company_id == company.id))
+    src = src_q.scalar_one_or_none()
+    ir_url = src.ir_docs_url if src else None
+    if not ir_url:
+        raise HTTPException(400, "No IR URL configured. Set one on the Documents tab first.")
+
+    from services.harvester.sources.ir_llm_scraper import scrape_ir_with_llm
+    from services.harvester.dispatcher import dispatch_candidates
+    candidates = await scrape_ir_with_llm(
+        ticker=company.ticker,
+        company_name=company.name,
+        ir_docs_url=ir_url,
+    )
+
+    # Save to harvested_documents so they appear in the Documents tab
+    if candidates:
+        summary = await dispatch_candidates(candidates)
+    else:
+        summary = {"new": 0, "skipped": 0, "failed": 0}
+
+    return {
+        "ticker": company.ticker,
+        "ir_url": ir_url,
+        "documents_found": len(candidates),
+        "new": summary["new"],
+        "skipped": summary["skipped"],
+    }
+
+
 # ── GET /harvester/log ────────────────────────────────────────────
 
 @router.get("/harvester/log")

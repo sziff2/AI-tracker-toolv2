@@ -3667,6 +3667,7 @@ async function loadCkDocuments(ticker){
       h+='<input id="ck-docs-ir-url" class="fi" value="'+esc(currentDocsUrl)+'" placeholder="Paste IR documents page URL — e.g. https://www.bunzl.com/investors/results-reports-and-presentations/" style="flex:1;font-size:12px;padding:7px 12px;min-width:260px">';
       h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
       h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest</button>';
+      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
     }
     h+='</div>';
     if(!isEdgar&&!currentDocsUrl){
@@ -3907,6 +3908,20 @@ async function saveCkDocsUrl(ticker){
   }catch(e){alert('Failed to save URL: '+e.message);}
 }
 
+async function runLLMScan(ticker,btn){
+  btn.disabled=true;var orig=btn.textContent;btn.textContent='Scanning…';
+  try{
+    var r=await fetch('/api/v1/harvester/llm-scan/'+enc(ticker),{method:'POST'});
+    if(!r.ok){var e=await r.json().catch(function(){return {};});throw new Error(e.detail||'Scan failed');}
+    var d=await r.json();
+    btn.textContent='Found '+d.documents_found;
+    setTimeout(function(){btn.textContent=orig;btn.disabled=false;},2000);
+    loadCkDocuments(ticker);
+  }catch(e){
+    alert('LLM scan failed: '+e.message);
+    btn.textContent=orig;btn.disabled=false;
+  }
+}
 async function runHarvestAndReload(ticker,btn){
   var orig=btn.textContent;
   btn.textContent='Running…';btn.disabled=true;

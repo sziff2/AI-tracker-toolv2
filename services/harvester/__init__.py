@@ -19,6 +19,7 @@ from apps.api.database import AsyncSessionLocal
 from apps.api.models import Company, HarvesterSource
 from services.harvester.sources.sec_edgar import fetch_sec_edgar, EDGAR_SOURCES
 from services.harvester.sources.ir_scraper import scrape_ir_page
+from services.harvester.sources.ir_llm_scraper import scrape_ir_with_llm
 from services.harvester.dispatcher import dispatch_candidates
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ async def run_harvest(tickers: list[str] | None = None) -> dict:
                     company.ticker, exc, exc_info=True
                 )
 
-        # ── Priority 2: IR page scraper ───────────────────────────
+        # ── Priority 2: IR page scraper (regex) ──────────────────
         if used_source is None:
             ir_docs_url = src.ir_docs_url if src else None
 
@@ -94,6 +95,30 @@ async def run_harvest(tickers: list[str] | None = None) -> dict:
                 except Exception as exc:
                     logger.error(
                         "[HARVEST] IR scraper error for %s: %s",
+                        company.ticker, exc, exc_info=True
+                    )
+
+        # ── Priority 3: LLM-powered scraper (fallback) ──────────
+        if used_source is None:
+            ir_docs_url = src.ir_docs_url if src else None
+
+            if ir_docs_url:
+                try:
+                    candidates = await scrape_ir_with_llm(
+                        ticker=company.ticker,
+                        company_name=company.name,
+                        ir_docs_url=ir_docs_url,
+                    )
+                    if candidates:
+                        all_candidates.extend(candidates)
+                        used_source = "ir_llm"
+                        logger.info(
+                            "[HARVEST] %s → LLM scraper (%d candidates)",
+                            company.ticker, len(candidates)
+                        )
+                except Exception as exc:
+                    logger.error(
+                        "[HARVEST] LLM scraper error for %s: %s",
                         company.ticker, exc, exc_info=True
                     )
 
