@@ -569,6 +569,55 @@ function ckShowNewPeriod(ticker){
   const hfi=E('np-hfi');if(hfi&&!hfi._npBound){hfi._npBound=true;hfi.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';NP_FILES.push({file:f,docType:dt});}this.value='';npRenderFL();});}
 }
 function ckHideNewPeriod(){const p=E('ck-new-period-panel');if(p)p.style.display='none';NP_FILES=[];}
+async function npImportFromEdgar(ticker){
+  var pt=E('np-type')?.value,yr=E('np-year')?.value;
+  if(!pt||!yr){alert('Select period type and year first.');return;}
+  var period=yr+'_'+pt;
+  var btn=E('np-edgar-btn'),statusEl=E('np-edgar-status');
+  btn.disabled=true;btn.textContent='Looking up…';
+  try{
+    // 1. Look up CIK
+    var lr=await fetch('/api/v1/edgar/lookup/'+enc(ticker));
+    if(!lr.ok)throw new Error('CIK lookup failed');
+    var ld=await lr.json();
+    if(!ld.cik)throw new Error('No SEC CIK found for '+ticker+'. This company may not file with the SEC.');
+    // 2. Browse EDGAR filings
+    btn.textContent='Fetching filings…';
+    var br=await fetch('/api/v1/edgar/browse/'+encodeURIComponent(ld.cik));
+    if(!br.ok)throw new Error('EDGAR browse failed');
+    var bd=await br.json();
+    // 3. Find filings matching the selected period
+    var matching=bd.filings.filter(function(f){return f.period_label===period;});
+    if(!matching.length){
+      matching=bd.filings.filter(function(f){
+        return suggestPeriodFromDate(f.filing_date,f.form_type)===period;
+      });
+    }
+    if(!matching.length)throw new Error('No EDGAR filings found for '+period);
+    // 4. Download and add to file list (don't process yet)
+    btn.textContent='Downloading '+matching.length+'…';
+    var added=0;
+    for(var i=0;i<matching.length;i++){
+      var f=matching[i];if(!f.doc_url)continue;
+      try{
+        var resp=await fetch(f.doc_url);
+        if(!resp.ok)continue;
+        var blob=await resp.blob();
+        var filename=f.doc_url.split('/').pop()||f.form_type+'_'+f.filing_date+'.htm';
+        var file=new File([blob],filename,{type:blob.type});
+        var docTypeMap={'10-K':'10-K','10-Q':'10-Q','8-K':'other','20-F':'annual_report','40-F':'annual_report','6-K':'other','ARS':'annual_report','DEF 14A':'proxy_statement'};
+        NP_FILES.push({file:file,docType:docTypeMap[f.form_type]||'other'});
+        added++;
+      }catch(e){}
+    }
+    npRenderFL();
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">Added '+added+' EDGAR filings to the list. Add any other documents, then click Upload &amp; Analyse.</span>';
+    btn.textContent='🏛 Import from EDGAR';btn.disabled=false;
+  }catch(e){
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';
+    btn.textContent='🏛 Import from EDGAR';btn.disabled=false;
+  }
+}
 function npRenderFL(){const c=E('np-file-list');if(!c)return;const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report:'📋',sustainability_report:'♻️',other:'📄'};let h='';NP_FILES.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="NP_FILES['+i+'].docType=this.value">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="NP_FILES.splice('+i+',1);npRenderFL()">&times;</button></div>';});c.innerHTML=h;}
 async function ckSubmitNewPeriod(ticker){
   const pt=E('np-type')?.value,yr=E('np-year')?.value,errEl=E('np-error'),ldEl=E('np-loading'),btn=E('np-submit');
@@ -935,7 +984,9 @@ function renderCkResults(ticker,d){
   h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year"></select></div></div>';
   h+='<div style="margin-top:14px"><div class="fl">Documents</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
   h+='<div style="margin-top:14px;display:flex;align-items:center;gap:10px"><div class="fl" style="margin:0">Model</div><select id="np-model" class="fi" style="width:auto;flex:1"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select></div>';
-  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button></div>';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button>';
+  h+='<button class="btn2" id="np-edgar-btn" onclick="npImportFromEdgar(\''+ticker+'\')" style="padding:10px 16px;white-space:nowrap">🏛 Import from EDGAR</button></div>';
+  h+='<div id="np-edgar-status" style="margin-top:8px;font-family:var(--sans);font-size:12px;color:var(--text4)"></div>';
   h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div></div>';
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
   allPeriods.forEach((p,i)=>{
