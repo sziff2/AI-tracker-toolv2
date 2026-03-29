@@ -825,16 +825,17 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
     }
 
 
-@router.post("/companies/{ticker}/ingest-edgar")
-async def ingest_edgar_filing(
+@router.post("/companies/{ticker}/ingest-url")
+async def ingest_from_url(
     ticker: str,
     doc_url: str = Form(...),
-    form_type: str = Form(...),
+    form_type: str = Form("other"),
     filing_date: str = Form(""),
     period_label: str = Form(""),
+    title: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download a specific EDGAR filing and ingest it."""
+    """Download a document from a URL (EDGAR or IR page) and ingest it."""
     import httpx
     from datetime import datetime, timezone
 
@@ -846,20 +847,18 @@ async def ingest_edgar_filing(
         date_match = re.search(r'(\d{4})(\d{2})(\d{2})\.\w+$', doc_url)
         if date_match:
             py, pm = int(date_match.group(1)), int(date_match.group(2))
-            if form_type in ("10-K", "20-F", "40-F", "ARS"):
+            if form_type in ("10-K", "20-F", "40-F", "ARS", "annual_report"):
                 period_label = f"{py}_FY"
             else:
                 period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
 
-    # Map form type to document type
-    doc_type_map = {
-        "10-K": "annual_report", "10-Q": "earnings_release", "8-K": "earnings_release",
-        "20-F": "annual_report", "40-F": "annual_report", "6-K": "earnings_release",
-        "ARS": "annual_report", "DEF 14A": "proxy_statement",
-    }
-    document_type = doc_type_map.get(form_type, "other")
+    # Use form_type directly as document_type (UI now sends the right value)
+    document_type = form_type if form_type else "other"
 
-    # Download the filing
+    # Determine source from URL
+    source = "edgar" if "sec.gov" in doc_url else "ir_scrape"
+
+    # Download the document
     headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
@@ -867,11 +866,16 @@ async def ingest_edgar_filing(
             resp.raise_for_status()
             content = resp.content
         except Exception as exc:
-            raise HTTPException(502, f"Failed to download filing: {str(exc)[:200]}")
+            raise HTTPException(502, f"Failed to download: {str(exc)[:200]}")
 
-    # Save to temp file and ingest
-    filename = doc_url.split("/")[-1] or f"{form_type}_{filing_date}.htm"
-    suffix = Path(filename).suffix or ".htm"
+    # Determine filename and extension
+    filename = doc_url.split("/")[-1].split("?")[0] or f"document.pdf"
+    suffix = Path(filename).suffix or ".pdf"
+    # Auto-title from URL slug if not provided
+    if not title:
+        slug = filename.replace("-", " ").replace("_", " ")
+        slug = slug.rsplit(".", 1)[0] if "." in slug else slug
+        title = f"{form_type} {filing_date}".strip() if filing_date else slug[:80]
 
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
@@ -882,7 +886,7 @@ async def ingest_edgar_filing(
             db=db, company_id=company.id, ticker=ticker,
             file_path=tmp_path, filename=filename,
             document_type=document_type, period_label=period_label,
-            title=f"{form_type} {filing_date}", source="edgar", source_url=doc_url,
+            title=title, source=source, source_url=doc_url,
         )
         return {"status": "ingested", "document_id": str(doc.id), "title": doc.title}
     except ValueError as e:
@@ -891,3 +895,17 @@ async def ingest_edgar_filing(
         raise HTTPException(500, f"Ingestion failed: {str(e)[:200]}")
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+# Backward compatibility alias
+@router.post("/companies/{ticker}/ingest-edgar")
+async def ingest_edgar_filing(
+    ticker: str,
+    doc_url: str = Form(...),
+    form_type: str = Form("other"),
+    filing_date: str = Form(""),
+    period_label: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Backward-compatible alias for ingest-url."""
+    return await ingest_from_url(ticker, doc_url, form_type, filing_date, period_label, "", db)

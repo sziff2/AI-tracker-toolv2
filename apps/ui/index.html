@@ -3870,7 +3870,7 @@ async function edgarIngestSelected(){
       var fd=new FormData();
       fd.append('doc_url',f.doc_url);fd.append('form_type',dtype||f.form_type);
       fd.append('filing_date',f.filing_date);fd.append('period_label',period);
-      var r=await fetch('/api/v1/companies/'+enc(_edgarTicker)+'/ingest-edgar',{method:'POST',body:fd});
+      var r=await fetch('/api/v1/companies/'+enc(_edgarTicker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
       var row=checked[ci].closest('tr');
       if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
@@ -3934,7 +3934,8 @@ async function hvIngestSelected(){
       var fd=new FormData();
       fd.append('doc_url',doc.source_url);fd.append('form_type',dtype);
       fd.append('filing_date','');fd.append('period_label',period);
-      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-edgar',{method:'POST',body:fd});
+      fd.append('title',doc.headline||'');
+      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
       var row=checked[ci].closest('tr');
       if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
