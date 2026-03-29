@@ -3696,56 +3696,56 @@ async function loadCkDocuments(ticker){
     var ingested=r2.ok?await r2.json():[];
     var ingestedUrls=new Set(ingested.map(function(d){return d.source_url;}).filter(Boolean));
 
-    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-    h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2)">Documents discovered by the harvester. Select any to send to New Analysis.</div>';
-    h+='</div>';
-
     if(!docs.length){
       h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text4);padding:24px 0;text-align:center">No documents harvested yet.<br><br>';
-      h+=(!isEdgar&&!currentDocsUrl)?'Enter the IR documents page URL above and run a harvest.':'Click ↺ Refresh / ▶ Run Harvest to fetch documents.';
+      h+=(!isEdgar&&!currentDocsUrl)?'Enter the IR documents page URL above and run a harvest.':'Click ↺ Refresh / ▶ Run Harvest or 🤖 LLM Scan to fetch documents.';
       h+='</div>';
       el.innerHTML=h;
       autoLoadEdgar(ticker);
       return;
     }
 
-    // Selection action bar (hidden until docs are checked)
-    h+='<div id="ck-docs-sel-bar" style="display:none;background:var(--goldDim);border:1px solid rgba(196,164,90,.3);border-radius:8px;padding:10px 14px;margin-bottom:12px;align-items:center;justify-content:space-between">';
-    h+='<span style="font-family:var(--sans);font-size:13px;color:var(--gold)"><span id="ck-docs-sel-count">0</span> selected</span>';
-    h+='<button class="btn" style="padding:7px 18px;font-size:12px" onclick="uploadSelectedDocs(\''+esc(ticker)+'\')">Send to New Analysis →</button>';
+    // Store docs globally for ingest
+    window._harvestDocs=docs;window._harvestTicker=ticker;
+
+    // Bulk controls
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">';
+    h+='<input type="checkbox" id="hv-chk-all" onclick="hvToggleAll(this)" title="Select all">';
+    h+='<select id="hv-bulk-period" class="fi" style="width:auto;font-size:11px;padding:4px 8px">'+edgarPeriodOpts('')+'</select>';
+    h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="hvApplyBulkPeriod()">Apply period</button>';
+    h+='<span style="flex:1"></span>';
+    h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text4)">'+docs.length+' documents found</span>';
+    h+='<button class="btn" style="font-size:11px;padding:5px 14px" onclick="hvIngestSelected()">Ingest Selected</button>';
+    h+='<span id="hv-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
     h+='</div>';
 
-    // Group by period, sort newest first
-    var byPeriod={};
-    docs.forEach(function(doc){
-      var p=doc.period||'Unknown period';
-      if(!byPeriod[p])byPeriod[p]=[];
-      byPeriod[p].push(doc);
+    // Documents table
+    h+='<div style="max-height:500px;overflow-y:auto">';
+    h+='<table class="kt" style="font-size:12px"><thead><tr>';
+    h+='<th style="width:28px"></th><th>Document</th><th style="width:60px">Source</th><th style="width:80px">Date</th>';
+    h+='<th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th style="width:50px"></th>';
+    h+='</tr></thead><tbody>';
+    docs.forEach(function(doc,i){
+      var alreadyIn=doc.source_url&&ingestedUrls.has(doc.source_url);
+      var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎'}[doc.source]||'📄';
+      var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','ir_llm':'LLM','manual':'Manual'}[doc.source]||doc.source||'';
+      var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
+      var period=doc.period||'';
+      var docType=doc.document_type||'other';
+      var rowBg=alreadyIn?'rgba(74,222,128,.05)':'transparent';
+      h+='<tr data-idx="'+i+'" style="background:'+rowBg+'">';
+      h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'"'+(alreadyIn?' disabled':'')+''+'></td>';
+      h+='<td style="max-width:250px"><div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(doc.source_url||'')+'">'+esc(doc.headline||doc.source_url||'—')+'</div></td>';
+      h+='<td><span style="font-size:10px;font-family:var(--sans);font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text3)">'+srcIcon+' '+srcLabel+'</span></td>';
+      h+='<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+esc(dt)+'</td>';
+      h+='<td><select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(period)+'</select></td>';
+      h+='<td><select class="fi hv-dtype" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarDocTypeOpts(docType)+'</select></td>';
+      h+='<td>';
+      if(alreadyIn)h+='<span style="font-size:10px;color:var(--green);font-weight:600">In DB</span>';
+      else if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="Open">↗</a>';
+      h+='</td></tr>';
     });
-    var periods=Object.keys(byPeriod).sort(function(a,b){return b.localeCompare(a);});
-
-    periods.forEach(function(period){
-      var pdocs=byPeriod[period];
-      h+='<div style="margin-bottom:18px">';
-      h+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">'+esc(period)+'</div>';
-      pdocs.forEach(function(doc){
-        var alreadyIn=doc.source_url&&ingestedUrls.has(doc.source_url);
-        var srcIcon={'edgar':'🏛','ir_scrape':'🔎','manual':'📎'}[doc.source]||'📄';
-        var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','manual':'Manual'}[doc.source]||doc.source||'';
-        var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
-        var hasErr=doc.error&&!doc.ingested;
-        h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid '+(hasErr?'rgba(239,68,68,.3)':'var(--border)')+';border-radius:8px;margin-bottom:5px;cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor=\'var(--gold)\'" onmouseleave="this.style.borderColor=\''+(hasErr?'rgba(239,68,68,.3)':'var(--border)')+'\'" onclick="toggleDocRow(this)" data-url="'+esc(doc.source_url||'')+'" data-headline="'+esc(doc.headline||'')+'" data-period="'+esc(doc.period||'')+'">';
-        h+='<input type="checkbox" style="cursor:pointer;accent-color:var(--gold);width:14px;height:14px;flex-shrink:0" onclick="event.stopPropagation()" onchange="updateDocSelBar()">';
-        h+='<div style="flex:1;min-width:0">';
-        h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(doc.headline||doc.source_url||'—')+'</div>';
-        h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">'+srcIcon+' '+srcLabel+(dt?' · '+dt:'')+(hasErr?' · <span style="color:var(--red)">'+esc(doc.error.substring(0,60))+'</span>':'')+'</div>';
-        h+='</div>';
-        if(alreadyIn)h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;color:var(--green);background:var(--greenDim);padding:2px 8px;border-radius:4px;white-space:nowrap;flex-shrink:0">In DB</span>';
-        if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" onclick="event.stopPropagation()" style="color:var(--text4);font-size:16px;text-decoration:none;flex-shrink:0;line-height:1" title="Open document">↗</a>';
-        h+='</div>';
-      });
-      h+='</div>';
-    });
+    h+='</tbody></table></div>';
 
     el.innerHTML=h;
     updateDocSelBar();
@@ -3908,6 +3908,42 @@ async function saveCkDocsUrl(ticker){
   }catch(e){alert('Failed to save URL: '+e.message);}
 }
 
+function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){c.checked=cb.checked;});}
+function hvApplyBulkPeriod(){
+  var period=E('hv-bulk-period').value;if(!period){alert('Select a period first.');return;}
+  document.querySelectorAll('.hv-chk:checked').forEach(function(c){
+    var sel=document.querySelector('.hv-period[data-idx="'+c.dataset.idx+'"]');
+    if(sel)sel.value=period;
+  });
+}
+async function hvIngestSelected(){
+  var checked=[].slice.call(document.querySelectorAll('.hv-chk:checked'));
+  if(!checked.length){alert('Select at least one document.');return;}
+  var statusEl=E('hv-ingest-status');
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting…</span>';
+  var ticker=window._harvestTicker;var docs=window._harvestDocs;
+  var ok=0,dup=0,fail=0;
+  for(var ci=0;ci<checked.length;ci++){
+    var idx=parseInt(checked[ci].dataset.idx);
+    var doc=docs[idx];if(!doc||!doc.source_url)continue;
+    var periodSel=document.querySelector('.hv-period[data-idx="'+idx+'"]');
+    var dtypeSel=document.querySelector('.hv-dtype[data-idx="'+idx+'"]');
+    var period=periodSel?periodSel.value:'';
+    var dtype=dtypeSel?dtypeSel.value:'other';
+    try{
+      var fd=new FormData();
+      fd.append('doc_url',doc.source_url);fd.append('form_type',dtype);
+      fd.append('filing_date','');fd.append('period_label',period);
+      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-edgar',{method:'POST',body:fd});
+      var d=await r.json();
+      var row=checked[ci].closest('tr');
+      if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
+      else if(d.status==='duplicate'){dup++;if(row)row.style.background='rgba(196,164,90,.08)';}
+      else{fail++;}
+    }catch(e){fail++;}
+  }
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
+}
 async function runLLMScan(ticker,btn){
   btn.disabled=true;var orig=btn.textContent;btn.textContent='Scanning…';
   try{
