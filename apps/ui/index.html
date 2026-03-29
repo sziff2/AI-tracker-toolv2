@@ -594,17 +594,17 @@ async function npImportFromEdgar(ticker){
       });
     }
     if(!matching.length)throw new Error('No EDGAR filings found for '+period);
-    // 4. Download and add to file list (don't process yet)
+    // 4. Download via server proxy and add to file list (don't process yet)
     btn.textContent='Downloading '+matching.length+'…';
     var added=0;
     for(var i=0;i<matching.length;i++){
       var f=matching[i];if(!f.doc_url)continue;
       try{
-        var resp=await fetch(f.doc_url);
+        var resp=await fetch('/api/v1/edgar/proxy?url='+encodeURIComponent(f.doc_url));
         if(!resp.ok)continue;
         var blob=await resp.blob();
         var filename=f.doc_url.split('/').pop()||f.form_type+'_'+f.filing_date+'.htm';
-        var file=new File([blob],filename,{type:blob.type});
+        var file=new File([blob],filename,{type:'text/html'});
         var docTypeMap={'10-K':'10-K','10-Q':'10-Q','8-K':'other','20-F':'annual_report','40-F':'annual_report','6-K':'other','ARS':'annual_report','DEF 14A':'proxy_statement'};
         NP_FILES.push({file:file,docType:docTypeMap[f.form_type]||'other'});
         added++;

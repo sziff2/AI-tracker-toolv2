@@ -717,6 +717,23 @@ async def set_cik(ticker: str, cik: str = Form(...), db: AsyncSession = Depends(
     return {"ticker": ticker, "cik": company.cik}
 
 
+@router.get("/edgar/proxy")
+async def edgar_proxy(url: str):
+    """Proxy download from SEC.gov to avoid CORS restrictions."""
+    import httpx
+    from fastapi.responses import Response
+    if not url.startswith("https://www.sec.gov/") and not url.startswith("https://data.sec.gov/"):
+        raise HTTPException(400, "Only SEC.gov URLs are allowed")
+    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        try:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            return Response(content=resp.content, media_type=resp.headers.get("content-type", "text/html"))
+        except Exception as exc:
+            raise HTTPException(502, f"Download failed: {str(exc)[:200]}")
+
+
 @router.get("/edgar/browse/{cik}")
 async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20-F,40-F,6-K"):
     """Browse available SEC EDGAR filings for a given CIK. Returns a list for human review."""
