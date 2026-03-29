@@ -3702,19 +3702,25 @@ async function loadCkDocuments(ticker){
   }
 }
 async function autoLoadEdgar(ticker){
+  var cikEl=E('ck-edgar-cik'),statusEl=E('edgar-status');
+  if(!cikEl){console.log('autoLoadEdgar: ck-edgar-cik element not found');return;}
   try{
+    if(statusEl)statusEl.textContent='Looking up CIK…';
     var lr=await fetch('/api/v1/edgar/lookup/'+enc(ticker));
-    if(!lr.ok)return;var ld=await lr.json();
-    var cikEl=E('ck-edgar-cik'),statusEl=E('edgar-status');
+    if(!lr.ok){if(statusEl)statusEl.textContent='Lookup failed';return;}
+    var ld=await lr.json();
     if(ld.cik){
-      if(cikEl){cikEl.value=ld.cik;cikEl.placeholder='CIK';}
+      cikEl.value=ld.cik;cikEl.placeholder='CIK';
       if(statusEl)statusEl.innerHTML=esc(ld.company_name||'')+' <span style="color:var(--green)">\u2713</span>';
       browseEdgar(ticker);
     }else{
-      if(cikEl)cikEl.placeholder='Not found \u2014 enter CIK manually';
+      cikEl.value='';cikEl.placeholder='Not found \u2014 enter CIK manually';
       if(statusEl)statusEl.innerHTML='No SEC filing found. <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany" target="_blank" style="color:var(--gold)">Look up CIK</a>';
     }
-  }catch(e){}
+  }catch(e){
+    console.log('autoLoadEdgar error:',e);
+    if(cikEl)cikEl.placeholder='Error loading CIK';
+  }
 }
 
 function suggestPeriodFromDate(filingDate,formType){
