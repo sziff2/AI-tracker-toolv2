@@ -3652,7 +3652,9 @@ async function loadCkDocuments(ticker){
       h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text4);padding:24px 0;text-align:center">No documents harvested yet.<br><br>';
       h+=(!isEdgar&&!currentDocsUrl)?'Enter the IR documents page URL above and run a harvest.':'Click ↺ Refresh / ▶ Run Harvest to fetch documents.';
       h+='</div>';
-      el.innerHTML=h;return;
+      el.innerHTML=h;
+      autoLoadEdgar(ticker);
+      return;
     }
 
     // Selection action bar (hidden until docs are checked)
