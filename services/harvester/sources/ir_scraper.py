@@ -179,23 +179,49 @@ async def scrape_ir_page(
     base = _base(ir_docs_url)
     ir_domain = urlparse(ir_docs_url).netloc
 
+    # Build list of pages to scrape: the provided URL + any sibling results pages
+    pages_to_scrape = [ir_docs_url]
+    # Auto-discover sibling pages (e.g. /results → also try /previous-results)
+    parsed_url = urlparse(ir_docs_url)
+    path = parsed_url.path.rstrip('/')
+    _SIBLING_PATTERNS = [
+        "previous-results", "past-results", "historical-results",
+        "results-archive", "results", "reports", "reports-and-presentations",
+        "results-reports-and-presentations", "financial-results",
+        "quarterly-results", "annual-results",
+    ]
+    parent = '/'.join(path.split('/')[:-1])
+    for sibling in _SIBLING_PATTERNS:
+        sibling_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parent}/{sibling}"
+        if sibling_url != ir_docs_url and sibling_url not in pages_to_scrape:
+            pages_to_scrape.append(sibling_url)
+
     async with httpx.AsyncClient(
         timeout=15.0,
         follow_redirects=True,
         headers=_HEADERS,
     ) as client:
 
-        # ── Fetch main IR docs page ───────────────────────────────
-        try:
-            resp = await client.get(ir_docs_url)
-            resp.raise_for_status()
-        except Exception as e:
-            logger.warning("[SCRAPE] Failed to fetch %s: %s", ir_docs_url, e)
-            return []
+        all_main_links = []
+        for page_url in pages_to_scrape:
+            if page_url in visited:
+                continue
+            try:
+                resp = await client.get(page_url)
+                if resp.status_code == 404:
+                    continue
+                resp.raise_for_status()
+                visited.add(page_url)
+                page_links = _extract_links(resp.text, page_url)
+                all_main_links.extend(page_links)
+                logger.info("[SCRAPE] %s — fetched %s (%d links)", ticker, page_url, len(page_links))
+            except Exception as e:
+                if page_url == ir_docs_url:
+                    logger.warning("[SCRAPE] Failed to fetch %s: %s", ir_docs_url, e)
+                    return []
+                continue
 
-        visited.add(ir_docs_url)
-        main_html = resp.text
-        main_links = _extract_links(main_html, ir_docs_url)
+        main_links = all_main_links
 
         # ── Find direct PDF links on main page ────────────────────
         for href, text in main_links:
