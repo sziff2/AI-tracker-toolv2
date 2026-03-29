@@ -90,6 +90,7 @@ async def merge_companies(
         TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
         HarvesterSource, HarvestedDocument, ManagementStatement, ExecutionScorecard,
         ESGData, PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
+        ScenarioSnapshot,
     )
 
     target_clean = _clean_ticker(target_ticker)
@@ -143,6 +144,7 @@ async def merge_companies(
         TrackedKPI, KPIScore, ProcessingJob, DecisionLog, AnalystNote,
         HarvestedDocument, ManagementStatement, ExecutionScorecard,
         PortfolioHolding, PriceRecord, ValuationScenario, ExtractionFeedback,
+        ScenarioSnapshot,
     ]
 
     for model in tables_with_company_id:
@@ -160,10 +162,14 @@ async def merge_companies(
     # Commit the moves before deleting the source company
     await db.commit()
 
-    # Delete the source company
+    # Delete the source company — need fresh session since relationships may be cached
     try:
-        await db.delete(source)
-        await db.commit()
+        # Re-fetch source in case session state is stale
+        source_q2 = await db.execute(select(Company).where(Company.ticker == source_clean))
+        source2 = source_q2.scalar_one_or_none()
+        if source2:
+            await db.execute(delete(Company).where(Company.id == source2.id))
+            await db.commit()
     except Exception as e:
         await db.rollback()
         raise HTTPException(500, f"Failed to delete source company: {str(e)[:500]}")
