@@ -304,6 +304,32 @@ Schema:
 """
     try:
         thesis_data = call_llm_json(prompt, max_tokens=4096)
+
+        # Save to database
+        from apps.api.models import ThesisVersion
+        from datetime import date
+        # Deactivate existing thesis versions
+        existing_q = await db.execute(
+            select(ThesisVersion).where(ThesisVersion.company_id == company.id, ThesisVersion.active == True)
+        )
+        for old in existing_q.scalars().all():
+            old.active = False
+
+        thesis = ThesisVersion(
+            id=uuid.uuid4(),
+            company_id=company.id,
+            thesis_date=date.today(),
+            core_thesis=thesis_data.get("core_thesis"),
+            variant_perception=thesis_data.get("variant_perception"),
+            key_risks=thesis_data.get("key_risks"),
+            debate_points=thesis_data.get("debate_points"),
+            capital_allocation_view=thesis_data.get("capital_allocation_view"),
+            valuation_framework=thesis_data.get("valuation_framework"),
+            active=True,
+        )
+        db.add(thesis)
+        await db.commit()
+
         return thesis_data
     except Exception as e:
         raise HTTPException(500, f"Thesis generation failed: {str(e)[:200]}")
