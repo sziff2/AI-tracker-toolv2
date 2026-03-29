@@ -128,11 +128,23 @@ def _is_results_pdf(href: str, link_text: str) -> bool:
 
 
 def _extract_links(html: str, base_url: str) -> list[tuple[str, str]]:
-    """Extract all (href, link_text) pairs from HTML."""
+    """Extract all (href, link_text) pairs from HTML.
+    Also decodes unicode-escaped HTML in JSON blobs (common in SPA sites)."""
+    # First decode any unicode escapes in the raw HTML
+    # This handles pages like ArcelorMittal where links are in JSON as \u003ca href=\u0022...\u0022\u003e
+    try:
+        decoded = html.encode('utf-8').decode('unicode_escape')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        decoded = ""
+
+    # Combine original and decoded HTML for link extraction
+    combined = html + "\n" + decoded
+
     links = []
+    seen = set()
     for m in re.finditer(
         r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
-        html, re.IGNORECASE | re.DOTALL
+        combined, re.IGNORECASE | re.DOTALL
     ):
         href = m.group(1).strip()
         text = re.sub(r'<[^>]+>', '', m.group(2)).strip()
@@ -140,7 +152,9 @@ def _extract_links(html: str, base_url: str) -> list[tuple[str, str]]:
             continue
         if not href.startswith('http'):
             href = urljoin(base_url, href)
-        links.append((href, text))
+        if href not in seen:
+            seen.add(href)
+            links.append((href, text))
     return links
 
 
