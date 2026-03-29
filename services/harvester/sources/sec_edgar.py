@@ -28,7 +28,7 @@ EDGAR_SOURCES: dict[str, dict] = {
         "cik": "0001104485",
         "form_types": ["40-F", "6-K"],   # Canadian filer
     },
-    "LKQX": {
+    "LKQ US": {
         "name": "LKQ Corporation",
         "cik": "0001065696",
         "form_types": ["10-K", "10-Q", "8-K"],
@@ -38,8 +38,36 @@ EDGAR_SOURCES: dict[str, dict] = {
         "cik": "0000915191",
         "form_types": ["40-F", "6-K"],   # Canadian filer
     },
-    # Add US-listed names here as needed
-    # "TICKER": { "cik": "0000000000", "form_types": ["10-K", "10-Q"] }
+    "ALLY US": {
+        "name": "Ally Financial",
+        "cik": "0000040729",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "LEA US": {
+        "name": "Lear Corporation",
+        "cik": "0000842162",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "ARW US": {
+        "name": "Arrow Electronics",
+        "cik": "0000007536",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "CB US": {
+        "name": "Chubb Limited",
+        "cik": "0000896159",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "PM US": {
+        "name": "Philip Morris International",
+        "cik": "0001413329",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "ALGT US": {
+        "name": "Allegiant Travel",
+        "cik": "0001362468",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
 }
 
 # Form types that map to financial results

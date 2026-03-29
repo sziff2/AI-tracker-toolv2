@@ -61,6 +61,73 @@ def extract_text_docx(file_path: str) -> list[dict]:
     return [{"page": 1, "text": "\n".join(paragraphs)}]
 
 
+def extract_text_html(file_path: str) -> tuple[list[dict], list[dict]]:
+    """
+    Extract text and tables from an HTML file (e.g. SEC EDGAR .htm filings).
+    Returns (pages, tables) where pages are chunked by ~3000 chars for consistency
+    with PDF page-based processing.
+    """
+    from bs4 import BeautifulSoup
+    import re
+
+    raw = Path(file_path).read_text(errors="replace")
+    soup = BeautifulSoup(raw, "lxml")
+
+    # Remove script, style, and hidden elements
+    for tag in soup.find_all(["script", "style", "meta", "link", "head"]):
+        tag.decompose()
+
+    # Extract tables separately for structured data
+    tables = []
+    for i, table in enumerate(soup.find_all("table")):
+        rows = []
+        for tr in table.find_all("tr"):
+            cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+            if any(c for c in cells):
+                rows.append(cells)
+        if rows and len(rows) > 1:
+            tables.append({"page": i + 1, "tables": [rows]})
+
+    # Get clean text
+    text = soup.get_text(separator="\n")
+    # Clean up whitespace: collapse multiple blank lines, strip lines
+    lines = [line.strip() for line in text.splitlines()]
+    # Remove empty lines but keep paragraph breaks
+    cleaned = []
+    prev_empty = False
+    for line in lines:
+        if not line:
+            if not prev_empty:
+                cleaned.append("")
+            prev_empty = True
+        else:
+            cleaned.append(line)
+            prev_empty = False
+    full_text = "\n".join(cleaned).strip()
+
+    # Remove common SEC filing boilerplate
+    full_text = re.sub(r'(?i)^\s*UNITED STATES\s*\n\s*SECURITIES AND EXCHANGE COMMISSION.*?FORM\s+\d+-[A-Z]+\s*\n', '', full_text, flags=re.DOTALL)
+
+    # Split into page-like chunks (~3000 chars each for consistency with PDF processing)
+    CHUNK_SIZE = 3000
+    pages = []
+    for i in range(0, len(full_text), CHUNK_SIZE):
+        chunk = full_text[i:i + CHUNK_SIZE]
+        # Try to break at a paragraph boundary
+        if i + CHUNK_SIZE < len(full_text):
+            last_break = chunk.rfind("\n\n")
+            if last_break > CHUNK_SIZE * 0.5:
+                chunk = full_text[i:i + last_break]
+        pages.append({"page": len(pages) + 1, "text": chunk.strip()})
+
+    if not pages:
+        pages = [{"page": 1, "text": full_text}]
+
+    logger.info("HTML extraction: %d chars, %d pages, %d tables from %s",
+                len(full_text), len(pages), len(tables), file_path)
+    return pages, tables
+
+
 # ─────────────────────────────────────────────────────────────────
 # Document classification (LLM)
 # ─────────────────────────────────────────────────────────────────
@@ -104,8 +171,15 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     elif ext in (".docx", ".doc"):
         pages = extract_text_docx(file_path)
         tables = []
+    elif ext in (".htm", ".html", ".xhtml"):
+        pages, tables = extract_text_html(file_path)
     else:
-        pages = [{"page": 1, "text": Path(file_path).read_text(errors="replace")}]
+        # Plain text fallback
+        raw_text = Path(file_path).read_text(errors="replace")
+        # Chunk into pages for consistency
+        CHUNK = 3000
+        pages = [{"page": i + 1, "text": raw_text[i:i+CHUNK].strip()}
+                 for i in range(0, len(raw_text), CHUNK)] or [{"page": 1, "text": raw_text}]
         tables = []
 
     full_text = "\n\n".join(p["text"] for p in pages)
