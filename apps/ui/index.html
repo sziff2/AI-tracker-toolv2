@@ -3704,17 +3704,15 @@ async function loadCkDocuments(ticker){
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     if(isEdgar){
       h+='<span style="font-family:var(--sans);font-size:12px;color:var(--green);font-weight:600">🏛 EDGAR</span>';
-      h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text3)">Filings fetched automatically via SEC EDGAR — no URL needed.</span>';
-      h+='<button class="btn2" style="font-size:11px;padding:5px 12px;margin-left:auto;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">↺ Refresh from EDGAR</button>';
-    } else {
-      h+='<input id="ck-docs-ir-url" class="fi" value="'+esc(currentDocsUrl)+'" placeholder="Paste IR documents page URL — e.g. https://www.bunzl.com/investors/results-reports-and-presentations/" style="flex:1;font-size:12px;padding:7px 12px;min-width:260px">';
-      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
-      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest (free)</button>';
-      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
+      h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text3)">SEC filings available via EDGAR.</span>';
     }
+    h+='<input id="ck-docs-ir-url" class="fi" value="'+esc(currentDocsUrl)+'" placeholder="IR documents page URL (for transcripts, presentations, etc.)" style="flex:1;font-size:12px;padding:7px 12px;min-width:220px">';
+    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
+    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest (free)</button>';
+    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
     h+='</div>';
-    if(!isEdgar&&!currentDocsUrl){
-      h+='<div style="font-family:var(--sans);font-size:11px;color:var(--amber);margin-top:8px">⚠ No IR page URL set. Paste the company\'s results &amp; reports page URL above, save, then run a harvest.</div>';
+    if(!currentDocsUrl){
+      h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:8px">'+(isEdgar?'Optionally add an IR page URL above for transcripts, presentations, and other documents not on EDGAR.':'Paste the company\'s results &amp; reports page URL above, save, then run a harvest.')+'</div>';
     }
     h+='</div>';
 
