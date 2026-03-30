@@ -125,11 +125,25 @@ def _infer_period(text: str) -> Optional[str]:
 
 def _classify_doc_type(text: str) -> str:
     t = text.lower()
-    if any(k in t for k in ["transcript", "call", "q&a"]):
+    if any(k in t for k in ["transcript", "call transcript", "q&a", "questions and answers"]):
         return "transcript"
-    if any(k in t for k in ["presentation", "slides", "investor day", "capital markets"]):
+    if any(k in t for k in ["presentation", "slides", "investor day", "capital markets", "analyst slides"]):
         return "presentation"
-    return "earnings_release"
+    if any(k in t for k in ["annual report", "annual-report", "20-f", "40-f"]):
+        return "annual_report"
+    if any(k in t for k in ["proxy", "def 14", "agm", "general meeting"]):
+        return "proxy_statement"
+    if any(k in t for k in ["sustainability", "esg", "csr", "tcfd", "climate"]):
+        return "sustainability_report"
+    if any(k in t for k in ["broker", "research note", "analyst note"]):
+        return "broker_note"
+    if any(k in t for k in ["10-k", "10k"]):
+        return "10-K"
+    if any(k in t for k in ["10-q", "10q"]):
+        return "10-Q"
+    if any(k in t for k in ["press release", "earnings release", "results", "quarterly report"]):
+        return "earnings_release"
+    return "other"
 
 
 def _is_results_link(href: str, link_text: str) -> bool:
@@ -287,14 +301,15 @@ async def scrape_ir_page(
 
 def _make_candidate(ticker: str, pdf_url: str, link_text: str, context: str) -> dict:
     """Build a HarvestCandidate dict from a found PDF link."""
-    # Use context (page title + link text + URL) for period inference
-    period_label = _infer_period(context)
-    doc_type = _classify_doc_type(context)
-
     # Build a readable headline from link text + URL slug
     slug = urlparse(pdf_url).path.split('/')[-1].replace('-', ' ').replace('_', ' ')
     slug = re.sub(r'\.pdf$', '', slug, flags=re.IGNORECASE)
     headline = link_text.strip() if link_text.strip() else slug.title()
+
+    # Use full context (page title + link text + URL path + slug) for inference
+    full_context = f"{context} {pdf_url} {slug} {headline}"
+    period_label = _infer_period(full_context)
+    doc_type = _classify_doc_type(full_context)
 
     return {
         "ticker":        ticker,

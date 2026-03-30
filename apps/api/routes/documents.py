@@ -841,9 +841,14 @@ async def ingest_from_url(
 
     company = await get_company_or_404(db, ticker)
 
-    # Derive period_label from URL if not provided (e.g. lkq-20250930.htm → 2025_Q3)
-    if not period_label and doc_url:
-        import re
+    # Infer period and doc type from filename/URL/title when not provided
+    from services.harvester.sources.ir_scraper import _infer_period, _classify_doc_type
+    import re
+
+    context = f"{title} {doc_url} {form_type} {filing_date}"
+
+    if not period_label:
+        # Try date-based pattern first (e.g. lkq-20250930.htm)
         date_match = re.search(r'(\d{4})(\d{2})(\d{2})\.\w+$', doc_url)
         if date_match:
             py, pm = int(date_match.group(1)), int(date_match.group(2))
@@ -851,8 +856,16 @@ async def ingest_from_url(
                 period_label = f"{py}_FY"
             else:
                 period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
+        else:
+            # Try text-based inference from URL and title
+            period_label = _infer_period(context) or ""
 
-    # Use form_type directly as document_type (UI now sends the right value)
+    # Infer document type from context if generic
+    if not form_type or form_type == "other":
+        inferred_type = _classify_doc_type(context)
+        if inferred_type != "other":
+            form_type = inferred_type
+
     document_type = form_type if form_type else "other"
 
     # Determine source from URL
