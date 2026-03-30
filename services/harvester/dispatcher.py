@@ -23,9 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import AsyncSessionLocal
-from apps.api.models import Company, Document, HarvestedDocument, ProcessingJob
+from apps.api.models import Company, Document, HarvestedDocument
 from services.document_ingestion import ingest_document
-from services.background_processor import run_single_pipeline, start_background_job
 
 logger = logging.getLogger(__name__)
 
@@ -197,23 +196,8 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                 summary["failed"] += 1
                 continue
 
-            # Trigger extraction pipeline
-            job = ProcessingJob(
-                id=uuid.uuid4(),
-                company_id=company.id,
-                period_label=period_label,
-                job_type="harvest",
-                status="queued",
-                current_step="queued",
-                progress_pct=0,
-            )
-            db.add(job)
-            await db.commit()
-
-            start_background_job(
-                run_single_pipeline(job.id, company.id, ticker, doc.id, period_label)
-            )
-
+            # Document ingested — do NOT auto-trigger analysis pipeline.
+            # User triggers analysis manually from the Results tab to control LLM costs.
             await _record(db, c, company.id, doc.id, True)
 
             logger.info(
