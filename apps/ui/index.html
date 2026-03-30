@@ -3709,7 +3709,7 @@ async function loadCkDocuments(ticker){
     } else {
       h+='<input id="ck-docs-ir-url" class="fi" value="'+esc(currentDocsUrl)+'" placeholder="Paste IR documents page URL — e.g. https://www.bunzl.com/investors/results-reports-and-presentations/" style="flex:1;font-size:12px;padding:7px 12px;min-width:260px">';
       h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
-      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest</button>';
+      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest (free)</button>';
       h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
     }
     h+='</div>';
