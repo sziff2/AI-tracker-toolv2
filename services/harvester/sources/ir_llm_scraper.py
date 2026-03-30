@@ -14,6 +14,7 @@ The LLM returns structured document metadata that the user can
 review before ingesting.
 """
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -33,8 +34,23 @@ _HEADERS = {
     "Accept-Language": "en-GB,en;q=0.9",
 }
 
-# Max chars of page source to send to LLM (keeps cost down)
-_MAX_PAGE_CHARS = 30000
+# Headers that may trigger server-side rendering on SPA sites
+_SSR_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+}
+
+# Max chars of page source to send to LLM (reduced to stay within Railway 30s gateway)
+_MAX_PAGE_CHARS = 15000
+
+# If main page already has this much content, skip sibling pages
+_SKIP_SIBLINGS_THRESHOLD = 5000
+
+# Minimum chars of visible text to consider a page as having real content
+_THIN_CONTENT_THRESHOLD = 1000
 
 
 def _clean_page_source(html: str) -> str:
@@ -50,6 +66,104 @@ def _clean_page_source(html: str) -> str:
     # Collapse whitespace
     html = re.sub(r'\s+', ' ', html)
     return html.strip()
+
+
+def _extract_visible_text(html: str) -> str:
+    """Extract just the visible text from HTML (strip all tags)."""
+    text = re.sub(r'<[^>]+>', ' ', html)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+def _find_api_urls(html: str, base_url: str) -> list[str]:
+    """
+    Look for API/JSON endpoints embedded in the HTML source that SPA pages
+    call to load document data. Returns candidate URLs to try fetching.
+    """
+    api_urls = []
+    base = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
+
+    # Match patterns like /api/..., /rest/..., or URLs ending in .json
+    patterns = [
+        r'["\'](/api/[^"\'>\s]{5,})["\']',
+        r'["\'](/rest/[^"\'>\s]{5,})["\']',
+        r'["\'](https?://[^"\'>\s]*?/api/[^"\'>\s]{5,})["\']',
+        r'["\'](/[^"\'>\s]*?\.json)["\']',
+        r'["\'](https?://[^"\'>\s]*?\.json)["\']',
+    ]
+
+    for pat in patterns:
+        for match in re.finditer(pat, html):
+            url = match.group(1)
+            if not url.startswith("http"):
+                url = urljoin(base, url)
+            # Filter out common non-document API endpoints
+            lower = url.lower()
+            if any(skip in lower for skip in [
+                "analytics", "tracking", "cookie", "consent", "login",
+                "auth", "session", "cart", "search", "navigation",
+                "manifest.json", "package.json", "tsconfig.json",
+            ]):
+                continue
+            api_urls.append(url)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for u in api_urls:
+        if u not in seen:
+            seen.add(u)
+            unique.append(u)
+
+    return unique[:5]  # Limit to 5 most promising
+
+
+async def _try_fetch_api_endpoints(
+    client: httpx.AsyncClient,
+    api_urls: list[str],
+    ticker: str,
+) -> str:
+    """Try fetching discovered API endpoints and return any useful JSON data."""
+    extra_content = ""
+    for api_url in api_urls:
+        try:
+            resp = await client.get(api_url, headers={
+                **_HEADERS,
+                "Accept": "application/json, text/plain, */*",
+            })
+            if resp.status_code == 200 and len(resp.text) > 100:
+                content_type = resp.headers.get("content-type", "")
+                if "json" in content_type or resp.text.strip().startswith(("{", "[")):
+                    chunk = resp.text[:3000]
+                    extra_content += f"\n\n--- API DATA: {api_url} ---\n{chunk}"
+                    logger.info("[LLM-SCRAPE] %s — fetched API endpoint: %s (%d chars)",
+                                ticker, api_url, len(resp.text))
+        except Exception:
+            pass
+    return extra_content
+
+
+async def _try_ssr_fetch(
+    client: httpx.AsyncClient,
+    url: str,
+    ticker: str,
+) -> str | None:
+    """
+    Re-fetch the page with Googlebot-like headers. Some SPA sites serve
+    pre-rendered HTML to crawlers.
+    """
+    try:
+        resp = await client.get(url, headers=_SSR_HEADERS)
+        if resp.status_code == 200:
+            cleaned = _clean_page_source(resp.text)
+            visible = _extract_visible_text(cleaned)
+            if len(visible) > _THIN_CONTENT_THRESHOLD:
+                logger.info("[LLM-SCRAPE] %s — SSR fetch returned richer content (%d chars)",
+                            ticker, len(visible))
+                return cleaned
+    except Exception:
+        pass
+    return None
 
 
 _LLM_PROMPT = """\
@@ -98,7 +212,7 @@ async def scrape_ir_with_llm(
 
     Returns a list of HarvestCandidate dicts.
     """
-    from services.llm_client import call_llm_json
+    from services.llm_client import call_llm_json_async
 
     base = f"{urlparse(ir_docs_url).scheme}://{urlparse(ir_docs_url).netloc}"
 
@@ -115,36 +229,66 @@ async def scrape_ir_with_llm(
             logger.warning("[LLM-SCRAPE] Failed to fetch %s: %s", ir_docs_url, e)
             return []
 
-    # Clean and truncate
-    raw_html = resp.text
-    cleaned = _clean_page_source(raw_html)
-    if len(cleaned) > _MAX_PAGE_CHARS:
-        cleaned = cleaned[:_MAX_PAGE_CHARS]
+        # Clean and truncate
+        raw_html = resp.text
+        cleaned = _clean_page_source(raw_html)
 
-    # Also check sibling pages
-    parsed = urlparse(ir_docs_url)
-    path = parsed.path.rstrip('/')
-    parent = '/'.join(path.split('/')[:-1])
-    siblings = ["previous-results", "results", "reports", "results-archive"]
-    for sib in siblings:
-        sib_url = f"{base}{parent}/{sib}"
-        if sib_url == ir_docs_url:
-            continue
-        try:
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=_HEADERS) as client:
-                sib_resp = await client.get(sib_url)
-                if sib_resp.status_code == 200:
-                    sib_cleaned = _clean_page_source(sib_resp.text)
-                    remaining = _MAX_PAGE_CHARS - len(cleaned)
-                    if remaining > 5000:
-                        cleaned += f"\n\n--- SIBLING PAGE: {sib_url} ---\n" + sib_cleaned[:remaining]
-                        logger.info("[LLM-SCRAPE] Also fetched sibling: %s", sib_url)
-        except Exception:
-            pass
+        # ── JS-rendered page detection ────────────────────────────────
+        visible_text = _extract_visible_text(cleaned)
+        is_thin_content = len(visible_text) < _THIN_CONTENT_THRESHOLD
+
+        if is_thin_content:
+            logger.warning(
+                "[LLM-SCRAPE] %s — thin content detected (%d visible chars), "
+                "page may be JS-rendered: %s",
+                ticker, len(visible_text), ir_docs_url,
+            )
+
+            # Strategy 1: Look for API/JSON endpoints in the HTML source
+            api_urls = _find_api_urls(raw_html, ir_docs_url)
+            if api_urls:
+                logger.info("[LLM-SCRAPE] %s — found %d API endpoint(s) to try",
+                            ticker, len(api_urls))
+                api_content = await _try_fetch_api_endpoints(client, api_urls, ticker)
+                if api_content:
+                    cleaned += api_content
+
+            # Strategy 2: Try SSR fetch with Googlebot headers
+            ssr_content = await _try_ssr_fetch(client, ir_docs_url, ticker)
+            if ssr_content and len(ssr_content) > len(cleaned):
+                logger.info("[LLM-SCRAPE] %s — using SSR content instead", ticker)
+                cleaned = ssr_content
+
+        if len(cleaned) > _MAX_PAGE_CHARS:
+            cleaned = cleaned[:_MAX_PAGE_CHARS]
+
+        # ── Sibling pages (skip if main page already has enough) ──────
+        if len(cleaned) < _SKIP_SIBLINGS_THRESHOLD:
+            parsed = urlparse(ir_docs_url)
+            path = parsed.path.rstrip('/')
+            parent = '/'.join(path.split('/')[:-1])
+            siblings = ["previous-results", "results", "reports", "results-archive"]
+            for sib in siblings:
+                sib_url = f"{base}{parent}/{sib}"
+                if sib_url == ir_docs_url:
+                    continue
+                try:
+                    sib_resp = await client.get(sib_url)
+                    if sib_resp.status_code == 200:
+                        sib_cleaned = _clean_page_source(sib_resp.text)
+                        remaining = _MAX_PAGE_CHARS - len(cleaned)
+                        if remaining > 2000:
+                            cleaned += f"\n\n--- SIBLING PAGE: {sib_url} ---\n" + sib_cleaned[:remaining]
+                            logger.info("[LLM-SCRAPE] Also fetched sibling: %s", sib_url)
+                except Exception:
+                    pass
+        else:
+            logger.info("[LLM-SCRAPE] %s — main page has %d chars, skipping sibling fetch",
+                        ticker, len(cleaned))
 
     logger.info("[LLM-SCRAPE] %s — sending %d chars to LLM", ticker, len(cleaned))
 
-    # Ask the LLM
+    # Ask the LLM (with timeout for Railway 30s gateway limit)
     prompt = _LLM_PROMPT.format(
         company=company_name,
         ticker=ticker,
@@ -154,7 +298,13 @@ async def scrape_ir_with_llm(
     )
 
     try:
-        documents = call_llm_json(prompt, max_tokens=4096)
+        documents = await asyncio.wait_for(
+            call_llm_json_async(prompt, max_tokens=2048),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError:
+        logger.error("[LLM-SCRAPE] %s — LLM call timed out (25s limit for Railway)", ticker)
+        return []
     except Exception as e:
         logger.error("[LLM-SCRAPE] LLM call failed for %s: %s", ticker, str(e)[:200])
         return []
