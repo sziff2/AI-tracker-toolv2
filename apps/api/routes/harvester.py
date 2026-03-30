@@ -3,8 +3,8 @@ Harvester Sources API
 
 Endpoints:
   GET  /harvester/sources            — list all companies + source status
-  PUT  /harvester/sources/{ticker}   — set ir_docs_url, override flag, notes
-  POST /harvester/sources/{ticker}/discover — re-run LLM discovery
+  PUT  /harvester/sources/{ticker:path}   — set ir_docs_url, override flag, notes
+  POST /harvester/sources/{ticker:path}/discover — re-run LLM discovery
   POST /harvester/run                — manually trigger harvest run
   GET  /harvester/log                — recent harvest log
 """
@@ -85,7 +85,7 @@ def _status(ticker: str, src) -> str:
 
 # ── PUT /harvester/sources/{ticker} ──────────────────────────────
 
-@router.put("/harvester/sources/{ticker}")
+@router.put("/harvester/sources/{ticker:path}")
 async def update_harvester_source(
     ticker: str,
     body: SourceUpdate,
@@ -151,7 +151,7 @@ async def _run_harvest_bg(tickers):
 
 # ── POST /harvester/llm-scan — LLM-powered IR page scan ───────────
 
-@router.post("/harvester/llm-scan/{ticker}")
+@router.post("/harvester/llm-scan/{ticker:path}")
 async def llm_scan_ir(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Use the LLM to scan a company's IR page and find all documents.

@@ -68,6 +68,21 @@ EDGAR_SOURCES: dict[str, dict] = {
         "cik": "0001362468",
         "form_types": ["10-K", "10-Q", "8-K"],
     },
+    "PYPL US": {
+        "name": "PayPal",
+        "cik": "0001633917",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "NOV US": {
+        "name": "NOV Inc",
+        "cik": "0001021860",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
+    "DIS US": {
+        "name": "Walt Disney",
+        "cik": "0001744489",
+        "form_types": ["10-K", "10-Q", "8-K"],
+    },
 }
 
 # Form types that map to financial results
