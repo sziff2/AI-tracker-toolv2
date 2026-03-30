@@ -2,12 +2,12 @@
 Management Execution Assessment — tracks management promises vs actual delivery.
 
 Endpoints:
-  POST /companies/{ticker:path}/execution/extract         — extract statements from documents
-  POST /companies/{ticker:path}/execution/assess           — assess open statements against actual results
-  GET  /companies/{ticker:path}/execution/statements       — list all statements
-  PUT  /companies/{ticker:path}/execution/statements/{id}  — manually update a statement's outcome
-  GET  /companies/{ticker:path}/execution/scorecard        — aggregated scorecard
-  GET  /companies/{ticker:path}/execution/time-series      — credibility over time
+  POST /companies/{ticker}/execution/extract         — extract statements from documents
+  POST /companies/{ticker}/execution/assess           — assess open statements against actual results
+  GET  /companies/{ticker}/execution/statements       — list all statements
+  PUT  /companies/{ticker}/execution/statements/{id}  — manually update a statement's outcome
+  GET  /companies/{ticker}/execution/scorecard        — aggregated scorecard
+  GET  /companies/{ticker}/execution/time-series      — credibility over time
 """
 
 import json
@@ -58,7 +58,7 @@ async def _get_company(db, ticker):
 # EXTRACT STATEMENTS from documents
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/companies/{ticker:path}/execution/extract")
+@router.post("/companies/{ticker}/execution/extract")
 async def extract_statements(ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
     """
     Extract forward-looking management statements from all documents for this company.
@@ -184,7 +184,7 @@ async def extract_statements(ticker: str, period: str = None, db: AsyncSession =
 # ASSESS OUTCOMES — compare statements against actual results
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/companies/{ticker:path}/execution/assess")
+@router.post("/companies/{ticker}/execution/assess")
 async def assess_outcomes(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Use LLM to assess open management statements against actual extracted metrics.
@@ -354,7 +354,7 @@ async def _rebuild_scorecard(db, company, overall_assessment: dict = None):
 # LIST / UPDATE STATEMENTS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/companies/{ticker:path}/execution/statements")
+@router.get("/companies/{ticker}/execution/statements")
 async def list_statements(ticker: str, status: str = None, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     q = select(ManagementStatement).where(ManagementStatement.company_id == company.id)
@@ -380,7 +380,7 @@ async def list_statements(ticker: str, status: str = None, db: AsyncSession = De
     } for s in result.scalars().all()]
 
 
-@router.put("/companies/{ticker:path}/execution/statements/{statement_id}")
+@router.put("/companies/{ticker}/execution/statements/{statement_id}")
 async def update_statement(ticker: str, statement_id: uuid.UUID, body: StatementUpdate, db: AsyncSession = Depends(get_db)):
     """Manually update a statement's outcome — analyst override."""
     company = await _get_company(db, ticker)
@@ -409,7 +409,7 @@ async def update_statement(ticker: str, statement_id: uuid.UUID, body: Statement
 # SCORECARD
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/companies/{ticker:path}/execution/scorecard")
+@router.get("/companies/{ticker}/execution/scorecard")
 async def get_scorecard(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
 
@@ -446,7 +446,7 @@ async def get_scorecard(ticker: str, db: AsyncSession = Depends(get_db)):
 # TIME SERIES — credibility over time
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/companies/{ticker:path}/execution/time-series")
+@router.get("/companies/{ticker}/execution/time-series")
 async def execution_time_series(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
 

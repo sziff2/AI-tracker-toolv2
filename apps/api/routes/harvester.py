@@ -84,7 +84,7 @@ def _status(ticker: str, src) -> str:
     return "unconfigured"
 
 
-# ── PUT /harvester/sources/{ticker} ──────────────────────────────
+# ── PUT /harvester/sources/{ticker:path} ──────────────────────────────
 
 @router.put("/harvester/sources/{ticker:path}")
 async def update_harvester_source(
@@ -99,7 +99,7 @@ async def update_harvester_source(
     co_q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = co_q.scalar_one_or_none()
     if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+        raise HTTPException(404, f"Company {ticker:path} not found")
 
     src_q = await db.execute(
         select(HarvesterSource).where(HarvesterSource.company_id == company.id)
@@ -162,7 +162,7 @@ async def llm_scan_ir(ticker: str, db: AsyncSession = Depends(get_db)):
     comp_q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = comp_q.scalar_one_or_none()
     if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
+        raise HTTPException(404, f"Company {ticker:path} not found")
 
     src_q = await db.execute(select(HarvesterSource).where(HarvesterSource.company_id == company.id))
     src = src_q.scalar_one_or_none()
