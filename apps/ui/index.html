@@ -3760,6 +3760,20 @@ function arStartPoll(){if(_arPollTimer)clearInterval(_arPollTimer);_arPollTimer=
 
 // ═══ COCKPIT DOCUMENTS TAB ══════════════════════════════════════
 
+function standardiseDocName(ticker,period,docType,rawName){
+  var docTypeLabels={'earnings_release':'Earnings Release','transcript':'Transcript','broker_note':'Broker Note','presentation':'Presentation','annual_report':'Annual Report','proxy_statement':'Proxy Statement','10-K':'10-K','10-Q':'10-Q','other':'Other'};
+  var label=docTypeLabels[docType]||docType||'Other';
+  // Parse period: "2024_FY" -> "FY 2024", "2025_Q3" -> "Q3 2025"
+  var periodStr='';
+  if(period){
+    var pp=period.split('_');
+    if(pp.length===2)periodStr=pp[1]+' '+pp[0];
+    else periodStr=period;
+  }
+  var parts=[ticker||'',periodStr,label].filter(Boolean);
+  return parts.join(' ');
+}
+
 async function loadCkDocuments(ticker){
   var el=E('ck-documents');if(!el)return;
   el.innerHTML='<div class="ld" style="margin:24px 0">Loading…</div>';
@@ -3809,6 +3823,8 @@ async function loadCkDocuments(ticker){
     var docs=await r.json();
     var ingested=r2.ok?await r2.json():[];
     var ingestedUrls=new Set(ingested.map(function(d){return d.source_url;}).filter(Boolean));
+    var ingestedChecksums=new Set(ingested.map(function(d){return d.checksum;}).filter(Boolean));
+    var ingestedTitles=new Set(ingested.map(function(d){return (d.title||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,30);}).filter(Boolean));
 
     if(!docs.length){
       h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text4);padding:24px 0;text-align:center">No documents harvested yet.<br><br>';
@@ -3909,29 +3925,36 @@ async function loadCkDocuments(ticker){
     h+='</tr></thead><tbody id="hv-tbody">';
     docs.forEach(function(doc,i){
       var alreadyIn=(doc.source_url&&ingestedUrls.has(doc.source_url))||doc.ingested;
+      // Cross-reference duplicate detection: check title similarity against ingested docs
+      var normTitle=(doc.headline||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,30);
+      var likelyDuplicate=(!alreadyIn&&normTitle&&ingestedTitles.has(normTitle));
       var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎'}[doc.source]||'📄';
       var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','ir_llm':'LLM','manual':'Manual'}[doc.source]||doc.source||'';
       var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
       var period=doc.period||'';
       var docType=doc.document_type||'other';
-      var rowBg=alreadyIn?'rgba(74,222,128,.05)':'transparent';
+      var rowBg=alreadyIn?'rgba(74,222,128,.05)':likelyDuplicate?'rgba(245,158,11,.05)':'transparent';
       var isDup=dupIndices.has(i);
       var lang=_detectLang(doc.headline,doc.source_url);
       var fmt=_detectFormat(doc.source_url);
 
-      // Issues 7/8: Better document names from URL when headline is generic
-      var displayName=doc.headline||'';
-      var genericNames=['pdf','download','document','file','link','view','open','click here',''];
-      if(genericNames.indexOf(displayName.toLowerCase().trim())!==-1&&doc.source_url){
-        var urlFilename=doc.source_url.split('/').pop().split('?')[0]||'';
-        if(urlFilename){
-          var cleaned=urlFilename.replace(/\.[^/.]+$/,''); // remove extension
-          cleaned=cleaned.replace(/[-_]+/g,' '); // replace hyphens/underscores
-          cleaned=cleaned.replace(/\b\w/g,function(c){return c.toUpperCase();}); // title case
-          if(cleaned.length>2)displayName=cleaned;
+      // Standardised document name
+      var displayName=standardiseDocName(ticker,period,docType,doc.headline||doc.source_url||'');
+      // Fallback: if no period or type, use cleaned headline or URL
+      if(!period&&!docType){
+        displayName=doc.headline||'';
+        var genericNames=['pdf','download','document','file','link','view','open','click here',''];
+        if(genericNames.indexOf(displayName.toLowerCase().trim())!==-1&&doc.source_url){
+          var urlFilename=doc.source_url.split('/').pop().split('?')[0]||'';
+          if(urlFilename){
+            var cleaned=urlFilename.replace(/\.[^/.]+$/,'');
+            cleaned=cleaned.replace(/[-_]+/g,' ');
+            cleaned=cleaned.replace(/\b\w/g,function(c){return c.toUpperCase();});
+            if(cleaned.length>2)displayName=cleaned;
+          }
         }
+        if(!displayName)displayName=doc.source_url||'—';
       }
-      if(!displayName)displayName=doc.source_url||'—';
 
       // Build searchable text for filtering
       var searchText=((doc.headline||'')+' '+(displayName)+' '+(doc.source_url||'')+' '+(srcLabel)+' '+(period)+' '+(docType)).toLowerCase();
@@ -3953,6 +3976,10 @@ async function loadCkDocuments(ticker){
       // Feature 3: Duplicate badge
       if(isDup){
         h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff;flex-shrink:0" title="Possible duplicate">Dup?</span>';
+      }
+      // Cross-reference likely duplicate badge (title match against ingested docs)
+      if(likelyDuplicate){
+        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:#d97706;color:#fff;flex-shrink:0" title="Title matches an ingested document — likely duplicate">⚠ Likely duplicate</span>';
       }
       h+='</div></td>';
       h+='<td><span style="font-size:10px;font-family:var(--sans);font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text3)">'+srcIcon+' '+srcLabel+'</span></td>';
@@ -4246,7 +4273,8 @@ async function hvIngestSelected(){
       var fd=new FormData();
       fd.append('doc_url',doc.source_url);fd.append('form_type',dtype);
       fd.append('filing_date','');fd.append('period_label',period);
-      fd.append('title',doc.headline||'');
+      var stdName=standardiseDocName(ticker,period,dtype,doc.headline||'');
+      fd.append('title',stdName);
       var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
       var row=checked[ci].closest('tr');
