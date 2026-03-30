@@ -53,7 +53,7 @@ async def companies_list(db: AsyncSession = Depends(get_db)):
 # ─────────────────────────────────────────────────────────────────
 # Company history — all past analyses
 # ─────────────────────────────────────────────────────────────────
-@router.get("/companies/{ticker}/history")
+@router.get("/companies/{ticker:path}/history")
 async def company_history(ticker: str, db: AsyncSession = Depends(get_db)):
     """Return all past analyses for a company, grouped by period."""
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
@@ -173,7 +173,7 @@ async def get_analysis(output_id: uuid.UUID, db: AsyncSession = Depends(get_db))
 # ─────────────────────────────────────────────────────────────────
 # Existing endpoints
 # ─────────────────────────────────────────────────────────────────
-@router.get("/companies/{ticker}/outputs", response_model=list[ResearchOutputOut])
+@router.get("/companies/{ticker:path}/outputs", response_model=list[ResearchOutputOut])
 async def list_outputs(ticker: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(ResearchOutput)
@@ -184,7 +184,7 @@ async def list_outputs(ticker: str, db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.post("/companies/{ticker}/generate-briefing")
+@router.post("/companies/{ticker:path}/generate-briefing")
 async def briefing(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -194,7 +194,7 @@ async def briefing(ticker: str, period_label: str, db: AsyncSession = Depends(ge
     return b.model_dump()
 
 
-@router.post("/companies/{ticker}/generate-ir-questions")
+@router.post("/companies/{ticker:path}/generate-ir-questions")
 async def ir_questions(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -204,7 +204,7 @@ async def ir_questions(ticker: str, period_label: str, db: AsyncSession = Depend
     return [q.model_dump() for q in questions]
 
 
-@router.post("/companies/{ticker}/generate-thesis-drift")
+@router.post("/companies/{ticker:path}/generate-thesis-drift")
 async def thesis_drift(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()

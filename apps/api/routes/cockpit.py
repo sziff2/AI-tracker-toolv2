@@ -41,7 +41,7 @@ class NoteCreate(BaseModel):
 
 
 # ── Cockpit endpoint ─────────────────────────────────────────
-@router.get("/companies/{ticker}/cockpit")
+@router.get("/companies/{ticker:path}/cockpit")
 async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Returns the full company cockpit: thesis, KPIs, latest results,
@@ -316,7 +316,7 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
 
 
 # ── Decision log CRUD ────────────────────────────────────────
-@router.post("/companies/{ticker}/decisions", status_code=201)
+@router.post("/companies/{ticker:path}/decisions", status_code=201)
 async def create_decision(ticker: str, body: DecisionCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -337,7 +337,7 @@ async def create_decision(ticker: str, body: DecisionCreate, db: AsyncSession = 
     }
 
 
-@router.get("/companies/{ticker}/decisions")
+@router.get("/companies/{ticker:path}/decisions")
 async def list_decisions(ticker: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -357,7 +357,7 @@ async def list_decisions(ticker: str, db: AsyncSession = Depends(get_db)):
 
 
 # ── Analyst notes CRUD ───────────────────────────────────────
-@router.post("/companies/{ticker}/notes", status_code=201)
+@router.post("/companies/{ticker:path}/notes", status_code=201)
 async def create_note(ticker: str, body: NoteCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -377,7 +377,7 @@ async def create_note(ticker: str, body: NoteCreate, db: AsyncSession = Depends(
     }
 
 
-@router.get("/companies/{ticker}/notes")
+@router.get("/companies/{ticker:path}/notes")
 async def list_notes(ticker: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -401,7 +401,7 @@ class ThesisFieldUpdate(BaseModel):
     value: str
 
 
-@router.patch("/companies/{ticker}/thesis")
+@router.patch("/companies/{ticker:path}/thesis")
 async def update_thesis_field(ticker: str, body: ThesisFieldUpdate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -451,7 +451,7 @@ MODEL_MAP = {
 }
 
 
-@router.post("/companies/{ticker}/chat")
+@router.post("/companies/{ticker:path}/chat")
 async def chat_with_documents(ticker: str, body: ChatRequest, db: AsyncSession = Depends(get_db)):
     """
     Ask a question about a specific quarter's documents.
@@ -604,7 +604,7 @@ class GlobalChatRequest(BaseModel):
     model: str = "standard"  # "fast", "standard", or "deep"
 
 
-@router.post("/companies/{ticker}/chat-all")
+@router.post("/companies/{ticker:path}/chat-all")
 async def chat_all_periods(ticker: str, body: GlobalChatRequest, db: AsyncSession = Depends(get_db)):
     """
     Ask a question across ALL periods for a company.
@@ -772,7 +772,7 @@ Answer directly and specifically. Reference which period data comes from. Highli
 # ─────────────────────────────────────────────────────────────────
 # All extracted metrics for a company — browsable, filterable
 # ─────────────────────────────────────────────────────────────────
-@router.get("/companies/{ticker}/metrics")
+@router.get("/companies/{ticker:path}/metrics")
 async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
     from apps.api.models import ExtractedMetric
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
@@ -818,7 +818,7 @@ async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = De
 # ─────────────────────────────────────────────────────────────────
 # Competitive Advantage / Moat Analysis
 # ─────────────────────────────────────────────────────────────────
-@router.post("/companies/{ticker}/moat-analysis")
+@router.post("/companies/{ticker:path}/moat-analysis")
 async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Run a comprehensive competitive advantage analysis using all available data
@@ -942,7 +942,7 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     # Run LLM analysis (async, 8192 tokens to avoid truncated JSON)
     prompt = (MOAT_ANALYSIS
         .replace("{company}", company.name)
-        .replace("{ticker}", company.ticker)
+        .replace("{ticker:path}", company.ticker)
         .replace("{sector}", company.sector or "N/A")
         .replace("{thesis}", thesis_text)
         .replace("{metrics}", metrics_text)
@@ -974,7 +974,7 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     return result
 
 
-@router.get("/companies/{ticker}/moat-analysis")
+@router.get("/companies/{ticker:path}/moat-analysis")
 async def get_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Get the most recent moat analysis for a company, if one exists.

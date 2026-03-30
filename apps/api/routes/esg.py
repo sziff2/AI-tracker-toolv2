@@ -2,10 +2,10 @@
 ESG Module Router — Environmental, Social, Governance data tracking.
 
 Endpoints:
-  GET  /companies/{ticker}/esg              — fetch stored ESG data
-  PUT  /companies/{ticker}/esg              — upsert ESG data
-  POST /companies/{ticker}/esg/ask          — ESG Research Assistant chat
-  POST /companies/{ticker}/esg/analyse      — auto-generate summary + flag gaps
+  GET  /companies/{ticker:path}/esg              — fetch stored ESG data
+  PUT  /companies/{ticker:path}/esg              — upsert ESG data
+  POST /companies/{ticker:path}/esg/ask          — ESG Research Assistant chat
+  POST /companies/{ticker:path}/esg/analyse      — auto-generate summary + flag gaps
   GET  /esg/portfolio/pai-report            — aggregate PAI across all holdings
 """
 
@@ -135,7 +135,7 @@ _FIELD_DEFINITIONS = {
 _ALL_FIELDS = [k for sec in _FIELD_DEFINITIONS.values() for k in sec["fields"]]
 
 
-@router.get("/companies/{ticker}/esg")
+@router.get("/companies/{ticker:path}/esg")
 async def get_esg(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     row = await _get_or_create_esg(db, company)
@@ -156,7 +156,7 @@ class ESGFieldUpdate(BaseModel):
     value: str
 
 
-@router.patch("/companies/{ticker}/esg")
+@router.patch("/companies/{ticker:path}/esg")
 async def update_esg_field(ticker: str, body: ESGFieldUpdate, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     row = await _get_or_create_esg(db, company)
@@ -167,7 +167,7 @@ async def update_esg_field(ticker: str, body: ESGFieldUpdate, db: AsyncSession =
     return {"status": "saved", "key": body.key}
 
 
-@router.put("/companies/{ticker}/esg")
+@router.put("/companies/{ticker:path}/esg")
 async def upsert_esg(ticker: str, body: ESGUpsertRequest, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     row = await _get_or_create_esg(db, company)
@@ -179,7 +179,7 @@ async def upsert_esg(ticker: str, body: ESGUpsertRequest, db: AsyncSession = Dep
     return {"status": "saved", "fields_updated": len(incoming)}
 
 
-@router.post("/companies/{ticker}/esg/ask")
+@router.post("/companies/{ticker:path}/esg/ask")
 async def ask_esg(ticker: str, body: ESGAskRequest, db: AsyncSession = Depends(get_db)):
     from services.llm_client import call_llm_async
     company = await _get_company(db, ticker)
@@ -205,7 +205,7 @@ User: {body.question}"""
         raise HTTPException(502, f"LLM error: {str(e)[:200]}")
 
 
-@router.post("/companies/{ticker}/esg/analyse")
+@router.post("/companies/{ticker:path}/esg/analyse")
 async def analyse_esg(ticker: str, db: AsyncSession = Depends(get_db)):
     from services.llm_client import call_llm_json_async
     company = await _get_company(db, ticker)
@@ -268,7 +268,7 @@ async def portfolio_pai_report(db: AsyncSession = Depends(get_db)):
 
 
 # Chat alias — UI calls /esg/chat, router has /esg/ask
-@router.post("/companies/{ticker}/esg/chat")
+@router.post("/companies/{ticker:path}/esg/chat")
 async def chat_esg(ticker: str, body: ESGAskRequest, db: AsyncSession = Depends(get_db)):
     return await ask_esg(ticker, body, db)
 
