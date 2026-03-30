@@ -196,6 +196,7 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
     docs = [{
         "id": str(d.id), "title": d.title, "document_type": d.document_type,
         "period_label": d.period_label, "parsing_status": d.parsing_status,
+        "source": d.source, "source_url": d.source_url,
         "sections_count": len(d.sections) if d.sections else 0,
         "metrics_count": len(d.extracted_metrics) if d.extracted_metrics else 0,
         "created_at": d.created_at.isoformat() if d.created_at else None,

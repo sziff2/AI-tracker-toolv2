@@ -718,7 +718,7 @@ async function submitForm(){
 function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();}
 
 // ═══ COCKPIT ═══════════════════════════════════════════════
-async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}c.innerHTML='<div class="ld">Loading…</div>';try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');renderCockpit(t,await r.json());}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}}
+async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}c.innerHTML='<div class="ld">Loading…</div>';try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');const activeTab=window._ckActiveTab||'thesis';renderCockpit(t,await r.json());if(activeTab!=='thesis'){const tabNames={thesis:'Thesis',results:'Results',kpis:'KPIs',guidance:'Guidance',moat:'Competitive Analysis',execution:'Mgmt Execution',decisions:'Valuation',esg:'ESG',documents:'Documents'};const tabLabel=tabNames[activeTab]||activeTab;const tabBtn=Array.from(document.querySelectorAll('.tab')).find(b=>b.textContent===tabLabel);if(tabBtn)ckTab(activeTab,tabBtn);}}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}}
 
 function renderCockpit(ticker,d){
   const c=E('ck-content'),co=d.company;let h='';
@@ -738,7 +738,7 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-documents" style="display:none"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
+function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
 
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d,companyName,ticker){
@@ -1066,7 +1066,7 @@ function renderCkResults(ticker,d){
     else if(pdocs.length){h+='<div style="padding:16px 20px;background:var(--goldDim);border:1px solid rgba(196,164,90,.2);border-radius:10px;margin-bottom:16px;font-family:var(--sans);font-size:13px;color:var(--text2)">'+pdocs.length+' document'+(pdocs.length>1?'s':'')+' ingested but not yet analysed. Click <strong>Run Analysis</strong> above to process.</div>';}
     else{h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No documents or analysis for this period.</div>';}
     // Documents Used at bottom
-    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents in Period</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const secCount=doc.sections_count||0;const metCount=doc.metrics_count||0;const statsBadge='<span style="font-family:var(--sans);font-size:10px;color:var(--text4);padding:2px 6px;background:var(--bg3);border-radius:4px" title="Sections / Metrics">'+secCount+'s / '+metCount+'m</span>';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span>'+psBadge+statsBadge+'<span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
+    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents in Period</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄','10-K':'📋','10-Q':'📋',annual_report:'📋',proxy_statement:'📋'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const secCount=doc.sections_count||0;const metCount=doc.metrics_count||0;const statsBadge='<span style="font-family:var(--sans);font-size:10px;color:var(--text4);padding:2px 6px;background:var(--bg3);border-radius:4px" title="Sections / Metrics">'+secCount+'s / '+metCount+'m</span>';const srcLabel=doc.source?({'edgar':'🏛 EDGAR','ir_scrape':'🔎 Scraped','ir_llm':'🤖 LLM','manual':'📎 Manual'}[doc.source]||doc.source):'';const srcBadge=srcLabel?'<span style="font-family:var(--sans);font-size:9px;color:var(--text4);padding:1px 5px;background:var(--bg3);border-radius:3px">'+srcLabel+'</span>':'';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span>'+srcBadge+psBadge+statsBadge+'<span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
@@ -1204,7 +1204,7 @@ function pollReprocess(jobId,ticker,period){
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
-  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});loadCockpit();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';loadCockpit();}catch(e){alert('Failed: '+e.message);}
 }
 
 async function askGlobal(ticker){
@@ -3729,13 +3729,13 @@ async function loadCkDocuments(ticker){
     h+='<div id="edgar-results" style="margin-top:12px"></div>';
     h+='</div>';
 
-    // Load harvested documents for this company
-    var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=500');
+    // Load harvested documents and ingested documents in parallel
+    var [r,r2]=await Promise.all([
+      fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=500'),
+      fetch('/api/v1/companies/'+enc(ticker)+'/documents')
+    ]);
     if(!r.ok)throw new Error('Failed to load harvested documents');
     var docs=await r.json();
-
-    // Load already-ingested documents to show "In DB" badge
-    var r2=await fetch('/api/v1/companies/'+enc(ticker)+'/documents');
     var ingested=r2.ok?await r2.json():[];
     var ingestedUrls=new Set(ingested.map(function(d){return d.source_url;}).filter(Boolean));
 
@@ -3837,7 +3837,7 @@ async function loadCkDocuments(ticker){
     h+='<th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th style="width:90px">Status</th>';
     h+='</tr></thead><tbody id="hv-tbody">';
     docs.forEach(function(doc,i){
-      var alreadyIn=doc.source_url&&ingestedUrls.has(doc.source_url);
+      var alreadyIn=(doc.source_url&&ingestedUrls.has(doc.source_url))||doc.ingested;
       var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎'}[doc.source]||'📄';
       var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','ir_llm':'LLM','manual':'Manual'}[doc.source]||doc.source||'';
       var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
@@ -3848,14 +3848,28 @@ async function loadCkDocuments(ticker){
       var lang=_detectLang(doc.headline,doc.source_url);
       var fmt=_detectFormat(doc.source_url);
 
+      // Issues 7/8: Better document names from URL when headline is generic
+      var displayName=doc.headline||'';
+      var genericNames=['pdf','download','document','file','link','view','open','click here',''];
+      if(genericNames.indexOf(displayName.toLowerCase().trim())!==-1&&doc.source_url){
+        var urlFilename=doc.source_url.split('/').pop().split('?')[0]||'';
+        if(urlFilename){
+          var cleaned=urlFilename.replace(/\.[^/.]+$/,''); // remove extension
+          cleaned=cleaned.replace(/[-_]+/g,' '); // replace hyphens/underscores
+          cleaned=cleaned.replace(/\b\w/g,function(c){return c.toUpperCase();}); // title case
+          if(cleaned.length>2)displayName=cleaned;
+        }
+      }
+      if(!displayName)displayName=doc.source_url||'—';
+
       // Build searchable text for filtering
-      var searchText=((doc.headline||'')+' '+(doc.source_url||'')+' '+(srcLabel)+' '+(period)+' '+(docType)).toLowerCase();
+      var searchText=((doc.headline||'')+' '+(displayName)+' '+(doc.source_url||'')+' '+(srcLabel)+' '+(period)+' '+(docType)).toLowerCase();
 
       h+='<tr class="hv-row" data-idx="'+i+'" data-dt="'+esc(dt)+'" data-dtype="'+esc(docType)+'" data-search="'+esc(searchText)+'" style="background:'+rowBg+'">';
-      h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'"'+(alreadyIn?' disabled':'')+''+'></td>';
+      h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'"'+(alreadyIn?' disabled':'')+((!doc.source_url&&!alreadyIn)?' disabled title="No URL available"':'')+''+'></td>';
       // Document cell with badges
       h+='<td style="max-width:300px"><div style="display:flex;align-items:center;gap:4px">';
-      h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1" title="'+esc(doc.source_url||'')+'">'+esc(doc.headline||doc.source_url||'—')+'</div>';
+      h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1" title="'+esc(doc.source_url||'')+'">'+esc(displayName)+'</div>';
       // Feature 6: Format badge
       if(fmt){
         var fmtColor=fmt==='PDF'?'#e74c3c':fmt==='HTML'?'#3498db':'#95a5a6';
@@ -3884,10 +3898,9 @@ async function loadCkDocuments(ticker){
       // Feature 7: Enhanced status column
       h+='<td style="white-space:nowrap">';
       if(alreadyIn){
-        // Show pipeline status badges
+        // Show pipeline status badges (Issue 6: removed metrics count badge)
         var ps=doc.parsing_status||'';
         var sc=doc.sections_count||0;
-        var mc=doc.metrics_count||0;
         h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff;margin-right:2px" title="Ingested">In DB</span>';
         if(ps==='completed'&&sc>0){
           h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#3b82f6;color:#fff;margin-right:2px" title="Parsed: '+sc+' sections">Parsed</span>';
@@ -3895,9 +3908,6 @@ async function loadCkDocuments(ticker){
           h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff;margin-right:2px">Parsing...</span>';
         } else if(ps==='failed'){
           h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#ef4444;color:#fff;margin-right:2px" title="Parsing failed">Parse Err</span>';
-        }
-        if(mc>0){
-          h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#8b5cf6;color:#fff" title="'+mc+' metrics extracted">'+mc+' metrics</span>';
         }
       } else {
         if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="Open">↗</a>';
@@ -3972,9 +3982,17 @@ async function browseEdgar(ticker){
   var el=E('edgar-results');if(!el)return;
   el.innerHTML='<div class="ld">Fetching filings…</div>';
   try{
-    var r=await fetch('/api/v1/edgar/browse/'+encodeURIComponent(cik.trim()));
+    // Fetch filings and ingested docs in parallel
+    var [r,r2]=await Promise.all([
+      fetch('/api/v1/edgar/browse/'+encodeURIComponent(cik.trim())),
+      fetch('/api/v1/companies/'+enc(ticker)+'/documents')
+    ]);
     if(!r.ok)throw new Error('Failed to fetch');
     var d=await r.json();_edgarFilings=d.filings;
+    var edgarIngested=r2.ok?await r2.json():[];
+    var edgarIngestedUrls=new Set(edgarIngested.map(function(di){return di.source_url;}).filter(Boolean));
+    // Build a map from source_url to parsing_status for status badges
+    var edgarDocInfo={};edgarIngested.forEach(function(di){if(di.source_url)edgarDocInfo[di.source_url]={parsing_status:di.parsing_status};});
     if(!d.filings.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);text-align:center;padding:20px">No filings found for this CIK.</div>';return;}
     var docTypeMap={'10-K':'10-K','10-Q':'10-Q','8-K':'other','20-F':'annual_report','40-F':'annual_report','6-K':'other','ARS':'annual_report','DEF 14A':'proxy_statement'};
     var h='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:8px">'+esc(d.company_name)+' — '+d.total_filings+' filings</div>';
@@ -3988,17 +4006,30 @@ async function browseEdgar(ticker){
     h+='<span id="edgar-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
     h+='</div>';
     h+='<div style="max-height:500px;overflow-y:auto">';
-    h+='<table class="kt" style="font-size:12px"><thead><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:30px"></th></tr></thead><tbody>';
+    h+='<table class="kt" style="font-size:12px"><thead><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:90px">Status</th><th style="width:30px"></th></tr></thead><tbody>';
     d.filings.forEach(function(f,i){
       var periodLabel=f.period_label||suggestPeriodFromDate(f.filing_date,f.form_type);
       var docType=docTypeMap[f.form_type]||'other';
-      h+='<tr data-idx="'+i+'">';
-      h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'"></td>';
+      var edgarAlreadyIn=f.doc_url&&edgarIngestedUrls.has(f.doc_url);
+      var rowBg=edgarAlreadyIn?'rgba(74,222,128,.05)':'transparent';
+      h+='<tr data-idx="'+i+'" style="background:'+rowBg+'">';
+      h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'"'+(edgarAlreadyIn?' disabled':'')+''+'></td>';
       h+='<td style="white-space:nowrap">'+esc(f.filing_date)+'</td>';
       h+='<td><span style="font-weight:600;color:var(--gold)">'+esc(f.form_type)+'</span></td>';
       h+='<td><select class="fi edgar-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(periodLabel)+'</select></td>';
       h+='<td><select class="fi edgar-dtype" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarDocTypeOpts(docType)+'</select></td>';
       h+='<td style="font-size:11px;color:var(--text3)">'+esc(f.description)+'</td>';
+      // Status column
+      h+='<td style="white-space:nowrap">';
+      if(edgarAlreadyIn){
+        var eInfo=f.doc_url?edgarDocInfo[f.doc_url]:{};
+        var ePs=eInfo?eInfo.parsing_status||'':'';
+        h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff;margin-right:2px" title="Ingested">In DB</span>';
+        if(ePs==='completed'){h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#3b82f6;color:#fff" title="Parsed">Parsed</span>';}
+        else if(ePs==='processing'){h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff">Parsing...</span>';}
+        else if(ePs==='failed'){h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#ef4444;color:#fff" title="Parsing failed">Parse Err</span>';}
+      }
+      h+='</td>';
       h+='<td><a href="'+esc(f.index_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="View on EDGAR">↗</a></td>';
       h+='</tr>';
     });
@@ -4006,7 +4037,7 @@ async function browseEdgar(ticker){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
-function edgarToggleAll(cb){document.querySelectorAll('.edgar-chk').forEach(function(c){c.checked=cb.checked;});}
+function edgarToggleAll(cb){document.querySelectorAll('.edgar-chk:not(:disabled)').forEach(function(c){c.checked=cb.checked;});}
 function edgarApplyBulkPeriod(){
   var period=E('edgar-bulk-period').value;if(!period){alert('Select a period first.');return;}
   document.querySelectorAll('.edgar-chk:checked').forEach(function(c){
