@@ -566,6 +566,8 @@ function ckShowNewPeriod(ticker){
   var typeEl=E('np-type'),yearEl=E('np-year');
   if(typeEl)typeEl.value=suggested.type;
   if(yearEl)yearEl.value=suggested.year;
+  // Check for existing docs in this period
+  npCheckExistingDocs(ticker);
   const hfi=E('np-hfi');if(hfi&&!hfi._npBound){hfi._npBound=true;hfi.addEventListener('change',function(){for(const f of this.files){let dt='other';const n=f.name.toLowerCase();if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))dt='proxy_statement';else if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))dt='sustainability_report';else if(n.includes('transcript')||n.includes('call'))dt='transcript';else if(n.includes('broker')||n.includes('note'))dt='broker_note';else if(n.includes('presentation')||n.includes('slides'))dt='presentation';else if(n.match(/earning|result|release|[qh][1-4]/))dt='earnings_release';else if(n.includes('annual'))dt='annual_report';NP_FILES.push({file:f,docType:dt});}this.value='';npRenderFL();});}
 }
 function ckHideNewPeriod(){const p=E('ck-new-period-panel');if(p)p.style.display='none';NP_FILES=[];}
@@ -619,22 +621,61 @@ async function npImportFromEdgar(ticker){
   }
 }
 function npRenderFL(){const c=E('np-file-list');if(!c)return;const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};const I={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',proxy_statement:'🏛️',annual_report:'📋',sustainability_report:'♻️',other:'📄'};let h='';NP_FILES.forEach((f,i)=>{const s=(f.file.size/1024/1024).toFixed(1);h+='<div class="fr"><span>'+(I[f.docType]||'📄')+'</span><span class="fn">'+esc(f.file.name)+'</span><span class="fs">'+s+'MB</span><select onchange="NP_FILES['+i+'].docType=this.value">';Object.keys(T).forEach(k=>{h+='<option value="'+k+'"'+(k===f.docType?' selected':'')+'>'+T[k]+'</option>';});h+='</select><button class="x" onclick="NP_FILES.splice('+i+',1);npRenderFL()">&times;</button></div>';});c.innerHTML=h;}
+function npCheckExistingDocs(ticker){
+  const pt=E('np-type')?.value,yr=E('np-year')?.value,container=E('np-existing-docs');
+  if(!pt||!yr||!container)return;
+  const period=yr+'_'+pt;
+  // Look up docs from the cockpit data already loaded
+  const dbp=window._npDocsbyPeriod||{};
+  const existing=dbp[period]||[];
+  if(existing.length){
+    let eh='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:4px">';
+    eh+='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:8px">'+existing.length+' document'+(existing.length>1?'s':'')+' already ingested for '+period+'</div>';
+    existing.forEach(function(doc){
+      const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';
+      const ps=doc.parsing_status||'pending';
+      const psBadge=ps==='completed'?'<span style="color:var(--green);font-size:10px">Parsed</span>':ps==='failed'?'<span style="color:var(--red);font-size:10px">Failed</span>':'<span style="color:var(--amber);font-size:10px">'+ps+'</span>';
+      eh+='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-family:var(--sans);font-size:12px;color:var(--text2)"><span>'+icon+'</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(doc.title||'Untitled')+'</span><span style="color:var(--text4);font-size:10px">'+esc(doc.document_type)+'</span>'+psBadge+'</div>';
+    });
+    eh+='</div>';
+    container.innerHTML=eh;
+    E('np-submit').textContent='Analyse Period';
+  } else {
+    container.innerHTML='';
+    E('np-submit').textContent=NP_FILES.length?'Upload & Analyse':'Analyse Period';
+  }
+}
 async function ckSubmitNewPeriod(ticker){
   const pt=E('np-type')?.value,yr=E('np-year')?.value,errEl=E('np-error'),ldEl=E('np-loading'),btn=E('np-submit');
   if(!pt||!yr){errEl.textContent='Select period type and year.';errEl.style.display='block';return;}
   const period=yr+'_'+pt;
   const modelSel=E('np-model');const model=modelSel?modelSel.value:'standard';
-  if(!NP_FILES.length){errEl.textContent='Add at least one document.';errEl.style.display='block';return;}
-  errEl.style.display='none';btn.disabled=true;btn.textContent='Uploading…';ldEl.style.display='block';ldEl.innerHTML='Uploading documents…';
+  const dbp=window._npDocsbyPeriod||{};
+  const existingDocs=(dbp[period]||[]);
+  // Mode: if no files added AND no existing docs, show error
+  if(!NP_FILES.length&&!existingDocs.length){errEl.textContent='No documents found for this period. Ingest documents via the Documents tab first, or add files below.';errEl.style.display='block';return;}
+  errEl.style.display='none';btn.disabled=true;ldEl.style.display='block';
   try{
-    const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));fd.append('model',model);NP_FILES.forEach(f=>fd.append('files',f.file));
-    const ru=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
-    const jobId=(await ru.json()).job_id;
-    await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+jobId);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
+    if(NP_FILES.length){
+      // Mode A: Upload files + run analysis
+      btn.textContent='Uploading…';ldEl.innerHTML='Uploading documents…';
+      const fd=new FormData();fd.append('period_label',period);fd.append('document_types',NP_FILES.map(f=>f.docType).join(','));fd.append('titles',NP_FILES.map(f=>f.file.name).join(','));fd.append('model',model);NP_FILES.forEach(f=>fd.append('files',f.file));
+      const ru=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
+      if(!ru.ok)throw new Error((await ru.json().catch(()=>({}))).detail||'Upload failed');
+      const jobId=(await ru.json()).job_id;
+      btn.textContent='Processing…';ldEl.innerHTML='Processing documents…';
+      await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+jobId);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
+    } else {
+      // Mode B: Analyse existing documents (no upload)
+      btn.textContent='Analysing…';ldEl.innerHTML='Running analysis on '+existingDocs.length+' existing documents…';
+      const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Analysis failed');}
+      const d=await r.json();
+      await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+d.job_id);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
+    }
     ldEl.style.display='none';ckHideNewPeriod();loadCockpit();
   }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
-  btn.disabled=false;btn.textContent='Upload &amp; Analyse';ldEl.style.display='none';
+  btn.disabled=false;btn.textContent='Analyse Period';ldEl.style.display='none';
 }
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
@@ -973,6 +1014,7 @@ function renderProbabilisticHTML(p){
 // ── Results tab (sub-tabs per period, with docs used) ────────
 function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
+  window._npDocsbyPeriod=dbp;
   const allPeriods=sortPeriods(Object.keys({...abp,...dbp}));
   let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:0">';
   h+='<div class="ptabs" id="res-ptabs" style="margin-bottom:0;flex:1">';
@@ -980,18 +1022,18 @@ function renderCkResults(ticker,d){
   else{h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';}
   h+='</div><button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Upload New Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">✕ Cancel</button></div>';
-  h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year"></select></div></div>';
-  h+='<div style="margin-top:14px"><div class="fl">Documents</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add document</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
-  h+='<div style="margin-top:14px;display:flex;align-items:center;gap:10px"><div class="fl" style="margin:0">Model</div><select id="np-model" class="fi" style="width:auto;flex:1"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select></div>';
-  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Upload &amp; Analyse</button>';
-  h+='<button class="btn2" id="np-edgar-btn" onclick="npImportFromEdgar(\''+ticker+'\')" style="padding:10px 16px;white-space:nowrap">🏛 Import from EDGAR</button></div>';
-  h+='<div id="np-edgar-status" style="margin-top:8px;font-family:var(--sans);font-size:12px;color:var(--text4)"></div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Add / Analyse Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">&times; Cancel</button></div>';
+  h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type" onchange="npCheckExistingDocs(\''+ticker+'\')"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year" onchange="npCheckExistingDocs(\''+ticker+'\')"></select></div></div>';
+  h+='<div id="np-existing-docs" style="margin-top:14px"></div>';
+  h+='<div style="margin-top:14px;font-family:var(--sans);font-size:12px;color:var(--text4)">Documents can be added via the <a href="#" onclick="var b=Array.from(document.querySelectorAll(\'.tab\')).find(function(x){return x.textContent===\'Documents\';});if(b){ckTab(\'documents\',b);}return false;" style="color:var(--gold);text-decoration:underline">Documents tab</a>. Add any additional files (transcripts, broker notes) below.</div>';
+  h+='<div style="margin-top:10px"><div class="fl">Additional Files</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add file (transcript, broker note, etc.)</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
+  h+='<div style="margin-top:14px;display:flex;align-items:center;gap:10px"><div class="fl" style="margin:0">Model</div><select id="np-model" class="fi" style="width:auto;flex:1"><option value="fast">Fast</option><option value="standard" selected>Standard</option><option value="deep">Deep</option></select></div>';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="np-submit" onclick="ckSubmitNewPeriod(\''+ticker+'\')" style="flex:1">Analyse Period</button></div>';
   h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div></div>';
-  if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet — click "+ New Period" to upload documents.</div>';
+  if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Ingest documents via the Documents tab, then click "+ New Period" to analyse them.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">🔄 Re-run Synthesis</button><button class="btn2" style="font-size:11px;padding:5px 12px;opacity:0.7" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">📄 Reprocess Documents</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete this period</button></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn" style="font-size:12px;padding:8px 18px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">Run Analysis</button><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">Re-run Synthesis</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     // Ask a Question at top
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
     // Analysis Output
@@ -1021,9 +1063,10 @@ function renderCkResults(ticker,d){
       if(c.surprises?.length)h+=fb('','Surprises',c.surprises.map(s=>(s.direction==='positive'?'↑':'↓')+' '+esc(s.metric_or_topic)+': '+esc(s.description)).join('\n\n'),'surprise:all','surprise');
       if(c.ir_questions?.length)h+=fb('','IR Questions',c.ir_questions.map((q,i)=>(i+1)+'. '+esc(q.topic)+'\n'+esc(q.question)).join('\n\n'),'ir_questions:all','ir_questions');
     }
-    else if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No analysis output for this period.</div>';}
+    else if(pdocs.length){h+='<div style="padding:16px 20px;background:var(--goldDim);border:1px solid rgba(196,164,90,.2);border-radius:10px;margin-bottom:16px;font-family:var(--sans);font-size:13px;color:var(--text2)">'+pdocs.length+' document'+(pdocs.length>1?'s':'')+' ingested but not yet analysed. Click <strong>Run Analysis</strong> above to process.</div>';}
+    else{h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No documents or analysis for this period.</div>';}
     // Documents Used at bottom
-    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents Used</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span><span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
+    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents in Period</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const secCount=doc.sections_count||0;const metCount=doc.metrics_count||0;const statsBadge='<span style="font-family:var(--sans);font-size:10px;color:var(--text4);padding:2px 6px;background:var(--bg3);border-radius:4px" title="Sections / Metrics">'+secCount+'s / '+metCount+'m</span>';h+='<div class="fr"><span>'+icon+'</span><span class="fn">'+esc(doc.title||'Untitled')+'</span><span style="font-family:var(--sans);font-size:11px;color:var(--gold);padding:2px 8px;background:var(--bg3);border-radius:4px">'+esc(doc.document_type)+'</span>'+psBadge+statsBadge+'<span class="fs">'+esc(doc.created_at?.split('T')[0]||'')+'</span><button class="btn-sm" onclick="window.open(\'/api/v1/documents/'+doc.id+'/file\',\'_blank\')">View</button><button class="btn2" style="padding:4px 10px;font-size:11px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
