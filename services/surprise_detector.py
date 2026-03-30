@@ -103,7 +103,7 @@ async def detect_surprises(
         )
     except Exception:
         pass  # keep hardcoded prompt if registry fails
-    raw = call_llm_json(prompt)
+    raw = call_llm_json(prompt, feature="surprise")
     if not isinstance(raw, list):
         raw = [raw]
 

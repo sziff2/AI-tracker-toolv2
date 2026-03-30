@@ -55,7 +55,7 @@ async def generate_briefing(
         thesis_comparison=f"Thesis: {ctx['thesis']}\n\nPrior period: {ctx['prior_period']}",
         surprises=f"Guidance items: {ctx['guidance']}\n\n{ctx['tracked_kpis']}",
     )
-    data = call_llm_json(prompt)
+    data = call_llm_json(prompt, feature="briefing")
     briefing = BriefingSection(**data)
 
     # Write markdown
@@ -125,7 +125,7 @@ async def generate_ir_questions(
         findings=f"Key metrics:\n{ctx['kpis']}\n\nGuidance:\n{ctx['guidance']}",
         thesis=ctx["thesis"],
     )
-    raw = call_llm_json(prompt)
+    raw = call_llm_json(prompt, feature="ir_questions")
     if not isinstance(raw, list):
         raw = [raw]
     questions = [IRQuestion(**item) for item in raw]

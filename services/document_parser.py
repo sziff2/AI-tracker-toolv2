@@ -135,7 +135,7 @@ def extract_text_html(file_path: str) -> tuple[list[dict], list[dict]]:
 def classify_document(text_preview: str) -> ClassifiedDocument:
     """Classify a document using the first ~2000 chars."""
     prompt = DOCUMENT_CLASSIFIER.format(text=text_preview[:2000])
-    data = call_llm_json(prompt)
+    data = call_llm_json(prompt, feature="classification", model="claude-haiku-4-5-20251001")
     return ClassifiedDocument(**data)
 
 

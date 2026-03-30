@@ -299,7 +299,7 @@ async def scrape_ir_with_llm(
 
     try:
         documents = await asyncio.wait_for(
-            call_llm_json_async(prompt, max_tokens=2048),
+            call_llm_json_async(prompt, max_tokens=2048, model="claude-haiku-4-5-20251001", feature="llm_scan"),
             timeout=25.0,
         )
     except asyncio.TimeoutError:

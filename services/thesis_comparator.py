@@ -337,7 +337,7 @@ async def compare_thesis(
         .replace("{prior_analysis}", prior_analysis or "No prior analysis available.")
     )
 
-    data = call_llm_json(prompt)
+    data = call_llm_json(prompt, feature="thesis_comparison")
     comparison = ThesisComparison(**data)
 
     # Persist assessment
