@@ -9,6 +9,7 @@ Endpoints:
   GET  /harvester/log                — recent harvest log
 """
 
+import re
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -192,6 +193,37 @@ async def llm_scan_ir(ticker: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+# ── Period inference from headline / URL ──────────────────────────
+
+_PERIOD_PATTERNS = [
+    # Q3 2025 / q3-2025 / Q4_2024 / Q1.2025
+    (re.compile(r'[Qq]([1-4])[\s\-_\.]*(\d{4})'), lambda m: f'{m.group(2)}_Q{m.group(1)}'),
+    # 2025-Q3 / 2025_Q1
+    (re.compile(r'(\d{4})[\s\-_\.]*[Qq]([1-4])'), lambda m: f'{m.group(1)}_Q{m.group(2)}'),
+    # FY2024 / FY-2024 / FY_2024
+    (re.compile(r'FY[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(1)}_FY'),
+    # 2025-annual / 2024_annual / 2024-full-year
+    (re.compile(r'(\d{4})[\s\-_\.]*(annual|full[\s\-_]*year)', re.IGNORECASE), lambda m: f'{m.group(1)}_FY'),
+    # annual-2025 / annual_report_2024
+    (re.compile(r'(annual|full[\s\-_]*year)[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(2)}_FY'),
+    # H1-2025 / 1H2025 / H2_2024
+    (re.compile(r'[Hh]([12])[\s\-_\.]*(\d{4})'), lambda m: f'{m.group(2)}_H{m.group(1)}'),
+    (re.compile(r'([12])[Hh][\s\-_\.]*(\d{4})'), lambda m: f'{m.group(2)}_H{m.group(1)}'),
+    # 2025-H1
+    (re.compile(r'(\d{4})[\s\-_\.]*[Hh]([12])'), lambda m: f'{m.group(1)}_H{m.group(2)}'),
+]
+
+
+def _infer_period(headline: str, source_url: str) -> Optional[str]:
+    """Try to extract a period label from headline or URL filename."""
+    for text in [headline or '', source_url or '']:
+        for pattern, fmt in _PERIOD_PATTERNS:
+            m = pattern.search(text)
+            if m:
+                return fmt(m)
+    return None
+
+
 # ── GET /harvester/log ────────────────────────────────────────────
 
 @router.get("/harvester/log")
@@ -200,6 +232,8 @@ async def get_harvest_log(
     ticker: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
+    from apps.api.models import Document
+
     query = (
         select(HarvestedDocument, Company.ticker, Company.name)
         .join(Company, HarvestedDocument.company_id == Company.id)
@@ -210,17 +244,66 @@ async def get_harvest_log(
         query = query.where(Company.ticker == ticker.upper())
 
     result = await db.execute(query)
-    return [
-        {
-            "ticker":       r.ticker,
-            "company":      r.name,
-            "source":       r.HarvestedDocument.source,
-            "headline":     r.HarvestedDocument.headline,
-            "period":       r.HarvestedDocument.period_label,
-            "source_url":   r.HarvestedDocument.source_url,
-            "discovered_at":r.HarvestedDocument.discovered_at.isoformat() if r.HarvestedDocument.discovered_at else None,
-            "ingested":     r.HarvestedDocument.ingested,
-            "error":        r.HarvestedDocument.error,
-        }
-        for r in result.all()
-    ]
+    rows = result.all()
+
+    # Collect linked document IDs to fetch parsing_status and metrics count
+    doc_ids = [r.HarvestedDocument.document_id for r in rows if r.HarvestedDocument.document_id]
+    doc_info = {}
+    if doc_ids:
+        from apps.api.models import DocumentSection, ExtractedMetric
+        from sqlalchemy import func
+        # Get parsing_status for linked documents
+        doc_q = await db.execute(
+            select(Document.id, Document.parsing_status, Document.document_type).where(Document.id.in_(doc_ids))
+        )
+        for d in doc_q.all():
+            doc_info[d.id] = {"parsing_status": d.parsing_status, "document_type": d.document_type}
+        # Count sections per document
+        sec_q = await db.execute(
+            select(DocumentSection.document_id, func.count(DocumentSection.id))
+            .where(DocumentSection.document_id.in_(doc_ids))
+            .group_by(DocumentSection.document_id)
+        )
+        for s in sec_q.all():
+            if s[0] in doc_info:
+                doc_info[s[0]]["sections_count"] = s[1]
+        # Count extracted metrics per document
+        met_q = await db.execute(
+            select(ExtractedMetric.document_id, func.count(ExtractedMetric.id))
+            .where(ExtractedMetric.document_id.in_(doc_ids))
+            .group_by(ExtractedMetric.document_id)
+        )
+        for m in met_q.all():
+            if m[0] in doc_info:
+                doc_info[m[0]]["metrics_count"] = m[1]
+
+    out = []
+    for r in rows:
+        hd = r.HarvestedDocument
+        period = hd.period_label
+        # Feature 2: auto-infer period from headline/URL if missing
+        inferred_period = None
+        if not period:
+            inferred_period = _infer_period(hd.headline, hd.source_url)
+            period = inferred_period
+
+        # Linked document info
+        linked = doc_info.get(hd.document_id, {})
+
+        out.append({
+            "ticker":          r.ticker,
+            "company":         r.name,
+            "source":          hd.source,
+            "headline":        hd.headline,
+            "period":          period,
+            "period_inferred": inferred_period is not None,
+            "source_url":      hd.source_url,
+            "document_type":   linked.get("document_type"),
+            "discovered_at":   hd.discovered_at.isoformat() if hd.discovered_at else None,
+            "ingested":        hd.ingested,
+            "error":           hd.error,
+            "parsing_status":  linked.get("parsing_status"),
+            "sections_count":  linked.get("sections_count", 0),
+            "metrics_count":   linked.get("metrics_count", 0),
+        })
+    return out

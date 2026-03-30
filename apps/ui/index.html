@@ -3687,7 +3687,7 @@ async function loadCkDocuments(ticker){
     h+='</div>';
 
     // Load harvested documents for this company
-    var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=200');
+    var r=await fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=500');
     if(!r.ok)throw new Error('Failed to load harvested documents');
     var docs=await r.json();
 
@@ -3708,23 +3708,91 @@ async function loadCkDocuments(ticker){
     // Store docs globally for ingest
     window._harvestDocs=docs;window._harvestTicker=ticker;
 
+    // ── Feature 3: Deduplication detection ──
+    var _fnameCount={};var _headlineNorm={};
+    docs.forEach(function(doc,i){
+      // Track filename duplicates
+      if(doc.source_url){
+        var fn=doc.source_url.split('/').pop().split('?')[0].toLowerCase();
+        if(!_fnameCount[fn])_fnameCount[fn]=[];
+        _fnameCount[fn].push(i);
+      }
+      // Track similar headlines (normalized)
+      if(doc.headline){
+        var norm=doc.headline.toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,40);
+        if(norm.length>10){
+          if(!_headlineNorm[norm])_headlineNorm[norm]=[];
+          _headlineNorm[norm].push(i);
+        }
+      }
+    });
+    var dupIndices=new Set();
+    Object.values(_fnameCount).forEach(function(arr){if(arr.length>1)arr.forEach(function(idx){dupIndices.add(idx);});});
+    Object.values(_headlineNorm).forEach(function(arr){if(arr.length>1)arr.forEach(function(idx){dupIndices.add(idx);});});
+
+    // ── Feature 5: Language detection helper ──
+    function _detectLang(headline,url){
+      var text=((headline||'')+' '+(url||'')).toLowerCase();
+      var fname=(url||'').split('/').pop().split('?')[0].toLowerCase();
+      // Check filename language suffixes
+      var langSuffixes={'-fr':'FR','-de':'DE','-es':'ES','-it':'IT','-jp':'JP','-ja':'JP','-kr':'KR','-ko':'KR','-pt':'PT','-nl':'NL','-zh':'CN','_fr':'FR','_de':'DE','_es':'ES','_it':'IT','_jp':'JP','_ja':'JP','_kr':'KR','_ko':'KR','_pt':'PT','_nl':'NL','_zh':'CN'};
+      for(var sfx in langSuffixes){if(fname.indexOf(sfx+'.')!==-1||fname.indexOf(sfx+'-')!==-1||fname.endsWith(sfx))return langSuffixes[sfx];}
+      // Check for common non-English words in headline
+      var frWords=/\b(rapport|annuel|resultats|semestriel|trimestriel|comptes|bilan)\b/;
+      var deWords=/\b(bericht|jahres|geschaeft|quartal|halbjahr|ergebnis)\b/;
+      var esWords=/\b(informe|anual|resultados|trimestral|semestral)\b/;
+      var itWords=/\b(relazione|annuale|risultati|trimestrale|semestrale|bilancio)\b/;
+      if(frWords.test(text))return 'FR';
+      if(deWords.test(text))return 'DE';
+      if(esWords.test(text))return 'ES';
+      if(itWords.test(text))return 'IT';
+      return null;
+    }
+
+    // ── Feature 6: File format from URL extension ──
+    function _detectFormat(url){
+      if(!url)return null;
+      var ext=(url.split('?')[0].split('.').pop()||'').toLowerCase();
+      if(ext==='pdf')return 'PDF';
+      if(['html','htm','asp','aspx','php','jsp'].indexOf(ext)!==-1)return 'HTML';
+      if(['xlsx','xls','csv'].indexOf(ext)!==-1)return 'XLS';
+      if(['pptx','ppt'].indexOf(ext)!==-1)return 'PPT';
+      if(['docx','doc'].indexOf(ext)!==-1)return 'DOC';
+      return null;
+    }
+
+    // ── Feature 1: Date filter bar + Feature 4: Search filter ──
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;flex-wrap:wrap">';
+    h+='<input id="hv-search" class="fi" placeholder="Search documents..." oninput="hvFilterTable()" style="font-size:11px;padding:5px 10px;min-width:180px;flex:1">';
+    h+='<select id="hv-date-range" class="fi" onchange="hvFilterTable()" style="width:auto;font-size:11px;padding:5px 8px">';
+    h+='<option value="12">Last 12 months</option><option value="24" selected>Last 24 months</option><option value="all">All dates</option>';
+    h+='</select>';
+    h+='<select id="hv-dtype-filter" class="fi" onchange="hvFilterTable()" style="width:auto;font-size:11px;padding:5px 8px">';
+    h+='<option value="">All doc types</option>';
+    h+='<option value="earnings_release">Earnings Release</option><option value="transcript">Transcript</option>';
+    h+='<option value="broker_note">Broker Note</option><option value="presentation">Presentation</option>';
+    h+='<option value="10-Q">10-Q</option><option value="10-K">10-K</option>';
+    h+='<option value="annual_report">Annual Report</option><option value="other">Other</option>';
+    h+='</select>';
+    h+='</div>';
+
     // Bulk controls
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">';
     h+='<input type="checkbox" id="hv-chk-all" onclick="hvToggleAll(this)" title="Select all">';
     h+='<select id="hv-bulk-period" class="fi" style="width:auto;font-size:11px;padding:4px 8px">'+edgarPeriodOpts('')+'</select>';
     h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="hvApplyBulkPeriod()">Apply period</button>';
     h+='<span style="flex:1"></span>';
-    h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text4)">'+docs.length+' documents found</span>';
+    h+='<span id="hv-doc-count" style="font-family:var(--sans);font-size:12px;color:var(--text4)">'+docs.length+' documents found</span>';
     h+='<button class="btn" style="font-size:11px;padding:5px 14px" onclick="hvIngestSelected()">Ingest Selected</button>';
     h+='<span id="hv-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
     h+='</div>';
 
     // Documents table
-    h+='<div style="max-height:500px;overflow-y:auto">';
+    h+='<div id="hv-table-wrap" style="max-height:500px;overflow-y:auto">';
     h+='<table class="kt" style="font-size:12px"><thead><tr>';
     h+='<th style="width:28px"></th><th>Document</th><th style="width:60px">Source</th><th style="width:80px">Date</th>';
-    h+='<th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th style="width:50px"></th>';
-    h+='</tr></thead><tbody>';
+    h+='<th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th style="width:90px">Status</th>';
+    h+='</tr></thead><tbody id="hv-tbody">';
     docs.forEach(function(doc,i){
       var alreadyIn=doc.source_url&&ingestedUrls.has(doc.source_url);
       var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎'}[doc.source]||'📄';
@@ -3733,21 +3801,71 @@ async function loadCkDocuments(ticker){
       var period=doc.period||'';
       var docType=doc.document_type||'other';
       var rowBg=alreadyIn?'rgba(74,222,128,.05)':'transparent';
-      h+='<tr data-idx="'+i+'" style="background:'+rowBg+'">';
+      var isDup=dupIndices.has(i);
+      var lang=_detectLang(doc.headline,doc.source_url);
+      var fmt=_detectFormat(doc.source_url);
+
+      // Build searchable text for filtering
+      var searchText=((doc.headline||'')+' '+(doc.source_url||'')+' '+(srcLabel)+' '+(period)+' '+(docType)).toLowerCase();
+
+      h+='<tr class="hv-row" data-idx="'+i+'" data-dt="'+esc(dt)+'" data-dtype="'+esc(docType)+'" data-search="'+esc(searchText)+'" style="background:'+rowBg+'">';
       h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'"'+(alreadyIn?' disabled':'')+''+'></td>';
-      h+='<td style="max-width:250px"><div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(doc.source_url||'')+'">'+esc(doc.headline||doc.source_url||'—')+'</div></td>';
+      // Document cell with badges
+      h+='<td style="max-width:300px"><div style="display:flex;align-items:center;gap:4px">';
+      h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1" title="'+esc(doc.source_url||'')+'">'+esc(doc.headline||doc.source_url||'—')+'</div>';
+      // Feature 6: Format badge
+      if(fmt){
+        var fmtColor=fmt==='PDF'?'#e74c3c':fmt==='HTML'?'#3498db':'#95a5a6';
+        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:'+fmtColor+';color:#fff;flex-shrink:0">'+fmt+'</span>';
+      }
+      // Feature 5: Language badge
+      if(lang){
+        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:600;padding:1px 4px;border-radius:3px;background:var(--bg3);color:var(--text4);border:1px solid var(--border);flex-shrink:0" title="Non-English document">'+lang+'</span>';
+      }
+      // Feature 3: Duplicate badge
+      if(isDup){
+        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff;flex-shrink:0" title="Possible duplicate">Dup?</span>';
+      }
+      h+='</div></td>';
       h+='<td><span style="font-size:10px;font-family:var(--sans);font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text3)">'+srcIcon+' '+srcLabel+'</span></td>';
       h+='<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+esc(dt)+'</td>';
-      h+='<td><select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(period)+'</select></td>';
-      h+='<td><select class="fi hv-dtype" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarDocTypeOpts(docType)+'</select></td>';
+      // Period with inferred indicator
       h+='<td>';
-      if(alreadyIn)h+='<span style="font-size:10px;color:var(--green);font-weight:600">In DB</span>';
-      else if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="Open">↗</a>';
+      if(doc.period_inferred){
+        h+='<select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px;border-color:#f59e0b" title="Period auto-detected from filename">'+edgarPeriodOpts(period)+'</select>';
+      } else {
+        h+='<select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(period)+'</select>';
+      }
+      h+='</td>';
+      h+='<td><select class="fi hv-dtype" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarDocTypeOpts(docType)+'</select></td>';
+      // Feature 7: Enhanced status column
+      h+='<td style="white-space:nowrap">';
+      if(alreadyIn){
+        // Show pipeline status badges
+        var ps=doc.parsing_status||'';
+        var sc=doc.sections_count||0;
+        var mc=doc.metrics_count||0;
+        h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff;margin-right:2px" title="Ingested">In DB</span>';
+        if(ps==='completed'&&sc>0){
+          h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#3b82f6;color:#fff;margin-right:2px" title="Parsed: '+sc+' sections">Parsed</span>';
+        } else if(ps==='processing'){
+          h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff;margin-right:2px">Parsing...</span>';
+        } else if(ps==='failed'){
+          h+='<span style="font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;background:#ef4444;color:#fff;margin-right:2px" title="Parsing failed">Parse Err</span>';
+        }
+        if(mc>0){
+          h+='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:#8b5cf6;color:#fff" title="'+mc+' metrics extracted">'+mc+' metrics</span>';
+        }
+      } else {
+        if(doc.source_url)h+='<a href="'+esc(doc.source_url)+'" target="_blank" style="color:var(--text4);font-size:14px;text-decoration:none" title="Open">↗</a>';
+      }
       h+='</td></tr>';
     });
     h+='</tbody></table></div>';
 
     el.innerHTML=h;
+    // Apply default date filter
+    hvFilterTable();
     updateDocSelBar();
     // Auto-lookup CIK and browse EDGAR (runs after HTML is rendered)
     autoLoadEdgar(ticker);
@@ -3908,7 +4026,56 @@ async function saveCkDocsUrl(ticker){
   }catch(e){alert('Failed to save URL: '+e.message);}
 }
 
-function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){c.checked=cb.checked;});}
+// ── Harvester table filter (Features 1 & 4) ──
+function hvFilterTable(){
+  var searchEl=E('hv-search'),dateEl=E('hv-date-range'),dtypeEl=E('hv-dtype-filter');
+  if(!searchEl)return;
+  var q=(searchEl.value||'').toLowerCase().trim();
+  var dateRange=dateEl?dateEl.value:'24';
+  var dtypeFilter=dtypeEl?dtypeEl.value:'';
+
+  // Compute cutoff date
+  var cutoff=null;
+  if(dateRange!=='all'){
+    var months=parseInt(dateRange)||24;
+    var now=new Date();
+    cutoff=new Date(now.getFullYear(),now.getMonth()-months,now.getDate());
+  }
+
+  var rows=document.querySelectorAll('.hv-row');
+  var shown=0;
+  rows.forEach(function(row){
+    var show=true;
+    // Date filter
+    if(cutoff){
+      var dt=row.getAttribute('data-dt');
+      if(dt){
+        var d=new Date(dt);
+        if(d<cutoff)show=false;
+      }
+    }
+    // Doc type filter
+    if(show&&dtypeFilter){
+      var rowDtype=row.getAttribute('data-dtype')||'';
+      // Also check the current dropdown value
+      var idx=row.getAttribute('data-idx');
+      var sel=document.querySelector('.hv-dtype[data-idx="'+idx+'"]');
+      var actualDtype=sel?sel.value:rowDtype;
+      if(actualDtype!==dtypeFilter)show=false;
+    }
+    // Text search
+    if(show&&q){
+      var searchText=row.getAttribute('data-search')||'';
+      if(searchText.indexOf(q)===-1)show=false;
+    }
+    row.style.display=show?'':'none';
+    if(show)shown++;
+  });
+  // Update count
+  var countEl=E('hv-doc-count');
+  if(countEl)countEl.textContent=shown+' of '+rows.length+' documents shown';
+}
+function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){if(c.closest('.hv-row').style.display!=='none')c.checked=cb.checked;});}
 function hvApplyBulkPeriod(){
   var period=E('hv-bulk-period').value;if(!period){alert('Select a period first.');return;}
   document.querySelectorAll('.hv-chk:checked').forEach(function(c){
