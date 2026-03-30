@@ -74,6 +74,18 @@ async def delete_company(ticker: str, db: AsyncSession = Depends(get_db)):
     return None
 
 
+@router.post("/rename")
+async def rename_company(old_ticker: str, new_ticker: str, db: AsyncSession = Depends(get_db)):
+    """Rename a company's ticker. Uses query params to avoid path issues with slashes."""
+    result = await db.execute(select(Company).where(Company.ticker == old_ticker.strip().upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {old_ticker} not found")
+    company.ticker = new_ticker.strip().upper()
+    await db.commit()
+    return {"status": "renamed", "old": old_ticker, "new": company.ticker}
+
+
 @router.post("/{target_ticker}/merge/{source_ticker}")
 async def merge_companies(
     target_ticker: str,
