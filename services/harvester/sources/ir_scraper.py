@@ -66,11 +66,14 @@ _RESULTS_PDF_PATTERNS = [
 ]
 
 _PERIOD_PATTERNS = [
+    # Full year — both word orders
     (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})\s+full[- ]?year",              lambda m: f"{m.group(1)}_FY"),
+    (r"(\d{4})[- ]full[- ]?year",             lambda m: f"{m.group(1)}_FY"),
     (r"annual\s+report\s+(\d{4})",            lambda m: f"{m.group(1)}_FY"),
-    (r"annual\s+report\s*(\d{4})",            lambda m: f"{m.group(1)}_FY"),
     (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_FY"),
+    (r"FY\s*(\d{4})",                         lambda m: f"{m.group(1)}_FY"),
+    (r"(\d{4})[- ]FY",                        lambda m: f"{m.group(1)}_FY"),
+    # Half year
     (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_H1"),
     (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_H1"),
     (r"interim\s+(?:results?\s+)?(\d{4})",    lambda m: f"{m.group(1)}_H1"),
@@ -78,13 +81,25 @@ _PERIOD_PATTERNS = [
     (r"H2\s+(\d{4})",                         lambda m: f"{m.group(1)}_H2"),
     (r"HY\s+(\d{4})",                         lambda m: f"{m.group(1)}_HY"),
     (r"(\d{4})[_-]HY",                        lambda m: f"{m.group(1)}_HY"),
+    # Quarter — Q1/Q2/Q3/Q4 format, both word orders
     (r"Q([1-4])\s+(\d{4})",                   lambda m: f"{m.group(2)}_Q{m.group(1)}"),
     (r"(\d{4})\s+Q([1-4])",                   lambda m: f"{m.group(1)}_Q{m.group(2)}"),
+    (r"(\d{4})[- ]Q([1-4])",                  lambda m: f"{m.group(1)}_Q{m.group(2)}"),
+    # Quarter — ordinal words, both word orders
     (r"(?:first|1st)\s+quarter\s+(\d{4})",    lambda m: f"{m.group(1)}_Q1"),
     (r"(?:second|2nd)\s+quarter\s+(\d{4})",   lambda m: f"{m.group(1)}_Q2"),
     (r"(?:third|3rd)\s+quarter\s+(\d{4})",    lambda m: f"{m.group(1)}_Q3"),
     (r"(?:fourth|4th)\s+quarter\s+(\d{4})",   lambda m: f"{m.group(1)}_Q4"),
-    # Infer from URL slug e.g. /annual-report-2025/
+    (r"(\d{4})[- ](?:first|1st)[- ]quarter",  lambda m: f"{m.group(1)}_Q1"),
+    (r"(\d{4})[- ](?:second|2nd)[- ]quarter", lambda m: f"{m.group(1)}_Q2"),
+    (r"(\d{4})[- ](?:third|3rd)[- ]quarter",  lambda m: f"{m.group(1)}_Q3"),
+    (r"(\d{4})[- ](?:fourth|4th)[- ]quarter", lambda m: f"{m.group(1)}_Q4"),
+    # Quarter — "fourth quarter 2024 and full year" or "2025-fourth-quarter-results"
+    (r"(?:fourth|4th)[- ]quarter[- ](\d{4})", lambda m: f"{m.group(1)}_Q4"),
+    (r"(?:third|3rd)[- ]quarter[- ](\d{4})",  lambda m: f"{m.group(1)}_Q3"),
+    (r"(?:second|2nd)[- ]quarter[- ](\d{4})", lambda m: f"{m.group(1)}_Q2"),
+    (r"(?:first|1st)[- ]quarter[- ](\d{4})",  lambda m: f"{m.group(1)}_Q1"),
+    # Bare year as last resort
     (r"(\d{4})",                              lambda m: f"{m.group(1)}_FY"),
 ]
 
