@@ -300,6 +300,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <button class="tab on" id="ar-tab-extraction" onclick="arSetMode('extraction')">⚙ Extraction Pipeline</button>
     <button class="tab" id="ar-tab-output" onclick="arSetMode('output')">📄 Output Pipeline</button>
     <button class="tab" id="ar-tab-log" onclick="arSetMode('log')">📋 Activity Log</button>
+    <button class="tab" id="ar-tab-usage" onclick="arSetMode('usage');loadUsage()">💰 Token Usage</button>
   </div>
   <div id="ar-mode-extraction">
     <div class="g2" style="gap:20px;align-items:start">
@@ -328,6 +329,18 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="ar-mode-log" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-family:var(--sans);font-size:12px;color:var(--text3)">Combined log — both pipelines, newest first</span><button class="btn2" onclick="arRefreshStatus()">↻ Refresh</button></div>
     <div id="ar-log-content" style="font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;max-height:560px;overflow-y:auto;line-height:2"><span style="color:var(--text4)">No activity yet.</span></div>
+  </div>
+  <div id="ar-mode-usage" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-family:var(--sans);font-size:12px;color:var(--text3)">LLM API usage and cost breakdown</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="usage-days" class="fi" style="width:auto;font-size:11px;padding:4px 8px" onchange="loadUsage()">
+          <option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+        </select>
+        <button class="btn2" onclick="loadUsage()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="usage-content"><div class="ld">Loading…</div></div>
   </div>
 </div>
 
@@ -3675,7 +3688,7 @@ const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'4
 const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'},{id:'extraction_annual_report',label:'Annual Report / 10-K',doc:'annual_report, 10-K'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
 let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
 function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
-function arSetMode(mode){_arMode=mode;['extraction','output','log'].forEach(m=>{const el=E('ar-mode-'+m);if(el)el.style.display=m===mode?'block':'none';const tab=E('ar-tab-'+m);if(tab)tab.classList.toggle('on',m===mode);});if(mode==='log')arRefreshStatus();}
+function arSetMode(mode){_arMode=mode;['extraction','output','log','usage'].forEach(m=>{const el=E('ar-mode-'+m);if(el)el.style.display=m===mode?'block':'none';const tab=E('ar-tab-'+m);if(tab)tab.classList.toggle('on',m===mode);});if(mode==='log')arRefreshStatus();}
 function arRenderTypeToggles(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-types');if(!el)return;el.innerHTML=AR_PROMPT_TYPES[pipeline].map(t=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="${t.id}" checked style="accent-color:var(--gold);margin-top:2px;flex-shrink:0"><div><div style="font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text)">${t.label}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">Docs: ${t.doc}</div></div></label>`).join('');}
 function arRenderEvals(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-evals');if(!el)return;el.innerHTML=AR_EVALS[pipeline].map(ev=>`<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${ev.colour};border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">${ev.name}</span><span style="font-family:var(--mono);font-size:11px;color:${ev.colour};background:rgba(255,255,255,.04);padding:2px 8px;border-radius:4px;font-weight:600">${ev.weight}</span></div><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:6px;font-style:italic">${ev.how}</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:7px">${ev.description}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text3);line-height:1.55;border-top:1px solid var(--border);padding-top:7px"><strong style="color:var(--text4)">Why it matters:</strong> ${ev.why}</div></div>`).join('');}
 function arGetSelectedTypes(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const container=E('ar-'+pfx+'-types');if(!container)return AR_PROMPT_TYPES[pipeline].map(t=>t.id);return Array.from(container.querySelectorAll('input:checked')).map(i=>i.value);}
@@ -3683,6 +3696,66 @@ async function arStart(pipeline){const pfx=pipeline==='extraction'?'ext':'out';c
 async function arStop(pipeline){if(!confirm('Request graceful stop?'))return;try{await fetch('/api/v1/autorun/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipeline})});arRefreshStatus();}catch(e){alert('Stop failed: '+e.message);}}
 async function arRefreshStatus(){try{const r=await fetch('/api/v1/autorun/status');if(!r.ok)return;arRenderStatus(await r.json());}catch(e){const el=E('ar-log-content');if(el)el.innerHTML='<span style="color:var(--red)">Could not reach AutoRun API — check autorun router is registered in main.py.</span>';}}
 function arRenderStatus(d){['extraction','output'].forEach(pipeline=>{const pState=d[pipeline]||{};const pfx=pipeline==='extraction'?'ext':'out';const running=pState.running||false;const startBtn=E('ar-'+pfx+'-start'),stopBtn=E('ar-'+pfx+'-stop'),statusEl=E('ar-'+pfx+'-status'),statsEl=E('ar-'+pfx+'-stats');if(startBtn){startBtn.disabled=running;startBtn.textContent=running?'⏸ Running…':'▶ Start';}if(stopBtn)stopBtn.style.display=running?'inline-block':'none';if(statusEl){if(running){statusEl.innerHTML=`<span style="color:var(--gold)">● Running — job ${esc(pState.job_id||'')}</span><br><span style="color:var(--text4);font-size:11px">${esc(pState.current_step||pState.current_type||'running…')}</span>`;}else if(pState.job_id){statusEl.innerHTML=`<span style="color:var(--green)">✓ Last run: ${esc(pState.job_id)}${pState.experiments_run>0?' — '+pState.experiments_run+' experiments, '+pState.promotions+' promotions':''}</span>`;}else{statusEl.textContent='Idle';}}if(statsEl&&(pState.experiments_run>0||pState.running)){statsEl.style.display='block';const se=E('ar-'+pfx+'-stat-exp'),sp=E('ar-'+pfx+'-stat-pro'),sd=E('ar-'+pfx+'-stat-delta');if(se)se.textContent=pState.experiments_run??'—';if(sp)sp.textContent=pState.promotions??'—';if(sd)sd.textContent=pState.avg_delta!=null?(pState.avg_delta>=0?'+':'')+pState.avg_delta.toFixed(2):'—';}});const logEl=E('ar-log-content');if(logEl){const logs=(d.log||[]).slice(0,200);if(logs.length){logEl.innerHTML=logs.map(entry=>{const ts=(entry.ts||'').substring(11,19);const col=entry.level==='error'?'var(--red)':entry.level==='warning'?'var(--amber)':(entry.msg||'').startsWith('✓')?'var(--green)':(entry.msg||'').startsWith('─')?'var(--gold)':'var(--text2)';const pipe=entry.pipeline?`<span style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-right:6px;background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(entry.pipeline)}</span>`:'';return `<div>${pipe}<span style="color:var(--text4)">${ts}</span>  <span style="color:${col}">${esc(entry.msg||'')}</span>${entry.detail?` <span style="color:var(--text4)">${esc(entry.detail)}</span>`:''}</div>`;}).join('');}else{logEl.innerHTML='<span style="color:var(--text4)">No activity yet.</span>';}}}
+async function loadUsage(){
+  var el=E('usage-content');if(!el)return;
+  el.innerHTML='<div class="ld">Loading…</div>';
+  var days=E('usage-days')?E('usage-days').value:'7';
+  try{
+    var r=await fetch('/api/v1/usage?days='+days);if(!r.ok)throw new Error('Failed');
+    var d=await r.json();
+    var h='';
+    // Summary strip
+    h+='<div class="ck-strip" style="margin-bottom:20px">';
+    h+='<div class="ck-stat"><div class="ck-stat-label">Total Cost</div><div class="ck-stat-val" style="color:var(--gold)">$'+d.total_cost_usd.toFixed(2)+'</div></div>';
+    h+='<div class="ck-stat"><div class="ck-stat-label">API Calls</div><div class="ck-stat-val">'+d.total_calls+'</div></div>';
+    h+='<div class="ck-stat"><div class="ck-stat-label">Input Tokens</div><div class="ck-stat-val">'+(d.total_input_tokens/1000).toFixed(0)+'k</div></div>';
+    h+='<div class="ck-stat"><div class="ck-stat-label">Output Tokens</div><div class="ck-stat-val">'+(d.total_output_tokens/1000).toFixed(0)+'k</div></div>';
+    h+='</div>';
+    // Cost by day chart
+    if(d.by_day.length>1){
+      var maxCost=Math.max.apply(null,d.by_day.map(function(x){return x.cost_usd}))||1;
+      h+='<div class="cd" style="padding:16px;margin-bottom:16px"><div class="cd-t">Daily Cost</div>';
+      h+='<div style="display:flex;align-items:flex-end;gap:4px;height:120px;margin-top:12px">';
+      d.by_day.forEach(function(day){
+        var pct=Math.max((day.cost_usd/maxCost)*100,2);
+        h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">';
+        h+='<div style="font-family:var(--mono);font-size:9px;color:var(--text3)">$'+day.cost_usd.toFixed(2)+'</div>';
+        h+='<div style="width:100%;background:var(--gold);border-radius:3px 3px 0 0;height:'+pct+'%"></div>';
+        h+='<div style="font-family:var(--sans);font-size:9px;color:var(--text4)">'+day.date.slice(5)+'</div>';
+        h+='</div>';
+      });
+      h+='</div></div>';
+    }
+    // Tables side by side
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+    // By feature
+    h+='<div class="cd" style="padding:16px"><div class="cd-t">Cost by Feature</div>';
+    h+='<table class="kt" style="font-size:12px;margin-top:10px"><thead><tr><th>Feature</th><th>Calls</th><th>Cost</th></tr></thead><tbody>';
+    d.by_feature.forEach(function(f){
+      h+='<tr><td style="font-weight:600">'+esc(f.feature)+'</td><td>'+f.calls+'</td><td style="color:var(--gold)">$'+f.cost_usd.toFixed(3)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    // By model
+    h+='<div class="cd" style="padding:16px"><div class="cd-t">Cost by Model</div>';
+    h+='<table class="kt" style="font-size:12px;margin-top:10px"><thead><tr><th>Model</th><th>Calls</th><th>Cost</th></tr></thead><tbody>';
+    d.by_model.forEach(function(m){
+      var short=m.model.replace('claude-','').replace('-20250514','').replace('-20241022','');
+      h+='<tr><td style="font-weight:600">'+esc(short)+'</td><td>'+m.calls+'</td><td style="color:var(--gold)">$'+m.cost_usd.toFixed(3)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    h+='</div>';
+    // By ticker
+    if(d.by_ticker.length){
+      h+='<div class="cd" style="padding:16px;margin-top:16px"><div class="cd-t">Cost by Company (Top 10)</div>';
+      h+='<table class="kt" style="font-size:12px;margin-top:10px"><thead><tr><th>Ticker</th><th>Calls</th><th>Cost</th></tr></thead><tbody>';
+      d.by_ticker.forEach(function(t){
+        h+='<tr><td style="font-weight:600;cursor:pointer" onclick="sideSelectCo(\''+esc(t.ticker)+'\')">'+esc(t.ticker)+'</td><td>'+t.calls+'</td><td style="color:var(--gold)">$'+t.cost_usd.toFixed(3)+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+}
 function arStartPoll(){if(_arPollTimer)clearInterval(_arPollTimer);_arPollTimer=setInterval(async()=>{const page=E('page-autorun');if(!page||page.style.display==='none'){clearInterval(_arPollTimer);_arPollTimer=null;return;}await arRefreshStatus();},4000);}
 
 // ═══ COCKPIT DOCUMENTS TAB ══════════════════════════════════════

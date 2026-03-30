@@ -6,13 +6,63 @@ Includes token usage tracking and improved error handling.
 import asyncio
 import json
 import logging
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import anthropic
 
 from configs.settings import settings
+
+# ── Cost per 1M tokens (approximate, update as pricing changes) ──
+_COST_PER_1M = {
+    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
+    "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
+    "claude-opus-4-20250514": {"input": 15.0, "output": 75.0},
+    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
+}
+
+# Thread-local feature context for logging
+_call_context = {"feature": "unknown", "ticker": None, "period": None}
+
+
+def set_llm_context(feature: str, ticker: str = None, period: str = None):
+    """Set context for the next LLM call(s) so usage logs know what triggered them."""
+    _call_context["feature"] = feature
+    _call_context["ticker"] = ticker
+    _call_context["period"] = period
+
+
+def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    rates = _COST_PER_1M.get(model, {"input": 3.0, "output": 15.0})
+    return round((input_tokens * rates["input"] + output_tokens * rates["output"]) / 1_000_000, 6)
+
+
+def _log_usage(model: str, input_tokens: int, output_tokens: int, duration_ms: int = 0):
+    """Persist LLM usage to database (fire-and-forget)."""
+    try:
+        from apps.api.database import SyncSessionLocal
+        from apps.api.models import LLMUsageLog
+        cost = _estimate_cost(model, input_tokens, output_tokens)
+        with SyncSessionLocal() as db:
+            db.add(LLMUsageLog(
+                id=uuid.uuid4(),
+                timestamp=datetime.now(timezone.utc),
+                model=model,
+                feature=_call_context.get("feature", "unknown"),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost,
+                ticker=_call_context.get("ticker"),
+                period_label=_call_context.get("period"),
+                duration_ms=duration_ms,
+            ))
+            db.commit()
+    except Exception as e:
+        logger.debug("Failed to log LLM usage: %s", str(e)[:100])
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +110,7 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None, model: str | None = None) -> str:
+def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None, model: str | None = None, feature: str | None = None) -> str:
     client = get_client()
     model = model or settings.llm_model
 
@@ -90,6 +140,9 @@ def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float |
 
     text = resp.content[0].text.strip()
     usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
+    if feature:
+        _call_context["feature"] = feature
+    _log_usage(model, resp.usage.input_tokens, resp.usage.output_tokens)
     logger.debug(
         "LLM response: %d chars, stop=%s, tokens_in=%d, tokens_out=%d",
         len(text), resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens,

@@ -494,6 +494,24 @@ class ExecutionScorecard(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
+# LLM Usage Log — track every API call for cost analysis
+# ─────────────────────────────────────────────────────────────────
+class LLMUsageLog(Base):
+    __tablename__ = "llm_usage_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+    model = Column(Text, nullable=False)
+    feature = Column(Text, nullable=False)         # extraction | synthesis | thesis_comparison | surprise | ir_questions | llm_scan | chat | thesis_gen | moat | esg | experiment
+    input_tokens = Column(Integer, nullable=False)
+    output_tokens = Column(Integer, nullable=False)
+    cost_usd = Column(Numeric)                     # estimated cost
+    ticker = Column(Text)                          # company context if available
+    period_label = Column(Text)
+    duration_ms = Column(Integer)
+
+
+# ─────────────────────────────────────────────────────────────────
 # Extraction Feedback — inline analyst annotations on analysis output
 # ─────────────────────────────────────────────────────────────────
 class ExtractionFeedback(Base, TimestampMixin):
