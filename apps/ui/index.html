@@ -48,6 +48,8 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 .btn-sm{padding:5px 12px;background:var(--gold);color:var(--bg);border:none;border-radius:6px;font-family:var(--sans);font-size:11px;font-weight:600;cursor:pointer}
 .ld{text-align:center;margin-top:32px;font-family:var(--sans);font-size:14px;color:var(--gold);animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin-sm{to{transform:rotate(360deg)}}
+.spinner-sm{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin-sm .6s linear infinite;vertical-align:middle}
 .err{margin-top:16px;padding:12px 16px;background:var(--redDim);border:1px solid rgba(239,68,68,.25);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--red)}
 .ok{margin-top:16px;padding:12px 16px;background:var(--greenDim);border:1px solid rgba(34,197,94,.25);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--green)}
 .cd{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:12px;border-left:3px solid transparent}
@@ -3913,13 +3915,14 @@ async function loadCkDocuments(ticker){
     h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="hvApplyBulkPeriod()">Apply period</button>';
     h+='<span style="flex:1"></span>';
     h+='<span id="hv-doc-count" style="font-family:var(--sans);font-size:12px;color:var(--text4)">'+docs.length+' documents found</span>';
-    h+='<button class="btn" style="font-size:11px;padding:5px 14px" onclick="hvIngestSelected()">Ingest Selected</button>';
+    h+='<span id="hv-sel-count" style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--gold);display:none"></span>';
+    h+='<button id="hv-ingest-btn" class="btn" style="font-size:11px;padding:5px 14px" onclick="hvIngestSelected()">Ingest Selected</button>';
     h+='<span id="hv-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
     h+='</div>';
 
     // Documents table
     h+='<div id="hv-table-wrap" style="max-height:500px;overflow-y:auto">';
-    h+='<table class="kt" style="font-size:12px"><thead><tr>';
+    h+='<table class="kt" style="font-size:12px"><thead style="position:sticky;top:0;z-index:2;background:var(--bg1)"><tr>';
     h+='<th style="width:28px"></th><th>Document</th><th style="width:60px">Source</th><th style="width:80px">Date</th>';
     h+='<th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th style="width:90px">Status</th>';
     h+='</tr></thead><tbody id="hv-tbody">';
@@ -3960,7 +3963,7 @@ async function loadCkDocuments(ticker){
       var searchText=((doc.headline||'')+' '+(displayName)+' '+(doc.source_url||'')+' '+(srcLabel)+' '+(period)+' '+(docType)).toLowerCase();
 
       h+='<tr class="hv-row" data-idx="'+i+'" data-dt="'+esc(dt)+'" data-dtype="'+esc(docType)+'" data-search="'+esc(searchText)+'" style="background:'+rowBg+'">';
-      h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'"'+(alreadyIn?' disabled':'')+((!doc.source_url&&!alreadyIn)?' disabled title="No URL available"':'')+''+'></td>';
+      h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'" onchange="hvUpdateSelCount()"'+(alreadyIn?' disabled':'')+((!doc.source_url&&!alreadyIn)?' disabled title="No URL available"':'')+''+'></td>';
       // Document cell with badges
       h+='<td style="max-width:300px"><div style="display:flex;align-items:center;gap:4px">';
       h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1" title="'+esc(doc.source_url||'')+'">'+esc(displayName)+'</div>';
@@ -4100,18 +4103,19 @@ async function browseEdgar(ticker){
     h+='<select id="edgar-bulk-period" class="fi" style="width:auto;font-size:11px;padding:4px 8px">'+edgarPeriodOpts('')+'</select>';
     h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="edgarApplyBulkPeriod()">Apply period</button>';
     h+='<span style="flex:1"></span>';
-    h+='<button class="btn" style="font-size:11px;padding:5px 14px" onclick="edgarIngestSelected()">Ingest Selected</button>';
+    h+='<span id="edgar-sel-count" style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--gold);display:none"></span>';
+    h+='<button id="edgar-ingest-btn" class="btn" style="font-size:11px;padding:5px 14px" onclick="edgarIngestSelected()">Ingest Selected</button>';
     h+='<span id="edgar-ingest-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>';
     h+='</div>';
     h+='<div style="max-height:500px;overflow-y:auto">';
-    h+='<table class="kt" style="font-size:12px"><thead><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:90px">Status</th><th style="width:30px"></th></tr></thead><tbody>';
+    h+='<table class="kt" style="font-size:12px"><thead style="position:sticky;top:0;z-index:2;background:var(--bg1)"><tr><th style="width:28px"></th><th>Date</th><th>Form</th><th style="width:150px">Period</th><th style="width:140px">Doc Type</th><th>Description</th><th style="width:90px">Status</th><th style="width:30px"></th></tr></thead><tbody>';
     d.filings.forEach(function(f,i){
       var periodLabel=f.period_label||suggestPeriodFromDate(f.filing_date,f.form_type);
       var docType=docTypeMap[f.form_type]||'other';
       var edgarAlreadyIn=f.doc_url&&edgarIngestedUrls.has(f.doc_url);
       var rowBg=edgarAlreadyIn?'rgba(74,222,128,.05)':'transparent';
       h+='<tr data-idx="'+i+'" style="background:'+rowBg+'">';
-      h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'"'+(edgarAlreadyIn?' disabled':'')+''+'></td>';
+      h+='<td><input type="checkbox" class="edgar-chk" data-idx="'+i+'" onchange="edgarUpdateSelCount()"'+(edgarAlreadyIn?' disabled':'')+''+'></td>';
       h+='<td style="white-space:nowrap">'+esc(f.filing_date)+'</td>';
       h+='<td><span style="font-weight:600;color:var(--gold)">'+esc(f.form_type)+'</span></td>';
       h+='<td><select class="fi edgar-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(periodLabel)+'</select></td>';
@@ -4135,7 +4139,16 @@ async function browseEdgar(ticker){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
-function edgarToggleAll(cb){document.querySelectorAll('.edgar-chk:not(:disabled)').forEach(function(c){c.checked=cb.checked;});}
+function edgarToggleAll(cb){document.querySelectorAll('.edgar-chk:not(:disabled)').forEach(function(c){c.checked=cb.checked;});edgarUpdateSelCount();}
+function edgarUpdateSelCount(){
+  var checked=document.querySelectorAll('.edgar-chk:checked').length;
+  var total=document.querySelectorAll('.edgar-chk:not(:disabled)').length;
+  var el=E('edgar-sel-count');
+  if(el){
+    if(checked>0){el.textContent=checked+' of '+total+' selected';el.style.display='';}
+    else{el.style.display='none';}
+  }
+}
 function edgarApplyBulkPeriod(){
   var period=E('edgar-bulk-period').value;if(!period){alert('Select a period first.');return;}
   document.querySelectorAll('.edgar-chk:checked').forEach(function(c){
@@ -4147,7 +4160,9 @@ async function edgarIngestSelected(){
   var checked=[].slice.call(document.querySelectorAll('.edgar-chk:checked'));
   if(!checked.length){alert('Select at least one filing.');return;}
   var statusEl=E('edgar-ingest-status');
-  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting…</span>';
+  var btn=E('edgar-ingest-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-sm"></span> Ingesting...';}
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+checked.length+' filing'+(checked.length>1?'s':'')+'…</span>';
   var ok=0,dup=0,fail=0;
   for(var ci=0;ci<checked.length;ci++){
     var idx=parseInt(checked[ci].dataset.idx);
@@ -4156,6 +4171,7 @@ async function edgarIngestSelected(){
     var dtypeSel=document.querySelector('.edgar-dtype[data-idx="'+idx+'"]');
     var period=periodSel?periodSel.value:'';
     var dtype=dtypeSel?dtypeSel.value:'';
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+(ci+1)+'/'+checked.length+'…</span>';
     try{
       var fd=new FormData();
       fd.append('doc_url',f.doc_url);fd.append('form_type',dtype||f.form_type);
@@ -4163,12 +4179,34 @@ async function edgarIngestSelected(){
       var r=await fetch('/api/v1/companies/'+enc(_edgarTicker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
       var row=checked[ci].closest('tr');
-      if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
-      else if(d.status==='duplicate'){dup++;if(row)row.style.background='rgba(196,164,90,.08)';}
+      if(d.status==='ingested'){
+        ok++;
+        if(row){
+          row.style.background='rgba(74,222,128,.08)';
+          var cb=row.querySelector('.edgar-chk');if(cb){cb.checked=false;cb.disabled=true;}
+          var stCell=row.querySelectorAll('td');var stTd=stCell[stCell.length-2];
+          if(stTd)stTd.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff">In DB</span>';
+        }
+      }
+      else if(d.status==='duplicate'){
+        dup++;
+        if(row){
+          row.style.background='rgba(196,164,90,.08)';
+          var cb2=row.querySelector('.edgar-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
+          var stCell2=row.querySelectorAll('td');var stTd2=stCell2[stCell2.length-2];
+          if(stTd2)stTd2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
+        }
+      }
       else{fail++;}
     }catch(e){fail++;}
   }
+  if(btn){btn.disabled=false;btn.textContent='Ingest Selected';}
   if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
+  edgarUpdateSelCount();
+  // Refresh harvested docs list to update badges
+  if(ok>0&&window._harvestTicker){
+    setTimeout(function(){loadCkDocuments(window._harvestTicker);},1500);
+  }
 }
 function toggleDocRow(row){
   var cb=row.querySelector('input[type=checkbox]');
@@ -4247,7 +4285,16 @@ function hvFilterTable(){
   var countEl=E('hv-doc-count');
   if(countEl)countEl.textContent=shown+' of '+rows.length+' documents shown';
 }
-function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){if(c.closest('.hv-row').style.display!=='none')c.checked=cb.checked;});}
+function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){if(c.closest('.hv-row').style.display!=='none')c.checked=cb.checked;});hvUpdateSelCount();}
+function hvUpdateSelCount(){
+  var checked=document.querySelectorAll('.hv-chk:checked').length;
+  var total=document.querySelectorAll('.hv-chk:not(:disabled)').length;
+  var el=E('hv-sel-count');
+  if(el){
+    if(checked>0){el.textContent=checked+' of '+total+' selected';el.style.display='';}
+    else{el.style.display='none';}
+  }
+}
 function hvApplyBulkPeriod(){
   var period=E('hv-bulk-period').value;if(!period){alert('Select a period first.');return;}
   document.querySelectorAll('.hv-chk:checked').forEach(function(c){
@@ -4259,7 +4306,9 @@ async function hvIngestSelected(){
   var checked=[].slice.call(document.querySelectorAll('.hv-chk:checked'));
   if(!checked.length){alert('Select at least one document.');return;}
   var statusEl=E('hv-ingest-status');
-  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting…</span>';
+  var btn=E('hv-ingest-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-sm"></span> Ingesting...';}
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+checked.length+' document'+(checked.length>1?'s':'')+'…</span>';
   var ticker=window._harvestTicker;var docs=window._harvestDocs;
   var ok=0,dup=0,fail=0;
   for(var ci=0;ci<checked.length;ci++){
@@ -4269,6 +4318,7 @@ async function hvIngestSelected(){
     var dtypeSel=document.querySelector('.hv-dtype[data-idx="'+idx+'"]');
     var period=periodSel?periodSel.value:'';
     var dtype=dtypeSel?dtypeSel.value:'other';
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+(ci+1)+'/'+checked.length+'…</span>';
     try{
       var fd=new FormData();
       fd.append('doc_url',doc.source_url);fd.append('form_type',dtype);
@@ -4278,12 +4328,34 @@ async function hvIngestSelected(){
       var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
       var row=checked[ci].closest('tr');
-      if(d.status==='ingested'){ok++;if(row)row.style.background='rgba(74,222,128,.08)';}
-      else if(d.status==='duplicate'){dup++;if(row)row.style.background='rgba(196,164,90,.08)';}
+      if(d.status==='ingested'){
+        ok++;
+        if(row){
+          row.style.background='rgba(74,222,128,.08)';
+          var cb=row.querySelector('.hv-chk');if(cb){cb.checked=false;cb.disabled=true;}
+          var stCell=row.querySelector('td:last-child');
+          if(stCell)stCell.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff">In DB</span>';
+        }
+      }
+      else if(d.status==='duplicate'){
+        dup++;
+        if(row){
+          row.style.background='rgba(196,164,90,.08)';
+          var cb2=row.querySelector('.hv-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
+          var stCell2=row.querySelector('td:last-child');
+          if(stCell2)stCell2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
+        }
+      }
       else{fail++;}
     }catch(e){fail++;}
   }
+  if(btn){btn.disabled=false;btn.textContent='Ingest Selected';}
   if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
+  hvUpdateSelCount();
+  // Refresh the document list after a short delay to update badges
+  if(ok>0){
+    setTimeout(function(){loadCkDocuments(ticker);},1500);
+  }
 }
 async function runLLMScan(ticker,btn){
   btn.disabled=true;var orig=btn.textContent;btn.textContent='Scanning…';

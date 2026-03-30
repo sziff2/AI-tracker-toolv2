@@ -201,8 +201,8 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
             await _record(db, c, company.id, doc.id, True)
 
             logger.info(
-                "[DISPATCH] ✓ %s — %s (%s) → job %s",
-                ticker, headline[:60], period_label, str(job.id)[:8]
+                "[DISPATCH] ✓ %s — %s (%s) → doc %s",
+                ticker, headline[:60], period_label, str(doc.id)[:8]
             )
             summary["new"] += 1
             summary["tickers"].add(ticker)
