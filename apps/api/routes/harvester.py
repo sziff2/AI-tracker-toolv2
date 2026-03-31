@@ -41,19 +41,22 @@ class SourceUpdate(BaseModel):
 
 @router.get("/harvester/sources")
 async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
+    # Use column-level select to avoid loading all relationships
+    from sqlalchemy import Column
     companies_q = await db.execute(
-        select(Company).where(Company.coverage_status == "active").order_by(Company.ticker)
+        select(Company.id, Company.ticker, Company.name, Company.country)
+        .where(Company.coverage_status == "active")
+        .order_by(Company.ticker)
     )
-    companies = companies_q.scalars().all()
+    companies = companies_q.all()
 
     sources_q = await db.execute(select(HarvesterSource))
     sources = {s.company_id: s for s in sources_q.scalars().all()}
 
     result = []
-    for co in companies:
-        src = sources.get(co.id)
-        # Determine which source will actually be used
-        if co.ticker in EDGAR_SOURCES:
+    for co_id, co_ticker, co_name, co_country in companies:
+        src = sources.get(co_id)
+        if co_ticker in EDGAR_SOURCES:
             active_source = "edgar"
         elif src and src.ir_docs_url:
             active_source = "ir_scrape"
@@ -61,16 +64,16 @@ async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
             active_source = "none"
 
         result.append({
-            "ticker":           co.ticker,
-            "name":             co.name,
-            "country":          co.country,
-            "active_source":    active_source,        # what will run
+            "ticker":           co_ticker,
+            "name":             co_name,
+            "country":          co_country,
+            "active_source":    active_source,
             "ir_docs_url":      src.ir_docs_url if src else None,
             "ir_url":           src.ir_url if src else None,
             "override":         src.override if src else False,
             "last_checked_at":  src.last_checked_at.isoformat() if src and src.last_checked_at else None,
             "notes":            src.notes if src else None,
-            "status":           _status(co.ticker, src),
+            "status":           _status(co_ticker, src),
         })
 
     return result

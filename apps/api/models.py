@@ -28,11 +28,11 @@ class Company(Base, TimestampMixin):
     cik = Column(Text)                                     # SEC CIK number for EDGAR lookups
 
     # relationships
-    documents = relationship("Document", back_populates="company", lazy="noload")
-    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="noload")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="noload")
-    event_assessments = relationship("EventAssessment", back_populates="company", lazy="noload")
-    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="noload")
+    documents = relationship("Document", back_populates="company", lazy="selectin")
+    thesis_versions = relationship("ThesisVersion", back_populates="company", lazy="selectin")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="company", lazy="selectin")
+    event_assessments = relationship("EventAssessment", back_populates="company", lazy="selectin")
+    research_outputs = relationship("ResearchOutput", back_populates="company", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -58,9 +58,9 @@ class Document(Base, TimestampMixin):
     parsing_status = Column(Text, default="pending")  # pending | processing | completed | failed
 
     company = relationship("Company", back_populates="documents")
-    sections = relationship("DocumentSection", back_populates="document", lazy="noload")
-    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="noload")
-    event_assessments = relationship("EventAssessment", back_populates="document", lazy="noload")
+    sections = relationship("DocumentSection", back_populates="document", lazy="selectin")
+    extracted_metrics = relationship("ExtractedMetric", back_populates="document", lazy="selectin")
+    event_assessments = relationship("EventAssessment", back_populates="document", lazy="selectin")
 
 
 # ─────────────────────────────────────────────────────────────────
