@@ -856,9 +856,31 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
         items_desc = ""
         if items:
             item_labels = {
-                "1.01": "Material Agreement", "2.02": "Earnings Release",
-                "5.02": "Director/Officer Change", "7.01": "Reg FD Disclosure",
-                "8.01": "Other Events", "9.01": "Financial Statements",
+                "1.01": "Material Agreement",
+                "1.02": "Termination of Agreement",
+                "1.03": "Bankruptcy",
+                "2.01": "Acquisition/Disposition of Assets",
+                "2.02": "Earnings Release",
+                "2.03": "Credit Enhancement/Direct Financial Obligation",
+                "2.04": "Triggering Events (Acceleration of Obligations)",
+                "2.05": "Costs for Exit/Disposal Activities",
+                "2.06": "Material Impairments",
+                "3.01": "Delisting Notice",
+                "3.02": "Unregistered Sale of Equity",
+                "3.03": "Material Modification to Rights",
+                "4.01": "Change in Auditor",
+                "4.02": "Non-Reliance on Financial Statements",
+                "5.01": "Change in Control",
+                "5.02": "Director/Officer Change",
+                "5.03": "Amendments to Articles/Bylaws",
+                "5.04": "Temporary Suspension of Trading",
+                "5.05": "Amendments to Code of Ethics",
+                "5.06": "Change in Shell Company Status",
+                "5.07": "Shareholder Vote Results",
+                "5.08": "Shareholder Nominations",
+                "7.01": "Reg FD Disclosure",
+                "8.01": "Other Events",
+                "9.01": "Financial Statements/Exhibits",
             }
             parts = [item_labels.get(x.strip(), x.strip()) for x in items.split(",")]
             items_desc = " — " + ", ".join(parts)
