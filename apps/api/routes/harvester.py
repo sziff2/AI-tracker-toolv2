@@ -224,6 +224,24 @@ def _infer_period(headline: str, source_url: str) -> Optional[str]:
     return None
 
 
+# ── DELETE /harvester/log — clear harvest log for a company ────────
+
+@router.delete("/harvester/log")
+async def clear_harvest_log(ticker: str, source: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Clear harvested document entries for a company. Optionally filter by source."""
+    from sqlalchemy import delete as sa_delete
+    comp_q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = comp_q.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+    q = sa_delete(HarvestedDocument).where(HarvestedDocument.company_id == company.id)
+    if source:
+        q = q.where(HarvestedDocument.source == source)
+    result = await db.execute(q)
+    await db.commit()
+    return {"status": "cleared", "ticker": ticker, "deleted": result.rowcount}
+
+
 # ── GET /harvester/log ────────────────────────────────────────────
 
 @router.get("/harvester/log")
