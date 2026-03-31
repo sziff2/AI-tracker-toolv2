@@ -27,27 +27,29 @@ router = APIRouter(tags=["outputs"])
 @router.get("/companies-list")
 async def companies_list(db: AsyncSession = Depends(get_db)):
     """Return all companies with their thesis status for the UI dropdown."""
-    result = await db.execute(select(Company).order_by(Company.name))
-    companies = result.scalars().all()
-    out = []
-    for c in companies:
-        # Check if thesis exists
-        thesis_q = await db.execute(
-            select(ThesisVersion).where(
-                ThesisVersion.company_id == c.id, ThesisVersion.active == True
-            ).limit(1)
+    from sqlalchemy import func, exists
+    # Single query: company columns + thesis exists check (no N+1)
+    thesis_exists = (
+        select(ThesisVersion.id)
+        .where(ThesisVersion.company_id == Company.id, ThesisVersion.active == True)
+        .limit(1)
+        .correlate(Company)
+        .exists()
+    )
+    result = await db.execute(
+        select(
+            Company.ticker, Company.name, Company.sector,
+            Company.industry, Company.country, Company.primary_analyst,
+            thesis_exists.label("has_thesis"),
         )
-        has_thesis = thesis_q.scalar_one_or_none() is not None
-        out.append({
-            "ticker": c.ticker,
-            "name": c.name,
-            "sector": c.sector,
-            "industry": c.industry,
-            "country": c.country,
-            "primary_analyst": c.primary_analyst,
-            "has_thesis": has_thesis,
-        })
-    return out
+        .where(Company.coverage_status == "active")
+        .order_by(Company.name)
+    )
+    return [{
+        "ticker": r.ticker, "name": r.name, "sector": r.sector,
+        "industry": r.industry, "country": r.country,
+        "primary_analyst": r.primary_analyst, "has_thesis": r.has_thesis,
+    } for r in result.all()]
 
 
 # ─────────────────────────────────────────────────────────────────
