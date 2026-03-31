@@ -216,18 +216,20 @@ async def scrape_ir_with_llm(
 
     base = f"{urlparse(ir_docs_url).scheme}://{urlparse(ir_docs_url).netloc}"
 
-    # Fetch the page (with Cloudflare bypass)
+    # Fetch the page (with Cloudflare bypass — may use ScrapingBee which takes 15-30s)
     from services.doc_utils import async_fetch_page
+
+    raw_html = await async_fetch_page(ir_docs_url, timeout=60)
+    if not raw_html:
+        logger.warning("[LLM-SCRAPE] Failed to fetch %s", ir_docs_url)
+        return []
 
     async with httpx.AsyncClient(
         timeout=20.0,
         follow_redirects=True,
         headers=_HEADERS,
     ) as client:
-        raw_html = await async_fetch_page(ir_docs_url, timeout=20)
-        if not raw_html:
-            logger.warning("[LLM-SCRAPE] Failed to fetch %s", ir_docs_url)
-            return []
+        pass  # client used for sibling page fetches below
         cleaned = _clean_page_source(raw_html)
 
         # ── JS-rendered page detection ────────────────────────────────

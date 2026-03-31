@@ -94,8 +94,8 @@ class _CloudflareBlocked(Exception):
     pass
 
 
-async def async_fetch_page(url: str, timeout: int = 20) -> str:
-    """Async wrapper for fetch_page — runs in thread pool."""
+async def async_fetch_page(url: str, timeout: int = 60) -> str:
+    """Async wrapper for fetch_page — runs in thread pool. Default 60s to allow ScrapingBee chain."""
     import asyncio
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: fetch_page(url, timeout))
