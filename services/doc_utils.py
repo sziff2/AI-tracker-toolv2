@@ -50,11 +50,40 @@ def fetch_page(url: str, timeout: int = 20) -> str:
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(url, timeout=timeout)
         resp.raise_for_status()
+        # Check for Cloudflare block in cloudscraper response too
+        if "you have been blocked" in resp.text.lower() or (len(resp.text) < 5000 and "challenge-platform" in resp.text):
+            logger.info("[FETCH] cloudscraper also blocked on %s — trying Google Cache", url)
+            raise _CloudflareBlocked()
         logger.info("[FETCH] cloudscraper succeeded for %s (%d bytes)", url, len(resp.text))
         return resp.text
+    except _CloudflareBlocked:
+        pass
     except Exception as e:
-        logger.warning("[FETCH] cloudscraper also failed for %s: %s", url, str(e)[:100])
-        return ""
+        logger.debug("[FETCH] cloudscraper failed for %s: %s", url, str(e)[:100])
+
+    # Last resort: Google Cache
+    try:
+        import httpx as _httpx
+        cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
+        with _httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            resp = client.get(cache_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html",
+            })
+            if resp.status_code == 200 and len(resp.text) > 5000:
+                # Strip Google's cache header banner
+                text = resp.text
+                banner_end = text.find("</div></div></div>")
+                if banner_end > 0 and banner_end < 2000:
+                    text = text[banner_end + 18:]
+                logger.info("[FETCH] Google Cache succeeded for %s (%d bytes)", url, len(text))
+                return text
+            logger.debug("[FETCH] Google Cache returned %d status, %d bytes", resp.status_code, len(resp.text))
+    except Exception as e:
+        logger.debug("[FETCH] Google Cache failed for %s: %s", url, str(e)[:100])
+
+    logger.warning("[FETCH] All fetch methods failed for %s", url)
+    return ""
 
 
 class _CloudflareBlocked(Exception):
