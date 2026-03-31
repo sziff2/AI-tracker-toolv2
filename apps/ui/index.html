@@ -4407,6 +4407,7 @@ async function addPastedUrls(ticker){
   var ok=0,dup=0,fail=0;
   for(var i=0;i<urls.length;i++){
     var url=urls[i];
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Downloading '+(i+1)+'/'+urls.length+'...</span>';
     // Extract filename for period/type inference
     var filename=url.split('/').pop().split('?')[0];
     var slug=filename.replace(/-/g,' ').replace(/_/g,' ').replace(/\.\w+$/,'');
@@ -4428,16 +4429,33 @@ async function addPastedUrls(ticker){
     else if(sl.indexOf('earnings')>=0||sl.indexOf('release')>=0||sl.indexOf('results')>=0)dtype='earnings_release';
     else if(sl.indexOf('proxy')>=0)dtype='proxy_statement';
     try{
+      // Download in browser (bypasses Cloudflare) then upload to server
+      var resp=await fetch(url);
+      if(!resp.ok)throw new Error('Download failed: '+resp.status);
+      var blob=await resp.blob();
+      var file=new File([blob],filename||'document.pdf',{type:blob.type||'application/pdf'});
+      var title=slug.substring(0,80).replace(/^\s+|\s+$/g,'');
       var fd=new FormData();
-      fd.append('doc_url',url);fd.append('form_type',dtype);
-      fd.append('filing_date','');fd.append('period_label',period);
-      fd.append('title',slug.substring(0,80).replace(/^\s+|\s+$/g,''));
-      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd});
-      var d=await r.json();
-      if(d.status==='ingested')ok++;
-      else if(d.status==='duplicate')dup++;
-      else fail++;
-    }catch(e){fail++;}
+      fd.append('file',file);fd.append('document_type',dtype);
+      fd.append('period_label',period);fd.append('title',title);
+      fd.append('source','manual');fd.append('source_url',url);
+      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/upload',{method:'POST',body:fd});
+      if(r.ok)ok++;
+      else{var d=await r.json().catch(function(){return {};});if((d.detail||'').indexOf('uplicate')>=0)dup++;else fail++;}
+    }catch(e){
+      // If browser fetch also fails (CORS), try server-side as fallback
+      try{
+        var fd2=new FormData();
+        fd2.append('doc_url',url);fd2.append('form_type',dtype);
+        fd2.append('filing_date','');fd2.append('period_label',period);
+        fd2.append('title',slug.substring(0,80));
+        var r2=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd2});
+        var d2=await r2.json();
+        if(d2.status==='ingested')ok++;
+        else if(d2.status==='duplicate')dup++;
+        else fail++;
+      }catch(e2){fail++;}
+    }
   }
   textarea.value='';
   if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
