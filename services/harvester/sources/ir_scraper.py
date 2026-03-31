@@ -99,6 +99,12 @@ _PERIOD_PATTERNS = [
     (r"(?:third|3rd)[- ]quarter[- ](\d{4})",  lambda m: f"{m.group(1)}_Q3"),
     (r"(?:second|2nd)[- ]quarter[- ](\d{4})", lambda m: f"{m.group(1)}_Q2"),
     (r"(?:first|1st)[- ]quarter[- ](\d{4})",  lambda m: f"{m.group(1)}_Q1"),
+    # Short quarter formats: 2q22, 4q-23, 1q25, 3q-24 (common in filenames)
+    (r"(?:^|[^0-9])([1-4])q[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(2)}_Q{m.group(1)}"),
+    # Short FY format: fy25, FY24
+    (r"(?:^|[^a-zA-Z])fy[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_FY"),
+    # Short half-year: h1-25, h2-24
+    (r"(?:^|[^a-zA-Z])h([12])[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(2)}_H{m.group(1)}"),
     # Bare year as last resort
     (r"(\d{4})",                              lambda m: f"{m.group(1)}_FY"),
 ]
