@@ -231,6 +231,8 @@ async def scrape_ir_page(
         if sibling_url != ir_docs_url and sibling_url not in pages_to_scrape:
             pages_to_scrape.append(sibling_url)
 
+    from services.doc_utils import async_fetch_page
+
     async with httpx.AsyncClient(
         timeout=15.0,
         follow_redirects=True,
@@ -242,12 +244,15 @@ async def scrape_ir_page(
             if page_url in visited:
                 continue
             try:
-                resp = await client.get(page_url)
-                if resp.status_code == 404:
+                # Use Cloudflare-aware fetcher for main pages
+                html = await async_fetch_page(page_url, timeout=20)
+                if not html:
+                    if page_url == ir_docs_url:
+                        logger.warning("[SCRAPE] Failed to fetch %s", ir_docs_url)
+                        return []
                     continue
-                resp.raise_for_status()
                 visited.add(page_url)
-                page_links = _extract_links(resp.text, page_url)
+                page_links = _extract_links(html, page_url)
                 all_main_links.extend(page_links)
                 logger.info("[SCRAPE] %s — fetched %s (%d links)", ticker, page_url, len(page_links))
             except Exception as e:

@@ -1,10 +1,71 @@
 """
-Shared utilities for document title cleaning, URL normalisation, and dedup.
+Shared utilities for document title cleaning, URL normalisation, dedup,
+and Cloudflare-aware page fetching.
 Used by harvester dispatcher, ingest endpoint, and UI display.
 """
 
+import logging
 import re
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+
+logger = logging.getLogger(__name__)
+
+
+def fetch_page(url: str, timeout: int = 20) -> str:
+    """
+    Fetch a web page. Uses httpx first, falls back to cloudscraper
+    if Cloudflare bot protection is detected.
+    Returns the page HTML as a string.
+    """
+    import httpx
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.9",
+    }
+
+    # Try httpx first (async-compatible, fast)
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            # Check for Cloudflare block
+            if "you have been blocked" in resp.text.lower() or "cf-chl-bypass" in resp.text.lower() or (len(resp.text) < 5000 and "challenge-platform" in resp.text):
+                logger.info("[FETCH] Cloudflare detected on %s — trying cloudscraper", url)
+                raise _CloudflareBlocked()
+            return resp.text
+    except _CloudflareBlocked:
+        pass
+    except Exception as e:
+        logger.debug("[FETCH] httpx failed for %s: %s", url, str(e)[:100])
+
+    # Fallback to cloudscraper
+    try:
+        import cloudscraper
+        scraper = cloudscraper.create_scraper()
+        resp = scraper.get(url, timeout=timeout)
+        resp.raise_for_status()
+        logger.info("[FETCH] cloudscraper succeeded for %s (%d bytes)", url, len(resp.text))
+        return resp.text
+    except Exception as e:
+        logger.warning("[FETCH] cloudscraper also failed for %s: %s", url, str(e)[:100])
+        return ""
+
+
+class _CloudflareBlocked(Exception):
+    pass
+
+
+async def async_fetch_page(url: str, timeout: int = 20) -> str:
+    """Async wrapper for fetch_page — runs in thread pool."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: fetch_page(url, timeout))
 
 
 def normalise_url(url: str) -> str:
