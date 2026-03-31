@@ -847,14 +847,36 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
             "40-F": "annual_report", "ARS": "annual_report", "DEF 14A": "proxy_statement",
             "6-K": "other",
         }
+        _6k_note = ""
         if form == "8-K":
             inferred_type = "earnings_release" if "2.02" in items else "other"
+        elif form == "6-K":
+            # 6-K has no items — infer from filename and description
+            _6k_ctx = f"{primary_doc} {desc}".lower()
+            if any(k in _6k_ctx for k in ["earnings", "results", "current report"]):
+                inferred_type = "earnings_release"
+                _6k_note = "Earnings/Results"
+            elif any(k in _6k_ctx for k in ["annual", "20-f"]):
+                inferred_type = "annual_report"
+                _6k_note = "Annual Report"
+            else:
+                # Check if filename has a date pattern matching quarter end (e.g. mt-20250630)
+                import re as _re
+                _qend = _re.search(r'(\d{4})(0[369]|12)(30|31)', primary_doc)
+                if _qend:
+                    inferred_type = "earnings_release"
+                    _6k_note = "Quarterly Report"
+                else:
+                    inferred_type = "other"
+                    _6k_note = ""
         else:
             inferred_type = doc_type_map.get(form, "other")
 
-        # Add items description for 8-K
+        # Add items description for 8-K / context for 6-K
         items_desc = ""
-        if items:
+        if form == "6-K" and _6k_note:
+            items_desc = " — " + _6k_note
+        elif items:
             item_labels = {
                 "1.01": "Material Agreement",
                 "1.02": "Termination of Agreement",
