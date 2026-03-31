@@ -58,8 +58,18 @@ async def _download(url: str) -> tuple[bytes, str]:
 # ─────────────────────────────────────────────────────────────────
 
 async def _seen(db: AsyncSession, source_url: str) -> bool:
+    from services.doc_utils import normalise_url
+    norm = normalise_url(source_url)
+    # Check both exact URL and normalised URL
     r = await db.execute(select(HarvestedDocument).where(HarvestedDocument.source_url == source_url))
-    return r.scalar_one_or_none() is not None
+    if r.scalar_one_or_none():
+        return True
+    # Also check normalised version in case query params differ
+    if norm != source_url:
+        r2 = await db.execute(select(HarvestedDocument).where(HarvestedDocument.source_url == norm))
+        if r2.scalar_one_or_none():
+            return True
+    return False
 
 
 async def _record(
@@ -162,7 +172,9 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                 summary["failed"] += 1
                 continue
 
-            # Ingest
+            # Ingest — clean title before saving
+            from services.doc_utils import clean_title
+            headline = clean_title(headline) or headline
             safe_ticker = ticker.replace(" ", "_").replace("/", "_")
             filename = f"{safe_ticker}_{period_label}_{document_type}{suffix}"
 

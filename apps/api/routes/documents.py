@@ -941,6 +941,7 @@ async def ingest_from_url(
             raise HTTPException(502, f"Failed to download: {str(exc)[:200]}")
 
     # Determine filename and extension
+    from services.doc_utils import clean_title
     filename = doc_url.split("/")[-1].split("?")[0] or f"document.pdf"
     suffix = Path(filename).suffix or ".pdf"
     # Auto-title from URL slug if not provided
@@ -948,6 +949,8 @@ async def ingest_from_url(
         slug = filename.replace("-", " ").replace("_", " ")
         slug = slug.rsplit(".", 1)[0] if "." in slug else slug
         title = f"{form_type} {filing_date}".strip() if filing_date else slug[:80]
+    # Clean title: strip version suffixes, language codes, noise
+    title = clean_title(title)
 
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
