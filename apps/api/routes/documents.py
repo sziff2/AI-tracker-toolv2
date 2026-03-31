@@ -439,11 +439,16 @@ async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    # Delete related records first
+    # Delete related records first (all tables with document_id FK)
+    from apps.api.models import HarvestedDocument, ManagementStatement
     await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id == document_id))
     await db.execute(delete(EventAssessment).where(EventAssessment.document_id == document_id))
     await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id == document_id))
     await db.execute(delete(DocumentSection).where(DocumentSection.document_id == document_id))
+    await db.execute(delete(ManagementStatement).where(ManagementStatement.document_id == document_id))
+    # Unlink harvested documents (don't delete — keep the harvest record)
+    from sqlalchemy import update
+    await db.execute(update(HarvestedDocument).where(HarvestedDocument.document_id == document_id).values(document_id=None, ingested=False))
     await db.delete(doc)
     await db.commit()
     return {"status": "deleted", "document_id": str(document_id)}
