@@ -22,8 +22,9 @@ body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--s
 .nav-it:hover{color:var(--text2);background:rgba(255,255,255,.03)}
 .nav-it.on{color:var(--gold);background:var(--goldDim);border-color:rgba(196,164,90,.20)}
 .nav-ico{width:16px;text-align:center;font-size:14px;flex-shrink:0}
-.nav-sector.collapsed+.nav-sector-list{display:none}
-.nav-co{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--text3);transition:all .15s;margin-bottom:1px}
+.nav-sector+.nav-sector-list{display:none}
+.nav-sector.open+.nav-sector-list{display:block}
+.nav-co{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--text2);transition:all .15s;margin-bottom:1px}
 .nav-co:hover{color:var(--text2);background:rgba(255,255,255,.03)}
 .nav-co.on{color:var(--gold);background:var(--goldDim)}
 .nav-co .tk{font-family:var(--mono);font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px}
@@ -541,7 +542,8 @@ async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.o
     var h='';
     sectors.forEach(function(sector){
       var companies=bySector[sector].sort(function(a,b){return(a.name||a.ticker).localeCompare(b.name||b.ticker)});
-      h+='<div class="nav-sector" onclick="this.classList.toggle(\'collapsed\')" style="cursor:pointer;font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text4);padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center"><span>'+esc(sector)+'</span><span style="font-size:10px;color:var(--text4)">'+companies.length+'</span></div>';
+      var hasActive=companies.some(function(c){return E('ck-company')&&E('ck-company').value===c.ticker;});
+      h+='<div class="nav-sector'+(hasActive?' open':'')+'" onclick="this.classList.toggle(\'open\')" style="cursor:pointer;font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center"><span>'+esc(sector)+'</span><span style="font-size:10px;color:var(--text4)">'+companies.length+'</span></div>';
       h+='<div class="nav-sector-list">';
       companies.forEach(function(c){
         var active=E('ck-company')&&E('ck-company').value===c.ticker;
