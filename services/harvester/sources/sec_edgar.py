@@ -142,13 +142,26 @@ def _period_from_form(form_type: str, filing_date: str, period_of_report: Option
     return None
 
 
-def _classify_document_type(form_type: str) -> str:
+def _classify_document_type(form_type: str, items: str = "") -> str:
+    """Classify SEC filing into document type.
+    For 8-Ks, uses SEC item numbers to determine the event type:
+      2.02 = Results of Operations (earnings release)
+      5.02 = Director/officer changes
+      1.01 = Material agreement
+      Others = general material event
+    """
     if form_type in ("10-K", "20-F", "40-F"):
-        return "earnings_release"
+        return "annual_report"
     if form_type in ("10-Q", "6-K"):
-        return "earnings_release"
+        return "10-Q"
+    if form_type == "ARS":
+        return "annual_report"
+    if form_type == "DEF 14A":
+        return "proxy_statement"
     if form_type == "8-K":
-        return "earnings_release"
+        if "2.02" in items:
+            return "earnings_release"
+        return "other"
     return "other"
 
 
@@ -196,6 +209,7 @@ async def fetch_sec_edgar(ticker: str, max_filings: int = 20) -> list[dict]:
         periods = filings.get("periodOfReport", [])
         primary_docs = filings.get("primaryDocument", [])
         descriptions = filings.get("primaryDocDescription", [])
+        items_list = filings.get("items", [])
 
         cutoff_year = datetime.now(timezone.utc).year - 2
 
@@ -257,7 +271,7 @@ async def fetch_sec_edgar(ticker: str, max_filings: int = 20) -> list[dict]:
                 "published_at": published_at or datetime.now(timezone.utc),
                 "pdf_url": doc_url,                 # may be HTML — dispatcher handles both
                 "period_label": period_label,
-                "document_type": _classify_document_type(form),
+                "document_type": _classify_document_type(form, items_list[i] if i < len(items_list) else ""),
                 "form_type": form,
             })
             count += 1

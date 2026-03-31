@@ -797,6 +797,7 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
     periods = filings.get("periodOfReport", [])
     primary_docs = filings.get("primaryDocument", [])
     descriptions = filings.get("primaryDocDescription", [])
+    items_list = filings.get("items", [])
 
     cik_int = int(cik.lstrip("0"))
     cutoff_year = datetime.now(timezone.utc).year - 3
@@ -816,6 +817,7 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
         period = periods[i] if i < len(periods) else ""
         primary_doc = primary_docs[i] if i < len(primary_docs) else ""
         desc = descriptions[i] if i < len(descriptions) else form
+        items = items_list[i] if i < len(items_list) else ""
 
         # Build document URL
         accession_nodash = accession.replace("-", "")
@@ -839,12 +841,36 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
             except ValueError:
                 period_label = period
 
+        # Classify 8-K based on items (2.02 = earnings, others = material event)
+        doc_type_map = {
+            "10-K": "annual_report", "10-Q": "10-Q", "20-F": "annual_report",
+            "40-F": "annual_report", "ARS": "annual_report", "DEF 14A": "proxy_statement",
+            "6-K": "other",
+        }
+        if form == "8-K":
+            inferred_type = "earnings_release" if "2.02" in items else "other"
+        else:
+            inferred_type = doc_type_map.get(form, "other")
+
+        # Add items description for 8-K
+        items_desc = ""
+        if items:
+            item_labels = {
+                "1.01": "Material Agreement", "2.02": "Earnings Release",
+                "5.02": "Director/Officer Change", "7.01": "Reg FD Disclosure",
+                "8.01": "Other Events", "9.01": "Financial Statements",
+            }
+            parts = [item_labels.get(x.strip(), x.strip()) for x in items.split(",")]
+            items_desc = " — " + ", ".join(parts)
+
         results.append({
             "form_type": form,
             "filing_date": filing_date,
             "period_of_report": period,
             "period_label": period_label,
-            "description": desc,
+            "description": (desc or form) + items_desc,
+            "inferred_type": inferred_type,
+            "items": items,
             "accession": accession,
             "doc_url": doc_url,
             "index_url": index_url,
