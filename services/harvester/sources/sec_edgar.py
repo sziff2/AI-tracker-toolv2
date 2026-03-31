@@ -167,8 +167,14 @@ def _classify_document_type(form_type: str, items: str = "") -> str:
     """
     if form_type in ("10-K", "20-F", "40-F"):
         return "annual_report"
-    if form_type in ("10-Q", "6-K"):
+    if form_type == "10-Q":
         return "10-Q"
+    if form_type == "6-K":
+        # 6-K is the foreign private issuer catch-all — could be earnings, quarterly, or material event
+        # Check description for clues
+        if items and ("2.02" in items or "earnings" in items.lower() or "results" in items.lower()):
+            return "earnings_release"
+        return "other"
     if form_type == "ARS":
         return "annual_report"
     if form_type == "DEF 14A":
