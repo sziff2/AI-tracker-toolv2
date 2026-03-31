@@ -402,6 +402,34 @@ async def compare_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 
 
 # ─────────────────────────────────────────────────────────────────
+# Update a document's period or type
+# ─────────────────────────────────────────────────────────────────
+from pydantic import BaseModel as _DocBaseModel
+
+class _DocUpdate(_DocBaseModel):
+    period_label: str | None = None
+    document_type: str | None = None
+    title: str | None = None
+
+@router.patch("/documents/{document_id}")
+async def update_document_metadata(document_id: uuid.UUID, body: _DocUpdate, db: AsyncSession = Depends(get_db)):
+    """Update document metadata (period_label, document_type, title)."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    if body.period_label is not None:
+        doc.period_label = body.period_label
+    if body.document_type is not None:
+        doc.document_type = body.document_type
+    if body.title is not None:
+        doc.title = body.title
+    await db.commit()
+    return {"status": "updated", "id": str(doc.id), "period_label": doc.period_label, "document_type": doc.document_type, "title": doc.title}
+
+
+# ─────────────────────────────────────────────────────────────────
 # Delete a single document
 # ─────────────────────────────────────────────────────────────────
 @router.delete("/documents/{document_id}")
