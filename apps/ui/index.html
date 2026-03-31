@@ -22,6 +22,7 @@ body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--s
 .nav-it:hover{color:var(--text2);background:rgba(255,255,255,.03)}
 .nav-it.on{color:var(--gold);background:var(--goldDim);border-color:rgba(196,164,90,.20)}
 .nav-ico{width:16px;text-align:center;font-size:14px;flex-shrink:0}
+.nav-sector.collapsed+.nav-sector-list{display:none}
 .nav-co{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:12px;color:var(--text3);transition:all .15s;margin-bottom:1px}
 .nav-co:hover{color:var(--text2);background:rgba(255,255,255,.03)}
 .nav-co.on{color:var(--gold);background:var(--goldDim)}
@@ -531,7 +532,25 @@ function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 // ── Companies ───────────────────────────────────────────────
 async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.ok)CC=await r.json();}catch(e){}
   ['company-select','ck-company'].forEach(id=>{const el=E(id);if(!el)return;const cur=el.value;el.innerHTML=id==='company-select'?'<option value="">— Select or type new —</option>':'<option value="">— Select company —</option>';CC.forEach(c=>{const o=document.createElement('option');o.value=c.ticker;o.textContent=c.name+' ('+c.ticker+')';el.appendChild(o);});if(id==='company-select'){const o=document.createElement('option');o.value='__new__';o.textContent='+ Add new company';el.appendChild(o);}el.value=cur;});
-  const sc=E('side-companies');if(sc){let h='';CC.slice().sort(function(a,b){return(a.name||a.ticker).localeCompare(b.name||b.ticker)}).forEach(c=>{const active=E('ck-company')&&E('ck-company').value===c.ticker;h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.name||c.ticker)+'</span></div>';});sc.innerHTML=h;}}
+  const sc=E('side-companies');if(sc){
+    // Group by sector
+    var bySector={};
+    CC.forEach(function(c){var s=c.sector||'Other';if(!bySector[s])bySector[s]=[];bySector[s].push(c);});
+    // Sort sectors alphabetically, "Other" last
+    var sectors=Object.keys(bySector).sort(function(a,b){if(a==='Other')return 1;if(b==='Other')return -1;return a.localeCompare(b);});
+    var h='';
+    sectors.forEach(function(sector){
+      var companies=bySector[sector].sort(function(a,b){return(a.name||a.ticker).localeCompare(b.name||b.ticker)});
+      h+='<div class="nav-sector" onclick="this.classList.toggle(\'collapsed\')" style="cursor:pointer;font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text4);padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center"><span>'+esc(sector)+'</span><span style="font-size:10px;color:var(--text4)">'+companies.length+'</span></div>';
+      h+='<div class="nav-sector-list">';
+      companies.forEach(function(c){
+        var active=E('ck-company')&&E('ck-company').value===c.ticker;
+        h+='<div class="nav-co'+(active?' on':'')+'" onclick="sideSelectCo(\''+esc(c.ticker)+'\')"><span class="tk">'+esc(c.name||c.ticker)+'</span></div>';
+      });
+      h+='</div>';
+    });
+    sc.innerHTML=h;
+  }}
 function ckCompanyChange(){ckHideNewCo();loadCockpit();}
 function ckShowNewCo(){E('ck-new-co-panel').style.display='block';E('ck-add-co-btn').style.display='none';E('ck-company').value='';E('ck-content').innerHTML='';['ck-new-ticker','ck-new-name','ck-new-sector','ck-new-country','ck-new-th-core','ck-new-th-risks','ck-new-th-val'].forEach(x=>{if(E(x))E(x).value='';});CK_NEW_FILES=[];ckNewRenderFL();}
 function ckHideNewCo(){const p=E('ck-new-co-panel');if(p)p.style.display='none';const b=E('ck-add-co-btn');if(b)b.style.display='block';}
