@@ -29,15 +29,22 @@ def fetch_page(url: str, timeout: int = 20) -> str:
         "Accept-Language": "en-GB,en;q=0.9",
     }
 
+    def _is_cloudflare(resp_text, status_code=200):
+        t = resp_text.lower()
+        if "you have been blocked" in t or "cf-chl-bypass" in t:
+            return True
+        if status_code in (403, 503) and ("challenge-platform" in t or "cloudflare" in t or len(resp_text) < 5000):
+            return True
+        return False
+
     # Try httpx first (async-compatible, fast)
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = client.get(url)
-            resp.raise_for_status()
-            # Check for Cloudflare block
-            if "you have been blocked" in resp.text.lower() or "cf-chl-bypass" in resp.text.lower() or (len(resp.text) < 5000 and "challenge-platform" in resp.text):
-                logger.info("[FETCH] Cloudflare detected on %s — trying cloudscraper", url)
+            if _is_cloudflare(resp.text, resp.status_code):
+                logger.info("[FETCH] Cloudflare detected on %s (httpx %d) — trying cloudscraper", url, resp.status_code)
                 raise _CloudflareBlocked()
+            resp.raise_for_status()
             return resp.text
     except _CloudflareBlocked:
         pass
@@ -49,11 +56,10 @@ def fetch_page(url: str, timeout: int = 20) -> str:
         import cloudscraper
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(url, timeout=timeout)
-        resp.raise_for_status()
-        # Check for Cloudflare block in cloudscraper response too
-        if "you have been blocked" in resp.text.lower() or (len(resp.text) < 5000 and "challenge-platform" in resp.text):
-            logger.info("[FETCH] cloudscraper also blocked on %s — trying Google Cache", url)
+        if _is_cloudflare(resp.text, resp.status_code):
+            logger.info("[FETCH] cloudscraper also blocked on %s (%d) — trying ScrapingBee", url, resp.status_code)
             raise _CloudflareBlocked()
+        resp.raise_for_status()
         logger.info("[FETCH] cloudscraper succeeded for %s (%d bytes)", url, len(resp.text))
         return resp.text
     except _CloudflareBlocked:
