@@ -61,26 +61,24 @@ def fetch_page(url: str, timeout: int = 20) -> str:
     except Exception as e:
         logger.debug("[FETCH] cloudscraper failed for %s: %s", url, str(e)[:100])
 
-    # Last resort: Google Cache
+    # Third fallback: ScrapingBee (headless browser, bypasses Cloudflare)
     try:
-        import httpx as _httpx
-        cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
-        with _httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            resp = client.get(cache_url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "text/html",
-            })
-            if resp.status_code == 200 and len(resp.text) > 5000:
-                # Strip Google's cache header banner
-                text = resp.text
-                banner_end = text.find("</div></div></div>")
-                if banner_end > 0 and banner_end < 2000:
-                    text = text[banner_end + 18:]
-                logger.info("[FETCH] Google Cache succeeded for %s (%d bytes)", url, len(text))
-                return text
-            logger.debug("[FETCH] Google Cache returned %d status, %d bytes", resp.status_code, len(resp.text))
+        from configs.settings import settings
+        api_key = getattr(settings, 'scrapingbee_api_key', None) or ""
+        if api_key:
+            import httpx as _httpx
+            from urllib.parse import quote as _quote
+            sb_url = f"https://app.scrapingbee.com/api/v1/?api_key={api_key}&url={_quote(url)}&render_js=true"
+            with _httpx.Client(timeout=max(timeout, 30)) as client:
+                resp = client.get(sb_url)
+                if resp.status_code == 200 and len(resp.text) > 5000:
+                    logger.info("[FETCH] ScrapingBee succeeded for %s (%d bytes)", url, len(resp.text))
+                    return resp.text
+                logger.debug("[FETCH] ScrapingBee returned %d status, %d bytes", resp.status_code, len(resp.text))
+        else:
+            logger.debug("[FETCH] ScrapingBee not configured (no API key)")
     except Exception as e:
-        logger.debug("[FETCH] Google Cache failed for %s: %s", url, str(e)[:100])
+        logger.debug("[FETCH] ScrapingBee failed for %s: %s", url, str(e)[:100])
 
     logger.warning("[FETCH] All fetch methods failed for %s", url)
     return ""

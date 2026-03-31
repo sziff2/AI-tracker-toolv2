@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     eodhd_api_key: Optional[str] = None
     # Set in Railway: EODHD_API_KEY=your_key_here
 
+    # ── ScrapingBee (optional — bypasses Cloudflare for blocked IR pages) ──
+    scrapingbee_api_key: Optional[str] = None
+    # Set in Railway: SCRAPINGBEE_API_KEY=your_key_here
+    # Free tier: 1000 credits/month. JS render = 5 credits per page.
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
