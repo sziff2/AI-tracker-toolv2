@@ -73,6 +73,16 @@ EDGAR_SOURCES: dict[str, dict] = {
         "cik": "0001243429",
         "form_types": ["20-F", "6-K"],
     },
+    "BP LN": {
+        "name": "BP PLC",
+        "cik": "0000313807",
+        "form_types": ["20-F", "6-K"],
+    },
+    "SHEL LN": {
+        "name": "Shell plc",
+        "cik": "0001306965",
+        "form_types": ["20-F", "6-K"],
+    },
     "PYPL US": {
         "name": "PayPal",
         "cik": "0001633917",
