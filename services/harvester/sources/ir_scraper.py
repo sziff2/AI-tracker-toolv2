@@ -199,11 +199,12 @@ async def scrape_ir_page(
     max_subpages: int = 10,
 ) -> list[dict]:
     """
-    Scrape an IR documents page and all linked sub-pages for PDF files.
+    Scrape IR documents pages and all linked sub-pages for PDF files.
+    Supports multiple URLs separated by commas or newlines.
 
     Args:
         ticker: Company ticker e.g. "BNZL LN"
-        ir_docs_url: URL of the IR results/reports page
+        ir_docs_url: URL(s) of the IR results/reports page(s), comma or newline separated
         max_subpages: Max number of sub-pages to crawl (prevents runaway)
 
     Returns:
@@ -211,13 +212,20 @@ async def scrape_ir_page(
     """
     candidates = []
     visited = set()
-    base = _base(ir_docs_url)
-    ir_domain = urlparse(ir_docs_url).netloc
 
-    # Build list of pages to scrape: the provided URL + any sibling results pages
-    pages_to_scrape = [ir_docs_url]
-    # Auto-discover sibling pages (e.g. /results → also try /previous-results)
-    parsed_url = urlparse(ir_docs_url)
+    # Support multiple URLs separated by comma, newline, or space
+    import re as _re
+    all_urls = [u.strip() for u in _re.split(r'[,\n\s]+', ir_docs_url) if u.strip().startswith('http')]
+    if not all_urls:
+        all_urls = [ir_docs_url]
+
+    base = _base(all_urls[0])
+    ir_domain = urlparse(all_urls[0]).netloc
+
+    # Build list of pages to scrape: all provided URLs + sibling discovery
+    pages_to_scrape = list(all_urls)
+    # Auto-discover sibling pages from the first URL
+    parsed_url = urlparse(all_urls[0])
     path = parsed_url.path.rstrip('/')
     _SIBLING_PATTERNS = [
         "previous-results", "past-results", "historical-results",

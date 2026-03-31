@@ -213,16 +213,30 @@ async def scrape_ir_with_llm(
     Returns a list of HarvestCandidate dicts.
     """
     from services.llm_client import call_llm_json_async
+    import re as _re
 
-    base = f"{urlparse(ir_docs_url).scheme}://{urlparse(ir_docs_url).netloc}"
+    # Support multiple URLs separated by comma, newline, or space
+    all_urls = [u.strip() for u in _re.split(r'[,\n\s]+', ir_docs_url) if u.strip().startswith('http')]
+    if not all_urls:
+        all_urls = [ir_docs_url]
 
-    # Fetch the page (with Cloudflare bypass — may use ScrapingBee which takes 15-30s)
+    base = f"{urlparse(all_urls[0]).scheme}://{urlparse(all_urls[0]).netloc}"
+
+    # Fetch all pages and combine content
     from services.doc_utils import async_fetch_page
 
-    raw_html = await async_fetch_page(ir_docs_url, timeout=60)
-    if not raw_html:
-        logger.warning("[LLM-SCRAPE] Failed to fetch %s", ir_docs_url)
+    combined_html = ""
+    for page_url in all_urls:
+        html = await async_fetch_page(page_url, timeout=60)
+        if html:
+            combined_html += f"\n\n<!-- PAGE: {page_url} -->\n" + html
+            logger.info("[LLM-SCRAPE] %s — fetched %s (%d chars)", ticker, page_url, len(html))
+
+    if not combined_html:
+        logger.warning("[LLM-SCRAPE] Failed to fetch any pages for %s", ticker)
         return []
+
+    raw_html = combined_html
 
     async with httpx.AsyncClient(
         timeout=20.0,
