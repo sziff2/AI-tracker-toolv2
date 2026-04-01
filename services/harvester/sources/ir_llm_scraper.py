@@ -43,8 +43,8 @@ _SSR_HEADERS = {
     "Accept-Language": "en-GB,en;q=0.9",
 }
 
-# Max chars of page source to send to LLM (reduced to stay within Railway 30s gateway)
-_MAX_PAGE_CHARS = 15000
+# Max chars of page source to send to LLM
+_MAX_PAGE_CHARS = 40000
 
 # If main page already has this much content, skip sibling pages
 _SKIP_SIBLINGS_THRESHOLD = 5000
@@ -54,18 +54,49 @@ _THIN_CONTENT_THRESHOLD = 1000
 
 
 def _clean_page_source(html: str) -> str:
-    """Strip CSS, scripts, and navigation to reduce token count."""
+    """Strip CSS, scripts, and navigation. Keep sections with document links."""
     # Remove style blocks
     html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    # Remove script blocks (but keep inline JSON data)
-    html = re.sub(r'<script[^>]*src=[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove external script references (keep inline scripts — they often contain document data as JSON)
+    html = re.sub(r'<script[^>]*\ssrc=[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove inline scripts that are clearly code, not data (> 500 chars with function/var keywords)
+    def _strip_code_scripts(m):
+        content = m.group(1)
+        if len(content) > 500 and ('function ' in content or 'var ' in content or 'const ' in content) and '.pdf' not in content.lower():
+            return ''
+        return m.group(0)
+    html = re.sub(r'<script[^>]*>(.*?)</script>', _strip_code_scripts, html, flags=re.DOTALL | re.IGNORECASE)
     # Remove HTML comments
     html = re.sub(r'<!--.*?-->', '', html, flags=re.DOTALL)
-    # Remove nav, header, footer elements
-    html = re.sub(r'<(nav|header|footer)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove nav, header, footer, form elements
+    html = re.sub(r'<(nav|header|footer|form|noscript|iframe|svg)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    # Remove empty tags and attributes to reduce size
+    html = re.sub(r'\s(class|style|data-[a-z-]+|aria-[a-z-]+|id)="[^"]*"', '', html)
     # Collapse whitespace
     html = re.sub(r'\s+', ' ', html)
-    return html.strip()
+    cleaned = html.strip()
+
+    # If cleaned page is too large, prioritise sections containing document links
+    if len(cleaned) > _MAX_PAGE_CHARS:
+        # Extract chunks that contain PDF/document references
+        doc_chunks = []
+        # Find script tags with PDF data (common in SPAs)
+        for m in re.finditer(r'<script[^>]*>(.*?)</script>', cleaned, re.DOTALL | re.IGNORECASE):
+            if '.pdf' in m.group(1).lower() or 'download' in m.group(1).lower():
+                doc_chunks.append(m.group(1)[:_MAX_PAGE_CHARS])
+        # Find HTML sections with href links to documents
+        for m in re.finditer(r'href="[^"]*\.(pdf|xlsx?|pptx?|docx?)[^"]*"[^>]*>[^<]+', cleaned, re.IGNORECASE):
+            start = max(0, m.start() - 200)
+            end = min(len(cleaned), m.end() + 200)
+            doc_chunks.append(cleaned[start:end])
+        if doc_chunks:
+            combined = "\n".join(doc_chunks)
+            if len(combined) > 1000:
+                logger.info("[LLM-SCRAPE] Extracted %d document-rich chunks (%d chars) from %d char page",
+                            len(doc_chunks), len(combined), len(cleaned))
+                return combined[:_MAX_PAGE_CHARS]
+
+    return cleaned
 
 
 def _extract_visible_text(html: str) -> str:
