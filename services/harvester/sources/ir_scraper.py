@@ -73,14 +73,14 @@ _PERIOD_PATTERNS = [
     (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_FY"),
     (r"FY\s*(\d{4})",                         lambda m: f"{m.group(1)}_FY"),
     (r"(\d{4})[- ]FY",                        lambda m: f"{m.group(1)}_FY"),
-    # Half year
-    (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_H1"),
-    (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_H1"),
-    (r"interim\s+(?:results?\s+)?(\d{4})",    lambda m: f"{m.group(1)}_H1"),
-    (r"H1\s+(\d{4})",                         lambda m: f"{m.group(1)}_H1"),
-    (r"H2\s+(\d{4})",                         lambda m: f"{m.group(1)}_H2"),
-    (r"HY\s+(\d{4})",                         lambda m: f"{m.group(1)}_HY"),
-    (r"(\d{4})[_-]HY",                        lambda m: f"{m.group(1)}_HY"),
+    # Half year — HY/H1/interim all map to Q2 (first half = ends Q2)
+    (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q2"),
+    (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_Q2"),
+    (r"interim\s+(?:results?\s+)?(\d{4})",    lambda m: f"{m.group(1)}_Q2"),
+    (r"H1\s+(\d{4})",                         lambda m: f"{m.group(1)}_Q2"),
+    (r"H2\s+(\d{4})",                         lambda m: f"{m.group(1)}_Q4"),
+    (r"HY\s+(\d{4})",                         lambda m: f"{m.group(1)}_Q2"),
+    (r"(\d{4})[_-]HY",                        lambda m: f"{m.group(1)}_Q2"),
     # Quarter — Q1/Q2/Q3/Q4 format, both word orders
     (r"Q([1-4])\s+(\d{4})",                   lambda m: f"{m.group(2)}_Q{m.group(1)}"),
     (r"(\d{4})\s+Q([1-4])",                   lambda m: f"{m.group(1)}_Q{m.group(2)}"),
@@ -103,8 +103,9 @@ _PERIOD_PATTERNS = [
     (r"(?:^|[^0-9])([1-4])q[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(2)}_Q{m.group(1)}"),
     # Short FY format: fy25, FY24
     (r"(?:^|[^a-zA-Z])fy[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_FY"),
-    # Short half-year: h1-25, h2-24
-    (r"(?:^|[^a-zA-Z])h([12])[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(2)}_H{m.group(1)}"),
+    # Short half-year: h1-25 → Q2, h2-24 → Q4
+    (r"(?:^|[^a-zA-Z])h1[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_Q2"),
+    (r"(?:^|[^a-zA-Z])h2[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_Q4"),
     # Bare year as last resort
     (r"(\d{4})",                              lambda m: f"{m.group(1)}_FY"),
 ]
