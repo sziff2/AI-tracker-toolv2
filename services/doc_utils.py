@@ -29,37 +29,56 @@ def fetch_page(url: str, timeout: int = 20) -> str:
         "Accept-Language": "en-GB,en;q=0.9",
     }
 
-    def _is_cloudflare(resp_text, status_code=200):
+    def _needs_js_rendering(resp_text, status_code=200):
+        """Detect if a page needs JS rendering: Cloudflare block, SPA shell, or empty content."""
         t = resp_text.lower()
+        # Cloudflare / bot protection
         if "you have been blocked" in t or "cf-chl-bypass" in t:
-            return True
-        if status_code in (403, 503) and ("challenge-platform" in t or "cloudflare" in t or len(resp_text) < 5000):
-            return True
-        return False
+            return True, "cloudflare_block"
+        if status_code in (403, 503) and ("challenge-platform" in t or "cloudflare" in t):
+            return True, "cloudflare_challenge"
+        # SPA shell — page returned but no real content (JS loads it)
+        # Indicators: has <script> tags but very few links, no PDFs, small visible text
+        import re
+        visible = re.sub(r'<[^>]+>', ' ', resp_text)
+        visible = re.sub(r'\s+', ' ', visible).strip()
+        has_react = any(k in t for k in ['__next', '__nuxt', 'react', 'vue', 'angular', 'webpack', 'app-root'])
+        pdf_count = len(re.findall(r'\.pdf', t))
+        link_count = len(re.findall(r'href="https?://', t))
+        if has_react and pdf_count == 0 and len(visible) < 3000:
+            return True, "spa_shell"
+        # 404 but substantial HTML (SPA returning shell for all routes)
+        if status_code == 404 and len(resp_text) > 10000 and pdf_count == 0:
+            return True, "spa_404"
+        return False, ""
 
     # Try httpx first (async-compatible, fast)
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
             resp = client.get(url)
-            if _is_cloudflare(resp.text, resp.status_code):
-                logger.info("[FETCH] Cloudflare detected on %s (httpx %d) — trying cloudscraper", url, resp.status_code)
+            needs_js, reason = _needs_js_rendering(resp.text, resp.status_code)
+            if needs_js:
+                logger.info("[FETCH] Needs JS rendering on %s (httpx %d, reason=%s)", url, resp.status_code, reason)
                 raise _CloudflareBlocked()
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                raise Exception(f"HTTP {resp.status_code}")
             return resp.text
     except _CloudflareBlocked:
         pass
     except Exception as e:
         logger.debug("[FETCH] httpx failed for %s: %s", url, str(e)[:100])
 
-    # Fallback to cloudscraper
+    # Fallback to cloudscraper (solves basic Cloudflare challenges)
     try:
         import cloudscraper
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(url, timeout=timeout)
-        if _is_cloudflare(resp.text, resp.status_code):
-            logger.info("[FETCH] cloudscraper also blocked on %s (%d) — trying ScrapingBee", url, resp.status_code)
+        needs_js, reason = _needs_js_rendering(resp.text, resp.status_code)
+        if needs_js:
+            logger.info("[FETCH] cloudscraper also needs JS on %s (%d, reason=%s)", url, resp.status_code, reason)
             raise _CloudflareBlocked()
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise Exception(f"HTTP {resp.status_code}")
         logger.info("[FETCH] cloudscraper succeeded for %s (%d bytes)", url, len(resp.text))
         return resp.text
     except _CloudflareBlocked:
