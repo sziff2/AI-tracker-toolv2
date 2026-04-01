@@ -228,16 +228,18 @@ _PERIOD_PATTERNS = [
     # 2025-Q3 / 2025_Q1
     (re.compile(r'(\d{4})[\s\-_\.]*[Qq]([1-4])'), lambda m: f'{m.group(1)}_Q{m.group(2)}'),
     # FY2024 / FY-2024 / FY_2024
-    (re.compile(r'FY[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(1)}_FY'),
+    (re.compile(r'FY[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(1)}_Q4'),
     # 2025-annual / 2024_annual / 2024-full-year
-    (re.compile(r'(\d{4})[\s\-_\.]*(annual|full[\s\-_]*year)', re.IGNORECASE), lambda m: f'{m.group(1)}_FY'),
+    (re.compile(r'(\d{4})[\s\-_\.]*(annual|full[\s\-_]*year)', re.IGNORECASE), lambda m: f'{m.group(1)}_Q4'),
     # annual-2025 / annual_report_2024
-    (re.compile(r'(annual|full[\s\-_]*year)[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(2)}_FY'),
-    # H1-2025 / 1H2025 / H2_2024
-    (re.compile(r'[Hh]([12])[\s\-_\.]*(\d{4})'), lambda m: f'{m.group(2)}_H{m.group(1)}'),
-    (re.compile(r'([12])[Hh][\s\-_\.]*(\d{4})'), lambda m: f'{m.group(2)}_H{m.group(1)}'),
-    # 2025-H1
-    (re.compile(r'(\d{4})[\s\-_\.]*[Hh]([12])'), lambda m: f'{m.group(1)}_H{m.group(2)}'),
+    (re.compile(r'(annual|full[\s\-_]*year)[\s\-_\.]*(\d{4})', re.IGNORECASE), lambda m: f'{m.group(2)}_Q4'),
+    # H1-2025 / 1H2025 → Q2, H2_2024 → Q4
+    (re.compile(r'[Hh]1[\s\-_\.]*(\d{4})'), lambda m: f'{m.group(1)}_Q2'),
+    (re.compile(r'[Hh]2[\s\-_\.]*(\d{4})'), lambda m: f'{m.group(1)}_Q4'),
+    (re.compile(r'1[Hh][\s\-_\.]*(\d{4})'), lambda m: f'{m.group(1)}_Q2'),
+    (re.compile(r'2[Hh][\s\-_\.]*(\d{4})'), lambda m: f'{m.group(1)}_Q4'),
+    (re.compile(r'(\d{4})[\s\-_\.]*[Hh]1'), lambda m: f'{m.group(1)}_Q2'),
+    (re.compile(r'(\d{4})[\s\-_\.]*[Hh]2'), lambda m: f'{m.group(1)}_Q4'),
 ]
 
 

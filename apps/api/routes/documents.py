@@ -831,7 +831,7 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
                 pdt = datetime.strptime(period, "%Y-%m-%d")
                 py, pm = pdt.year, pdt.month
                 if form in ("10-K", "20-F", "40-F", "ARS"):
-                    period_label = f"{py}_FY"
+                    period_label = f"{py}_Q4"
                 elif form in ("10-Q", "6-K"):
                     period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
                 elif form == "8-K":
@@ -956,7 +956,7 @@ async def ingest_from_url(
         if date_match:
             py, pm = int(date_match.group(1)), int(date_match.group(2))
             if form_type in ("10-K", "20-F", "40-F", "ARS", "annual_report"):
-                period_label = f"{py}_FY"
+                period_label = f"{py}_Q4"
             else:
                 period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
         else:

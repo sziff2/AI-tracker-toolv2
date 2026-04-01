@@ -67,12 +67,12 @@ _RESULTS_PDF_PATTERNS = [
 
 _PERIOD_PATTERNS = [
     # Full year — both word orders
-    (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})[- ]full[- ]?year",             lambda m: f"{m.group(1)}_FY"),
-    (r"annual\s+report\s+(\d{4})",            lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_FY"),
-    (r"FY\s*(\d{4})",                         lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})[- ]FY",                        lambda m: f"{m.group(1)}_FY"),
+    (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})[- ]full[- ]?year",             lambda m: f"{m.group(1)}_Q4"),
+    (r"annual\s+report\s+(\d{4})",            lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_Q4"),
+    (r"FY\s*(\d{4})",                         lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})[- ]FY",                        lambda m: f"{m.group(1)}_Q4"),
     # Half year — HY/H1/interim all map to Q2 (first half = ends Q2)
     (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q2"),
     (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_Q2"),
@@ -102,12 +102,12 @@ _PERIOD_PATTERNS = [
     # Short quarter formats: 2q22, 4q-23, 1q25, 3q-24 (common in filenames)
     (r"(?:^|[^0-9])([1-4])q[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(2)}_Q{m.group(1)}"),
     # Short FY format: fy25, FY24
-    (r"(?:^|[^a-zA-Z])fy[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_FY"),
+    (r"(?:^|[^a-zA-Z])fy[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_Q4"),
     # Short half-year: h1-25 → Q2, h2-24 → Q4
     (r"(?:^|[^a-zA-Z])h1[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_Q2"),
     (r"(?:^|[^a-zA-Z])h2[- ]?(\d{2})(?:[^0-9]|$)", lambda m: f"20{m.group(1)}_Q4"),
     # Bare year as last resort
-    (r"(\d{4})",                              lambda m: f"{m.group(1)}_FY"),
+    (r"(\d{4})",                              lambda m: f"{m.group(1)}_Q4"),
 ]
 
 

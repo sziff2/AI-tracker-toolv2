@@ -208,7 +208,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="g2">
       <div><div class="fl">Company</div><select class="fi" id="company-select" onchange="onCompanySelect()"><option value="">— Select or type new —</option></select></div>
       <div style="display:flex;gap:12px">
-        <div style="flex:1"><div class="fl">Period</div><select class="fi" id="period-type"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div>
+        <div style="flex:1"><div class="fl">Period</div><select class="fi" id="period-type"><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div>
         <div style="flex:1"><div class="fl">Year</div><select class="fi" id="period-year"></select></div>
       </div>
     </div>
@@ -1059,7 +1059,7 @@ function renderCkResults(ticker,d){
   h+='</div><button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Add / Analyse Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">&times; Cancel</button></div>';
-  h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type" onchange="npCheckExistingDocs(\''+ticker+'\')"><option value="FY">FY</option><option value="HY">HY</option><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year" onchange="npCheckExistingDocs(\''+ticker+'\')"></select></div></div>';
+  h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type" onchange="npCheckExistingDocs(\''+ticker+'\')"><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year" onchange="npCheckExistingDocs(\''+ticker+'\')"></select></div></div>';
   h+='<div id="np-existing-docs" style="margin-top:14px"></div>';
   h+='<div style="margin-top:14px;font-family:var(--sans);font-size:12px;color:var(--text4)">Documents can be added via the <a href="#" onclick="var b=Array.from(document.querySelectorAll(\'.tab\')).find(function(x){return x.textContent===\'Documents\';});if(b){ckTab(\'documents\',b);}return false;" style="color:var(--gold);text-decoration:underline">Documents tab</a>. Add any additional files (transcripts, broker notes) below.</div>';
   h+='<div style="margin-top:10px"><div class="fl">Additional Files</div><div id="np-file-list" style="margin-top:8px"></div><button class="af" onclick="E(\'np-hfi\').click()" style="margin-top:8px"><span style="font-size:18px">+</span> Add file (transcript, broker note, etc.)</button><input type="file" id="np-hfi" accept=".pdf,.docx,.txt" style="display:none" multiple></div>';
@@ -4096,8 +4096,8 @@ function suggestPeriodFromDate(filingDate,formType){
   try{
     var parts=filingDate.split('-');var yr=parseInt(parts[0]);var m=parseInt(parts[1]);
     if(formType==='10-K'||formType==='20-F'||formType==='40-F'||formType==='ARS'){
-      // Annual reports filed Jan-Mar report on prior FY, Apr+ on current FY
-      return m<=3?(yr-1)+'_FY':yr+'_FY';
+      // Annual reports filed Jan-Mar report on prior Q4, Apr+ on current Q4
+      return m<=3?(yr-1)+'_Q4':yr+'_Q4';
     }
     // Quarterly: filing date lags the reporting quarter
     if(m>=1&&m<=3)return(yr-1)+'_Q4';
@@ -4107,9 +4107,13 @@ function suggestPeriodFromDate(filingDate,formType){
   }catch(e){return '';}
 }
 function edgarPeriodOpts(selected){
+  // Map FY→Q4 and HY→Q2 if passed as selected value
+  if(selected){
+    selected=selected.replace('_FY','_Q4').replace('_HY','_Q2').replace('_H1','_Q2').replace('_H2','_Q4');
+  }
   var yr=new Date().getFullYear();var opts=['<option value="">— period —</option>'];
   for(var y=yr;y>=yr-3;y--){
-    ['FY','Q4','Q3','Q2','Q1'].forEach(function(q){opts.push('<option value="'+y+'_'+q+'"'+(y+'_'+q===selected?' selected':'')+'>'+q+' '+y+'</option>');});
+    ['Q4','Q3','Q2','Q1'].forEach(function(q){opts.push('<option value="'+y+'_'+q+'"'+(y+'_'+q===selected?' selected':'')+'>'+q+' '+y+'</option>');});
   }
   return opts.join('');
 }
