@@ -567,12 +567,14 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
     # Batch fetch prices and scenarios
     company_ids = list(set(r.company_id for r in rows))
     prices_q = await db.execute(
-        select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency)
+        select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency, PriceRecord.price_date)
         .where(PriceRecord.company_id.in_(company_ids))
-        .order_by(PriceRecord.company_id, PriceRecord.price_date.desc())
-        .distinct(PriceRecord.company_id)
+        .order_by(PriceRecord.price_date.desc())
     )
-    prices_by_co = {r.company_id: r for r in prices_q.all()}
+    prices_by_co = {}
+    for pr in prices_q.all():
+        if pr.company_id not in prices_by_co:
+            prices_by_co[pr.company_id] = pr
     scenarios_q = await db.execute(
         select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
     )
