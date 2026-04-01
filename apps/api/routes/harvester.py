@@ -153,6 +153,30 @@ async def _run_harvest_bg(tickers):
     logger.info("[HARVEST] Manual run complete: %s", result)
 
 
+# ── GET /harvester/test-fetch — diagnostic for page fetching ───────
+
+@router.get("/harvester/test-fetch")
+async def test_fetch(url: str):
+    """Diagnostic: test fetch_page chain on a URL."""
+    from services.doc_utils import fetch_page
+    import time
+    start = time.time()
+    html = fetch_page(url, timeout=90)
+    elapsed = round(time.time() - start, 1)
+    import re
+    pdfs = len(re.findall(r'\.pdf', html, re.IGNORECASE))
+    visible = re.sub(r'<[^>]+>', ' ', html)
+    visible = re.sub(r'\s+', ' ', visible).strip()
+    return {
+        "url": url,
+        "size": len(html),
+        "pdfs": pdfs,
+        "visible_text_len": len(visible),
+        "elapsed_seconds": elapsed,
+        "first_100": html[:100] if html else "EMPTY",
+    }
+
+
 # ── POST /harvester/llm-scan — LLM-powered IR page scan ───────────
 
 @router.post("/harvester/llm-scan/{ticker:path}")
