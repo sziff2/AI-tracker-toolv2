@@ -93,13 +93,14 @@ def fetch_page(url: str, timeout: int = 20) -> str:
         if api_key:
             import httpx as _httpx
             from urllib.parse import quote as _quote
-            sb_url = f"https://app.scrapingbee.com/api/v1/?api_key={api_key}&url={_quote(url)}&render_js=true"
-            with _httpx.Client(timeout=max(timeout, 30)) as client:
+            sb_url = f"https://app.scrapingbee.com/api/v1/?api_key={api_key}&url={_quote(url)}&render_js=true&wait=5000"
+            logger.info("[FETCH] Trying ScrapingBee for %s", url)
+            with _httpx.Client(timeout=90) as client:
                 resp = client.get(sb_url)
                 if resp.status_code == 200 and len(resp.text) > 5000:
                     logger.info("[FETCH] ScrapingBee succeeded for %s (%d bytes)", url, len(resp.text))
                     return resp.text
-                logger.debug("[FETCH] ScrapingBee returned %d status, %d bytes", resp.status_code, len(resp.text))
+                logger.warning("[FETCH] ScrapingBee returned %d status, %d bytes for %s", resp.status_code, len(resp.text), url)
         else:
             logger.debug("[FETCH] ScrapingBee not configured (no API key)")
     except Exception as e:
@@ -113,8 +114,8 @@ class _CloudflareBlocked(Exception):
     pass
 
 
-async def async_fetch_page(url: str, timeout: int = 60) -> str:
-    """Async wrapper for fetch_page — runs in thread pool. Default 60s to allow ScrapingBee chain."""
+async def async_fetch_page(url: str, timeout: int = 120) -> str:
+    """Async wrapper for fetch_page — runs in thread pool. Default 120s to allow full ScrapingBee chain."""
     import asyncio
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: fetch_page(url, timeout))
