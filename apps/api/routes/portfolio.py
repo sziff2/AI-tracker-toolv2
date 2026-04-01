@@ -164,24 +164,27 @@ async def get_portfolio(portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_
 
     # Batch fetch all prices and scenarios in 2 queries instead of 2*N
     company_ids = list(set(r.company_id for r in rows))
-
-    # Latest price per company — fetch all, deduplicate in Python
-    prices_q = await db.execute(
-        select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency, PriceRecord.price_date)
-        .where(PriceRecord.company_id.in_(company_ids))
-        .order_by(PriceRecord.price_date.desc())
-    )
     prices_by_co = {}
-    for pr in prices_q.all():
-        if pr.company_id not in prices_by_co:
-            prices_by_co[pr.company_id] = pr
+    scenarios_by_co_raw = []
 
-    # All scenarios (single query)
-    scenarios_q = await db.execute(
-        select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
-    )
+    if company_ids:
+        prices_q = await db.execute(
+            select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency, PriceRecord.price_date)
+            .where(PriceRecord.company_id.in_(company_ids))
+            .order_by(PriceRecord.price_date.desc())
+        )
+        for pr in prices_q.all():
+            if pr.company_id not in prices_by_co:
+                prices_by_co[pr.company_id] = pr
+
+        scenarios_q = await db.execute(
+            select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
+        )
+        scenarios_by_co_raw = scenarios_q.scalars().all()
+
+    # Build scenarios dict
     scenarios_by_co = {}
-    for s in scenarios_q.scalars().all():
+    for s in scenarios_by_co_raw:
         if s.company_id not in scenarios_by_co:
             scenarios_by_co[s.company_id] = {}
         scenarios_by_co[s.company_id][s.scenario_type] = {
@@ -572,17 +575,18 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
         .order_by(PriceRecord.price_date.desc())
     )
     prices_by_co = {}
-    for pr in prices_q.all():
-        if pr.company_id not in prices_by_co:
-            prices_by_co[pr.company_id] = pr
-    scenarios_q = await db.execute(
-        select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
-    )
     scenarios_by_co = {}
-    for s in scenarios_q.scalars().all():
-        if s.company_id not in scenarios_by_co:
-            scenarios_by_co[s.company_id] = {}
-        scenarios_by_co[s.company_id][s.scenario_type] = s
+    if company_ids:
+        for pr in prices_q.all():
+            if pr.company_id not in prices_by_co:
+                prices_by_co[pr.company_id] = pr
+        scenarios_q = await db.execute(
+            select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
+        )
+        for s in scenarios_q.scalars().all():
+            if s.company_id not in scenarios_by_co:
+                scenarios_by_co[s.company_id] = {}
+            scenarios_by_co[s.company_id][s.scenario_type] = s
 
     holdings = []
     sector_weights = {}
