@@ -148,27 +148,52 @@ async def get_portfolio(portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_
     if not p:
         raise HTTPException(404, "Portfolio not found")
 
+    # Use column-level select to avoid loading Company relationships
+    from sqlalchemy import func
     holdings_q = await db.execute(
-        select(PortfolioHolding, Company)
+        select(
+            PortfolioHolding.id, PortfolioHolding.weight, PortfolioHolding.cost_basis,
+            PortfolioHolding.shares, PortfolioHolding.status, PortfolioHolding.company_id,
+            Company.ticker, Company.name, Company.sector, Company.country,
+        )
         .join(Company, PortfolioHolding.company_id == Company.id)
         .where(PortfolioHolding.portfolio_id == p.id)
         .order_by(PortfolioHolding.weight.desc())
     )
+    rows = holdings_q.all()
 
-    holdings = []
-    for h, c in holdings_q.all():
-        price_rec = await _get_latest_price(db, c.id)
-        current_price = float(price_rec.price) if price_rec else None
+    # Batch fetch all prices and scenarios in 2 queries instead of 2*N
+    company_ids = list(set(r.company_id for r in rows))
 
-        # Get scenarios
-        scenarios_q = await db.execute(
-            select(ValuationScenario).where(ValuationScenario.company_id == c.id)
-        )
-        scenarios = {s.scenario_type: {
+    # Latest price per company (single query)
+    from sqlalchemy import distinct
+    prices_q = await db.execute(
+        select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency)
+        .where(PriceRecord.company_id.in_(company_ids))
+        .order_by(PriceRecord.company_id, PriceRecord.price_date.desc())
+        .distinct(PriceRecord.company_id)
+    )
+    prices_by_co = {r.company_id: r for r in prices_q.all()}
+
+    # All scenarios (single query)
+    scenarios_q = await db.execute(
+        select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
+    )
+    scenarios_by_co = {}
+    for s in scenarios_q.scalars().all():
+        if s.company_id not in scenarios_by_co:
+            scenarios_by_co[s.company_id] = {}
+        scenarios_by_co[s.company_id][s.scenario_type] = {
             "target_price": float(s.target_price) if s.target_price else None,
             "probability": float(s.probability) if s.probability else None,
             "methodology": s.methodology,
-        } for s in scenarios_q.scalars().all()}
+        }
+
+    holdings = []
+    for r in rows:
+        price_rec = prices_by_co.get(r.company_id)
+        current_price = float(price_rec.price) if price_rec else None
+        scenarios = scenarios_by_co.get(r.company_id, {})
 
         # Compute returns
         upside = downside = expected_return = None
@@ -189,12 +214,12 @@ async def get_portfolio(portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_
                 expected_return = round((ev / current_price - 1) * 100, 1)
 
         holdings.append({
-            "id": str(h.id), "ticker": c.ticker, "name": c.name,
-            "sector": c.sector, "country": c.country,
-            "weight": float(h.weight) if h.weight else 0,
-            "cost_basis": float(h.cost_basis) if h.cost_basis else None,
-            "shares": float(h.shares) if h.shares else None,
-            "status": h.status,
+            "id": str(r.id), "ticker": r.ticker, "name": r.name,
+            "sector": r.sector, "country": r.country,
+            "weight": float(r.weight) if r.weight else 0,
+            "cost_basis": float(r.cost_basis) if r.cost_basis else None,
+            "shares": float(r.shares) if r.shares else None,
+            "status": r.status,
             "current_price": current_price,
             "currency": price_rec.currency if price_rec else None,
             "scenarios": scenarios,
@@ -526,12 +551,35 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
     if not p:
         raise HTTPException(404, "Portfolio not found")
 
+    # Column-level select to avoid loading Company relationships
     holdings_q = await db.execute(
-        select(PortfolioHolding, Company)
+        select(
+            PortfolioHolding.id, PortfolioHolding.weight, PortfolioHolding.company_id,
+            Company.ticker, Company.name, Company.sector, Company.country,
+        )
         .join(Company, PortfolioHolding.company_id == Company.id)
         .where(PortfolioHolding.portfolio_id == p.id, PortfolioHolding.status == "active")
         .order_by(PortfolioHolding.weight.desc())
     )
+    rows = holdings_q.all()
+
+    # Batch fetch prices and scenarios
+    company_ids = list(set(r.company_id for r in rows))
+    prices_q = await db.execute(
+        select(PriceRecord.company_id, PriceRecord.price, PriceRecord.currency)
+        .where(PriceRecord.company_id.in_(company_ids))
+        .order_by(PriceRecord.company_id, PriceRecord.price_date.desc())
+        .distinct(PriceRecord.company_id)
+    )
+    prices_by_co = {r.company_id: r for r in prices_q.all()}
+    scenarios_q = await db.execute(
+        select(ValuationScenario).where(ValuationScenario.company_id.in_(company_ids))
+    )
+    scenarios_by_co = {}
+    for s in scenarios_q.scalars().all():
+        if s.company_id not in scenarios_by_co:
+            scenarios_by_co[s.company_id] = {}
+        scenarios_by_co[s.company_id][s.scenario_type] = s
 
     holdings = []
     sector_weights = {}
@@ -540,24 +588,18 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
     weighted_expected_return = 0
     weighted_downside = 0
 
-    for h, c in holdings_q.all():
-        w = float(h.weight or 0)
+    for r in rows:
+        w = float(r.weight or 0)
         total_weight += w
 
-        # Sector/country
-        sec = c.sector or "Other"
-        cty = c.country or "Other"
+        sec = r.sector or "Other"
+        cty = r.country or "Other"
         sector_weights[sec] = sector_weights.get(sec, 0) + w
         country_weights[cty] = country_weights.get(cty, 0) + w
 
-        # Price and scenarios
-        price_rec = await _get_latest_price(db, c.id)
+        price_rec = prices_by_co.get(r.company_id)
         cp = float(price_rec.price) if price_rec else None
-
-        scenarios_q = await db.execute(
-            select(ValuationScenario).where(ValuationScenario.company_id == c.id)
-        )
-        scenarios = {s.scenario_type: s for s in scenarios_q.scalars().all()}
+        scenarios = scenarios_by_co.get(r.company_id, {})
 
         upside = downside = expected_ret = None
         if cp and cp > 0:
@@ -578,7 +620,7 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
                 weighted_expected_return += w * expected_ret / 100
 
         holdings.append({
-            "ticker": c.ticker, "name": c.name, "sector": sec, "country": cty,
+            "ticker": r.ticker, "name": r.name, "sector": sec, "country": cty,
             "weight": w, "current_price": cp,
             "upside": upside, "downside": downside, "expected_return": expected_ret,
         })
