@@ -2,9 +2,10 @@
 Document Harvesting Agent
 
 Priority order per company:
-  1. SEC EDGAR  — structured filings, most reliable, no scraping
-  2. IR Scraper — fallback for companies not on EDGAR, using
-                  ir_docs_url stored in harvester_sources table
+  1. SEC EDGAR      — structured filings, most reliable, no scraping
+  2. Investegate    — UK RNS announcements (results, trading updates)
+  3. IR Scraper     — fallback regex scraper using ir_docs_url
+  4. LLM Scraper    — last resort, sends page HTML to Claude
 
 The ir_docs_url is set via the Harvester Sources admin panel
 in the Data Hub — analysts paste the IR documents page URL
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from apps.api.database import AsyncSessionLocal
 from apps.api.models import Company, HarvesterSource
 from services.harvester.sources.sec_edgar import fetch_sec_edgar, EDGAR_SOURCES
+from services.harvester.sources.investegate import fetch_investegate, INVESTEGATE_SOURCES
 from services.harvester.sources.ir_scraper import scrape_ir_page
 from services.harvester.sources.ir_llm_scraper import scrape_ir_with_llm
 from services.harvester.dispatcher import dispatch_candidates
@@ -75,7 +77,27 @@ async def run_harvest(tickers: list[str] | None = None) -> dict:
                     company.ticker, exc, exc_info=True
                 )
 
-        # ── Priority 2: IR page scraper (regex) ──────────────────
+        # ── Priority 2: Investegate (UK RNS) ─────────────────────
+        # Runs even if EDGAR found results — catches UK-specific
+        # trading updates that don't appear as SEC filings.
+        if company.ticker in INVESTEGATE_SOURCES:
+            try:
+                candidates = await fetch_investegate(company.ticker)
+                if candidates:
+                    all_candidates.extend(candidates)
+                    if used_source is None:
+                        used_source = "investegate"
+                    logger.info(
+                        "[HARVEST] %s → Investegate (%d candidates)",
+                        company.ticker, len(candidates)
+                    )
+            except Exception as exc:
+                logger.error(
+                    "[HARVEST] Investegate error for %s: %s",
+                    company.ticker, exc, exc_info=True
+                )
+
+        # ── Priority 3: IR page scraper (regex) ──────────────────
         if used_source is None:
             ir_docs_url = src.ir_docs_url if src else None
 
@@ -98,7 +120,7 @@ async def run_harvest(tickers: list[str] | None = None) -> dict:
                         company.ticker, exc, exc_info=True
                     )
 
-        # ── Priority 3: LLM-powered scraper (fallback) ──────────
+        # ── Priority 4: LLM-powered scraper (fallback) ──────────
         if used_source is None:
             ir_docs_url = src.ir_docs_url if src else None
 

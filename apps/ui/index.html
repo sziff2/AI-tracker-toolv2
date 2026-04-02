@@ -3972,8 +3972,8 @@ async function loadCkDocuments(ticker){
       // Cross-reference duplicate detection: check title similarity against ingested docs
       var normTitle=(doc.headline||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,30);
       var likelyDuplicate=(!alreadyIn&&normTitle&&ingestedTitles.has(normTitle));
-      var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎'}[doc.source]||'📄';
-      var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','ir_llm':'LLM','manual':'Manual'}[doc.source]||doc.source||'';
+      var srcIcon={'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎','investegate':'📰'}[doc.source]||'📄';
+      var srcLabel={'edgar':'EDGAR','ir_scrape':'Scraped','ir_llm':'LLM','manual':'Manual','investegate':'RNS'}[doc.source]||doc.source||'';
       var dt=doc.discovered_at?doc.discovered_at.split('T')[0]:'';
       var period=doc.period||'';
       var docType=doc.document_type||'other';
@@ -4596,8 +4596,9 @@ async function loadHarvesterSourcesPanel(){
     rows.forEach(function(row){
       var safe=row.ticker.replace(/ /g,'_').replace(/\./g,'_');
       var isEdgar=row.active_source==='edgar';
-      var srcClr=isEdgar?'var(--green)':row.active_source==='ir_scrape'?'var(--gold)':'var(--text4)';
-      var srcLabel=isEdgar?'🏛 EDGAR':row.active_source==='ir_scrape'?'🔎 Scraper':'⚠ None';
+      var isInvestegate=row.active_source==='investegate';
+      var srcClr=isEdgar?'var(--green)':isInvestegate?'var(--blue)':row.active_source==='ir_scrape'?'var(--gold)':'var(--text4)';
+      var srcLabel=isEdgar?'🏛 EDGAR':isInvestegate?'📰 RNS':row.active_source==='ir_scrape'?'🔎 Scraper':'⚠ None';
       var chk=row.override?'checked':'';
       var lastChk=row.last_checked_at?row.last_checked_at.split('T')[0]:'—';
       var inputDisabled=isEdgar?'disabled':'';
@@ -4679,7 +4680,7 @@ async function loadHarvestLogPanel(){
     if(!r.ok)throw new Error('Failed');
     var rows=await r.json();
     if(!rows.length){el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);padding:6px 0">No harvest activity yet.</div>';return;}
-    var srcLabels={'edgar':'EDGAR','ir_scrape':'Scraper','ir_rss':'RSS','manual':'Manual'};
+    var srcLabels={'edgar':'EDGAR','ir_scrape':'Scraper','ir_rss':'RSS','manual':'Manual','investegate':'RNS'};
     var h='<table class="kt" style="margin-top:4px">';
     h+='<thead><tr><th>Date</th><th>Ticker</th><th>Source</th><th>Document</th><th>Period</th><th style="text-align:center">OK</th><th>Error</th></tr></thead><tbody>';
     rows.forEach(function(row){

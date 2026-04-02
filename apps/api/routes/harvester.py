@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.database import get_db
 from apps.api.models import Company, HarvesterSource, HarvestedDocument
 from services.harvester.sources.sec_edgar import EDGAR_SOURCES
+from services.harvester.sources.investegate import INVESTEGATE_SOURCES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["harvester"])
@@ -58,6 +59,8 @@ async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
         src = sources.get(co_id)
         if co_ticker in EDGAR_SOURCES:
             active_source = "edgar"
+        elif co_ticker in INVESTEGATE_SOURCES:
+            active_source = "investegate"
         elif src and src.ir_docs_url:
             active_source = "ir_scrape"
         else:
@@ -82,6 +85,8 @@ async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
 def _status(ticker: str, src) -> str:
     if ticker in EDGAR_SOURCES:
         return "edgar"
+    if ticker in INVESTEGATE_SOURCES:
+        return "investegate"
     if src and src.ir_docs_url:
         return "scraper" if not src.override else "scraper_locked"
     return "unconfigured"
