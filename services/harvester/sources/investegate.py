@@ -44,6 +44,7 @@ INVESTEGATE_SOURCES: dict[str, dict] = {
 _RESULTS_KEYWORDS = [
     "final results", "preliminary results", "full year results",
     "half-year", "half year", "interim results", "interim report",
+    "interim management statement",
     "trading update", "trading statement",
     "annual report", "annual results",
     "quarterly results", "quarterly report", "quarterly update",
@@ -51,6 +52,7 @@ _RESULTS_KEYWORDS = [
     "q1&", "q2&", "q3&", "q4&",     # HTML-encoded ampersand in titles
     "1q ", "2q ", "3q ", "4q ",
     "results for", "results to",
+    "form 20-f", "form 20f",
 ]
 
 # Headlines to always skip even if they match a keyword
@@ -124,6 +126,8 @@ def _classify_doc_type(title: str) -> str:
         return "earnings_release"
     if any(k in t for k in ["final results", "preliminary results", "full year"]):
         return "earnings_release"
+    if "form 20" in t:
+        return "annual_report"
     if any(k in t for k in ["quarterly"]):
         return "earnings_release"
     return "other"
@@ -142,12 +146,14 @@ def _is_relevant(title: str) -> bool:
 # Main fetch function
 # ─────────────────────────────────────────────────────────────────
 
-async def fetch_investegate(ticker: str, max_pages: int = 3) -> list[dict]:
+async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
     """
     Fetch recent RNS announcements from Investegate for a UK-listed company.
 
     Returns a list of HarvestCandidate dicts compatible with dispatcher.py.
     Scans up to max_pages of announcements (50 per page).
+    High-volume filers like LLOY post daily share buyback notices that
+    push results announcements deep into the pagination.
     """
     config = INVESTEGATE_SOURCES.get(ticker)
     if not config:
@@ -240,8 +246,9 @@ async def fetch_investegate(ticker: str, max_pages: int = 3) -> list[dict]:
                 })
                 page_count += 1
 
-            if page_count == 0 and page > 1:
-                break  # No relevant announcements on this page
+            # Don't break early on empty pages — high-volume filers
+            # (e.g. LLOY with daily buyback notices) may have results
+            # announcements scattered across many pages.
 
     logger.info("[%s] Investegate found %d relevant announcements", ticker, len(candidates))
     return candidates
