@@ -146,14 +146,12 @@ def _is_relevant(title: str) -> bool:
 # Main fetch function
 # ─────────────────────────────────────────────────────────────────
 
-async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
+async def fetch_investegate(ticker: str, lookback_years: int = 5) -> list[dict]:
     """
-    Fetch recent RNS announcements from Investegate for a UK-listed company.
+    Fetch RNS announcements from Investegate for a UK-listed company.
 
-    Returns a list of HarvestCandidate dicts compatible with dispatcher.py.
-    Scans up to max_pages of announcements (50 per page).
-    High-volume filers like LLOY post daily share buyback notices that
-    push results announcements deep into the pagination.
+    Scans backwards through pages until announcements are older than
+    lookback_years. No page limit — date is the only exit condition.
     """
     config = INVESTEGATE_SOURCES.get(ticker)
     if not config:
@@ -163,10 +161,12 @@ async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
     epic = config["epic"]
     candidates = []
     seen_titles = set()  # dedup by normalised headline
-    cutoff_year = datetime.now(timezone.utc).year - 2
+    cutoff_year = datetime.now(timezone.utc).year - lookback_years
+    reached_cutoff = False
 
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True, headers=_HEADERS) as client:
-        for page in range(1, max_pages + 1):
+        page = 1
+        while not reached_cutoff:
             url = f"https://www.investegate.co.uk/company/{epic}/announcements"
             if page > 1:
                 url += f"?page={page}"
@@ -184,7 +184,6 @@ async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
 
             # Parse table rows
             rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL | re.IGNORECASE)
-            page_count = 0
 
             for row in rows:
                 date_match = re.search(r"<td>(\d+ \w+ \d+)</td>", row)
@@ -198,12 +197,11 @@ async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
                 ann_url = link_match.group(1)
                 title = link_match.group(2).replace("&amp;", "&").strip()
 
-                # Year cutoff
+                # Date cutoff — stop when we've gone back far enough
                 try:
                     ann_year = int(date_str.split()[-1])
                     if ann_year < cutoff_year:
-                        # Past cutoff — stop pagination
-                        page = max_pages  # break outer loop
+                        reached_cutoff = True
                         break
                 except (ValueError, IndexError):
                     pass
@@ -244,11 +242,8 @@ async def fetch_investegate(ticker: str, max_pages: int = 10) -> list[dict]:
                     "period_label": period_label,
                     "document_type": doc_type,
                 })
-                page_count += 1
 
-            # Don't break early on empty pages — high-volume filers
-            # (e.g. LLOY with daily buyback notices) may have results
-            # announcements scattered across many pages.
+            page += 1
 
-    logger.info("[%s] Investegate found %d relevant announcements", ticker, len(candidates))
+    logger.info("[%s] Investegate scanned %d pages, found %d relevant announcements", ticker, page - 1, len(candidates))
     return candidates
