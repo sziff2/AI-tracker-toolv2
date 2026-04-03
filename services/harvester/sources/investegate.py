@@ -76,11 +76,15 @@ _PERIOD_PATTERNS = [
     (r"([1-4])Q(\d{2})(?:\s|$)", lambda m: f"20{m.group(2)}_Q{m.group(1)}"),
     # FY2025, FY 2024
     (r"FY\s*(\d{4})", lambda m: f"{m.group(1)}_Q4"),
-    # Full year / annual + year
-    (r"(?:full[- ]?year|annual)\s+(?:results?\s+)?(?:for\s+)?(?:the\s+)?(?:year\s+)?(?:ended?\s+)?.*?(\d{4})",
+    # Year-first: "2025 Annual Report", "2025 Full Year Results"
+    (r"(\d{4})\s+(?:annual|full[- ]?year)", lambda m: f"{m.group(1)}_Q4"),
+    # Year-first: "2025 Half Year", "2025 Interim"
+    (r"(\d{4})\s+(?:half[- ]?year|interim)", lambda m: f"{m.group(1)}_Q2"),
+    # Full year / annual + year (keyword first)
+    (r"(?:full[- ]?year|annual)\s+(?:results?\s+)?(?:report\s+)?(?:and\s+)?(?:accounts?\s+)?(?:for\s+)?(?:the\s+)?(?:year\s+)?(?:ended?\s+)?.*?(\d{4})",
      lambda m: f"{m.group(1)}_Q4"),
-    # Half year / interim + year
-    (r"(?:half[- ]?year|interim)\s+(?:results?\s+)?(?:for\s+)?(?:the\s+)?.*?(\d{4})",
+    # Half year / interim + year (keyword first)
+    (r"(?:half[- ]?year|interim)\s+(?:results?\s+)?(?:report\s+)?(?:for\s+)?(?:the\s+)?.*?(\d{4})",
      lambda m: f"{m.group(1)}_Q2"),
     # H1 2025, H2 2024
     (r"H1\s*(\d{4})", lambda m: f"{m.group(1)}_Q2"),
@@ -152,6 +156,7 @@ async def fetch_investegate(ticker: str, max_pages: int = 3) -> list[dict]:
 
     epic = config["epic"]
     candidates = []
+    seen_titles = set()  # dedup by normalised headline
     cutoff_year = datetime.now(timezone.utc).year - 2
 
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True, headers=_HEADERS) as client:
@@ -199,6 +204,13 @@ async def fetch_investegate(ticker: str, max_pages: int = 3) -> list[dict]:
 
                 if not _is_relevant(title):
                     continue
+
+                # Dedup: skip if we already have this headline
+                # (e.g. annual report filed as multiple RNS parts)
+                norm_title = re.sub(r"[^a-z0-9]", "", title.lower())
+                if norm_title in seen_titles:
+                    continue
+                seen_titles.add(norm_title)
 
                 # Ensure full URL
                 if not ann_url.startswith("http"):

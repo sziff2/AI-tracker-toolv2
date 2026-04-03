@@ -3828,12 +3828,16 @@ async function loadCkDocuments(ticker){
       h+='<span style="font-family:var(--sans);font-size:12px;color:var(--blue);font-weight:600">📰 RNS</span>';
       h+='<span style="font-family:var(--sans);font-size:12px;color:var(--text3)">UK regulatory announcements via Investegate.</span>';
     }
-    h+='<textarea id="ck-docs-ir-url" class="fi" placeholder="IR page URLs — one per line, e.g.&#10;https://company.com/investor/reports&#10;https://company.com/investor/presentations" style="flex:1;font-size:11px;padding:7px 12px;min-width:220px;min-height:40px;max-height:80px;font-family:var(--mono);resize:vertical">'+esc(currentDocsUrl)+'</textarea>';
-    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
-    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">▶ Run Harvest (free)</button>';
-    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
+    if(!isInvestegate){
+      h+='<textarea id="ck-docs-ir-url" class="fi" placeholder="IR page URLs — one per line, e.g.&#10;https://company.com/investor/reports&#10;https://company.com/investor/presentations" style="flex:1;font-size:11px;padding:7px 12px;min-width:220px;min-height:40px;max-height:80px;font-family:var(--mono);resize:vertical">'+esc(currentDocsUrl)+'</textarea>';
+      h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="saveCkDocsUrl(\''+esc(ticker)+'\')">Save URL</button>';
+    }
+    h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runHarvestAndReload(\''+esc(ticker)+'\',this)">'+(isInvestegate?'▶ Fetch RNS':'▶ Run Harvest (free)')+'</button>';
+    if(!isInvestegate)h+='<button class="btn2" style="font-size:11px;padding:7px 12px;white-space:nowrap" onclick="runLLMScan(\''+esc(ticker)+'\',this)">🤖 LLM Scan</button>';
     h+='</div>';
-    if(!currentDocsUrl){
+    if(isInvestegate){
+      h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:8px">Click ▶ Fetch RNS to pull results, trading updates, and annual reports from Investegate. You can also paste IR page URLs below for presentations and other documents.</div>';
+    }else if(!currentDocsUrl){
       h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:8px">'+(isEdgar?'Optionally add an IR page URL above for transcripts, presentations, and other documents not on EDGAR.':'Paste the company\'s results &amp; reports page URL above, save, then run a harvest.')+'</div>';
     }
     h+='</div>';
@@ -4011,7 +4015,11 @@ async function loadCkDocuments(ticker){
       h+='<td><input type="checkbox" class="hv-chk" data-idx="'+i+'" onchange="hvUpdateSelCount()"'+(alreadyIn?' disabled':'')+((!doc.source_url&&!alreadyIn)?' disabled title="No URL available"':'')+''+'></td>';
       // Document cell with badges
       h+='<td style="max-width:300px"><div style="display:flex;align-items:center;gap:4px">';
-      h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1" title="'+esc(doc.source_url||'')+'">'+esc(displayName)+'</div>';
+      if(doc.source_url){
+        h+='<a href="'+esc(doc.source_url)+'" target="_blank" rel="noopener" style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;text-decoration:none" title="'+esc(doc.source_url)+'" onmouseover="this.style.color=\'var(--gold)\'" onmouseout="this.style.color=\'var(--text)\'">'+esc(displayName)+'</a>';
+      }else{
+        h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+esc(displayName)+'</div>';
+      }
       // Feature 6: Format badge
       if(fmt){
         var fmtColor=fmt==='PDF'?'#e74c3c':fmt==='HTML'?'#3498db':'#95a5a6';
