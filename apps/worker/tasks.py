@@ -37,56 +37,49 @@ celery_app.conf.update(
 # Scheduled tasks
 # ─────────────────────────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
-    # Legacy daily scan (kept for backward compat)
-    "daily-source-scan": {
-        "task": "apps.worker.tasks.scan_sources",
-        "schedule": crontab(hour=6, minute=0),
-    },
-    # Harvesting agent — polls IR feeds & EDGAR every 30 minutes
-    "harvest-documents": {
-        "task": "apps.worker.tasks.harvest_new_documents",
-        "schedule": crontab(minute="*/30"),
+    # Weekly harvest — Monday 06:00 UTC, skips LLM scraper
+    "weekly-harvest": {
+        "task": "apps.worker.tasks.weekly_harvest_and_report",
+        "schedule": crontab(hour=6, minute=0, day_of_week=1),
     },
 }
 
 
-@celery_app.task(name="apps.worker.tasks.scan_sources")
-def scan_sources():
+@celery_app.task(name="apps.worker.tasks.weekly_harvest_and_report")
+def weekly_harvest_and_report():
     """
-    Legacy daily scan placeholder.
-    Real harvesting is now handled by harvest_new_documents().
+    Weekly auto-harvest: runs EDGAR + Investegate + IR regex scraper
+    (no LLM to contain costs), saves a report, and posts to Teams.
     """
-    logger.info("Starting daily source scan …")
-    logger.info("Daily source scan complete.")
-    return {"status": "completed"}
+    import asyncio
+    result = asyncio.run(_async_weekly_harvest())
+    logger.info("[HARVEST] Weekly run complete: %s", {k: v for k, v in result.items() if k != "details"})
+    return {k: v for k, v in result.items() if k != "details"}
 
 
-# ─────────────────────────────────────────────────────────────────
-# Harvesting Agent tasks
-# ─────────────────────────────────────────────────────────────────
+async def _async_weekly_harvest():
+    from services.harvester.scheduler import run_and_report
+    return await run_and_report(trigger="auto_weekly")
+
 
 @celery_app.task(name="apps.worker.tasks.harvest_new_documents")
-def harvest_new_documents(tickers: list = None):
+def harvest_new_documents(tickers: list = None, skip_llm: bool = False):
     """
-    Poll IR RSS feeds and SEC EDGAR for new documents.
-    Runs every 30 minutes via Celery beat.
-
-    Auto-ingests new docs and triggers the full extraction pipeline.
-    Posts Slack notification for each new document found.
+    Manual harvest trigger (called via API).
 
     Args:
         tickers: Optional list of tickers to restrict the run.
-                 Defaults to all active companies with configured sources.
+        skip_llm: If True, skip the LLM scraper.
     """
     import asyncio
-    result = asyncio.run(_async_harvest(tickers))
-    logger.info("[HARVEST] Run complete: %s", result)
+    result = asyncio.run(_async_harvest(tickers, skip_llm))
+    logger.info("[HARVEST] Manual run complete: %s", {k: v for k, v in result.items() if k != "details"})
     return result
 
 
-async def _async_harvest(tickers=None):
+async def _async_harvest(tickers=None, skip_llm=False):
     from services.harvester import run_harvest
-    return await run_harvest(tickers=tickers)
+    return await run_harvest(tickers=tickers, skip_llm=skip_llm)
 
 
 # ─────────────────────────────────────────────────────────────────

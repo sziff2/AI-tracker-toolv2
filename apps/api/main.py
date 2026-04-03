@@ -79,6 +79,17 @@ async def lifespan(app: FastAPI):
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS harvest_reports (
+                id UUID PRIMARY KEY,
+                run_at TIMESTAMPTZ NOT NULL,
+                trigger TEXT NOT NULL,
+                summary_json TEXT,
+                details_json TEXT,
+                teams_sent BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
     yield
     await async_engine.dispose()
 
@@ -119,24 +130,6 @@ app.include_router(feedback_router, prefix=PREFIX)
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": settings.app_version}
-
-
-@app.get("/debug/redis")
-async def debug_redis():
-    """Temporary diagnostic — test Redis connectivity."""
-    import redis as _redis
-    try:
-        r = _redis.from_url(settings.redis_url, socket_connect_timeout=3)
-        pong = r.ping()
-        info = r.info("server")
-        return {
-            "status": "connected",
-            "ping": pong,
-            "redis_version": info.get("redis_version"),
-            "redis_url_prefix": settings.redis_url[:30] + "...",
-        }
-    except Exception as exc:
-        return {"status": "error", "detail": str(exc)}
 
 
 @app.get("/", response_class=HTMLResponse)

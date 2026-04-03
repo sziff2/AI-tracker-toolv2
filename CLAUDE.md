@@ -5,7 +5,7 @@ Investment research platform for Oldfield Partners (buy-side value fund). Tracks
 
 ## Key Architecture Decisions
 - **Single HTML file UI** (`apps/ui/index.html`) — no framework, no build step. All JS inline.
-- **Background jobs run in-process** via `asyncio.create_task`, not Celery (Celery is wired but Redis not deployed yet).
+- **Background jobs**: Celery + Redis for scheduled tasks (weekly harvest via Celery Beat). One-off background work uses `asyncio.create_task` in-process.
 - **No file_content in DB** — raw PDFs are NOT stored in PostgreSQL to save space. Parsed text lives in `document_sections`.
 - **Tables auto-created on startup** via `Base.metadata.create_all` + manual ALTER TABLE migrations in `apps/api/main.py` lifespan.
 
@@ -14,10 +14,22 @@ Tickers use Bloomberg format with exchange suffix: `LKQ US`, `BNZL LN`, `3679 JP
 **BP LN** was renamed from `BP/ LN` — slashes break FastAPI path routing. The harvester routes use `{ticker:path}` but other routes use `{ticker}`.
 
 ## Document Sourcing Pipeline
-Priority: SEC EDGAR → Regex scraper → LLM scraper
-- EDGAR: CIK stored on Company model, auto-looked up from SEC company_tickers.json
-- IR scraper: regex-based, fast but breaks on SPA pages
+Priority: SEC EDGAR → Investegate RNS → IR regex scraper → LLM scraper
+- EDGAR: CIK configured per company in `EDGAR_SOURCES` dict (`services/harvester/sources/sec_edgar.py`)
+- Investegate: UK RNS announcements, configured in `INVESTEGATE_SOURCES` dict (`services/harvester/sources/investegate.py`)
+- IR scraper: regex-based, fast but breaks on SPA pages. Supports multiple URLs per company.
 - LLM scraper: sends page HTML to Claude, handles complex sites, costs ~$0.01-0.05/scan
+- ScrapingBee: optional JS rendering for Cloudflare-blocked IR pages (API key in env)
+- BP LN and SHEL LN run both EDGAR and Investegate (dual source)
+- IR scraper runs for all companies with `ir_docs_url` set, even if EDGAR/Investegate also runs
+
+## Weekly Auto-Harvest
+- Celery Beat runs every Monday 06:00 UTC
+- Skips LLM scraper to contain costs (only EDGAR + Investegate + IR regex)
+- Saves a `HarvestReport` to DB with per-company breakdown
+- Posts summary to Microsoft Teams via webhook (`TEAMS_WEBHOOK_URL` env var)
+- Manual trigger: `POST /harvester/run-weekly`
+- Reports: `GET /harvester/reports`, `GET /harvester/reports/latest`
 
 ## Analysis Pipeline
 `Document → parse (PDF/HTML/DOCX) → extract metrics → compare thesis → detect surprises → synthesise`
@@ -29,7 +41,7 @@ Priority: SEC EDGAR → Regex scraper → LLM scraper
 - `enc(ticker)` in JS = `encodeURIComponent`
 - `get_company_or_404(db, ticker)` in Python routes
 - `_clean_ticker(raw)` = strip + uppercase
-- Period format: `2025_Q1`, `2025_FY`, `2025_H1`
+- Period format: `2025_Q1`, `2025_Q2`, `2025_Q3`, `2025_Q4` (FY→Q4, H1→Q2, H2→Q4 mapped everywhere)
 - `suggestPeriod()` / `suggestPeriodFromDate()` in JS for auto-period from filing date
 
 ## Testing
@@ -41,6 +53,7 @@ DATABASE_URL="postgresql+asyncpg://x:x@localhost/x" pytest tests/test_services.p
 ## Deployment
 Push to main → Railway auto-deploys. UI served with no-cache headers to prevent stale JS.
 Production URL: https://ai-tracker-tool-production.up.railway.app
+Redis is deployed on Railway (auto-connected to Celery).
 
 ## Things to Watch
 - Railway PostgreSQL has limited storage — `file_content` column should stay NULL

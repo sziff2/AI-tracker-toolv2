@@ -57,9 +57,13 @@ async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
     result = []
     for co_id, co_ticker, co_name, co_country in companies:
         src = sources.get(co_id)
-        if co_ticker in EDGAR_SOURCES:
+        has_edgar = co_ticker in EDGAR_SOURCES
+        has_investegate = co_ticker in INVESTEGATE_SOURCES
+        if has_edgar and has_investegate:
+            active_source = "edgar+investegate"
+        elif has_edgar:
             active_source = "edgar"
-        elif co_ticker in INVESTEGATE_SOURCES:
+        elif has_investegate:
             active_source = "investegate"
         elif src and src.ir_docs_url:
             active_source = "ir_scrape"
@@ -83,9 +87,13 @@ async def list_harvester_sources(db: AsyncSession = Depends(get_db)):
 
 
 def _status(ticker: str, src) -> str:
-    if ticker in EDGAR_SOURCES:
+    has_edgar = ticker in EDGAR_SOURCES
+    has_investegate = ticker in INVESTEGATE_SOURCES
+    if has_edgar and has_investegate:
+        return "edgar+investegate"
+    if has_edgar:
         return "edgar"
-    if ticker in INVESTEGATE_SOURCES:
+    if has_investegate:
         return "investegate"
     if src and src.ir_docs_url:
         return "scraper" if not src.override else "scraper_locked"
@@ -143,19 +151,85 @@ async def update_harvester_source(
 async def trigger_harvest_run(
     background_tasks: BackgroundTasks,
     ticker: Optional[str] = None,
+    skip_llm: bool = False,
 ):
     tickers = [ticker.upper()] if ticker else None
-    background_tasks.add_task(_run_harvest_bg, tickers)
+    background_tasks.add_task(_run_harvest_bg, tickers, skip_llm)
     return {
         "status": "harvest_started",
         "scope": tickers or "all active companies",
+        "skip_llm": skip_llm,
     }
 
 
-async def _run_harvest_bg(tickers):
+async def _run_harvest_bg(tickers, skip_llm=False):
     from services.harvester import run_harvest
-    result = await run_harvest(tickers=tickers)
-    logger.info("[HARVEST] Manual run complete: %s", result)
+    result = await run_harvest(tickers=tickers, skip_llm=skip_llm)
+    logger.info("[HARVEST] Manual run complete: new=%d skipped=%d failed=%d",
+                result["new"], result["skipped"], result["failed"])
+
+
+# ── POST /harvester/run-weekly — trigger weekly harvest + report ─────
+
+@router.post("/harvester/run-weekly")
+async def trigger_weekly_harvest(background_tasks: BackgroundTasks):
+    """Manually trigger a weekly-style harvest with report and Teams notification."""
+    background_tasks.add_task(_run_weekly_bg)
+    return {"status": "weekly_harvest_started"}
+
+
+async def _run_weekly_bg():
+    from services.harvester.scheduler import run_and_report
+    result = await run_and_report(trigger="manual")
+    logger.info("[HARVEST] Weekly run complete: new=%d skipped=%d failed=%d report=%s",
+                result["new"], result["skipped"], result["failed"], result.get("report_id"))
+
+
+# ── GET /harvester/reports — recent harvest reports ──────────────────
+
+@router.get("/harvester/reports")
+async def list_harvest_reports(limit: int = 10, db: AsyncSession = Depends(get_db)):
+    """List recent harvest reports, most recent first."""
+    import json as _json
+    from sqlalchemy import text
+    result = await db.execute(
+        text("SELECT id, run_at, trigger, summary_json, teams_sent, created_at "
+             "FROM harvest_reports ORDER BY run_at DESC LIMIT :limit"),
+        {"limit": limit},
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(r.id),
+            "run_at": r.run_at.isoformat() if r.run_at else None,
+            "trigger": r.trigger,
+            "summary": _json.loads(r.summary_json) if r.summary_json else None,
+            "teams_sent": r.teams_sent,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/harvester/reports/latest")
+async def get_latest_report(db: AsyncSession = Depends(get_db)):
+    """Get the latest harvest report with full per-company detail."""
+    import json as _json
+    from sqlalchemy import text
+    result = await db.execute(
+        text("SELECT id, run_at, trigger, summary_json, details_json, teams_sent "
+             "FROM harvest_reports ORDER BY run_at DESC LIMIT 1")
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(404, "No harvest reports found")
+    return {
+        "id": str(row.id),
+        "run_at": row.run_at.isoformat() if row.run_at else None,
+        "trigger": row.trigger,
+        "summary": _json.loads(row.summary_json) if row.summary_json else None,
+        "details": _json.loads(row.details_json) if row.details_json else None,
+        "teams_sent": row.teams_sent,
+    }
 
 
 # ── GET /harvester/test-fetch — diagnostic for page fetching ───────

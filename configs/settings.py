@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     slack_webhook_url: Optional[str] = None
     # Set in Railway: SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 
+    teams_webhook_url: Optional[str] = None
+    # Set in Railway: TEAMS_WEBHOOK_URL=https://outlook.office.com/webhook/...
+
     app_base_url: str = "https://ai-tracker-tool-production.up.railway.app"
     # Used to build deep-links in Slack notifications
 
