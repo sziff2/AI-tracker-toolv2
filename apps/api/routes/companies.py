@@ -315,7 +315,7 @@ Schema:
 }}
 """
     try:
-        thesis_data = call_llm_json(prompt, max_tokens=4096)
+        thesis_data = call_llm_json(prompt, max_tokens=4096, feature="thesis_gen", ticker=company.ticker)
 
         # Save to database
         from apps.api.models import ThesisVersion
@@ -456,7 +456,7 @@ Respond ONLY with a JSON object. No preamble, no markdown fences.
 }}"""
 
     try:
-        result = call_llm_json(prompt, max_tokens=2000)
+        result = call_llm_json(prompt, max_tokens=2000, feature="ic_summary_gen", ticker=company.ticker)
     except Exception as e:
         raise HTTPException(500, f"LLM call failed: {str(e)[:200]}")
 

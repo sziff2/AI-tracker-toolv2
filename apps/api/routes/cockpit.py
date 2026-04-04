@@ -585,7 +585,8 @@ Answer the question directly and specifically. Reference the source documents wh
 If quoting numbers, cite which document they came from."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model)
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model,
+                                       feature="chat", ticker=ticker.upper(), period=period)
         return {"answer": answer, "sources_used": sources_used, "period": period, "model": body.model}
     except TimeoutError:
         return {"answer": "The analysis is taking longer than expected. Please try a more specific question or use 'Fast' mode.", "sources_used": sources_used, "period": period, "model": body.model}
@@ -761,7 +762,8 @@ Use ONLY the data provided below. Do not use external knowledge.
 Answer directly and specifically. Reference which period data comes from. Highlight trends across periods where relevant."""
 
     try:
-        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model)
+        answer = await call_llm_async(prompt, max_tokens=2048, timeout_seconds=25, model=model,
+                                       feature="chat_global", ticker=ticker.upper())
         return {"answer": answer, "sources_used": sources_used[:10], "periods_searched": periods_searched, "model": body.model}
     except TimeoutError:
         return {"answer": "The analysis is taking longer than expected. Please try a more specific question or use 'Fast' mode.", "sources_used": sources_used[:10], "periods_searched": periods_searched, "model": body.model}
@@ -952,7 +954,7 @@ async def run_moat_analysis(ticker: str, db: AsyncSession = Depends(get_db)):
     )
 
     try:
-        result = await call_llm_json_async(prompt, max_tokens=8192)
+        result = await call_llm_json_async(prompt, max_tokens=8192, feature="moat", ticker=ticker.upper())
     except Exception as e:
         raise HTTPException(502, f"Moat analysis failed: {str(e)[:300]}")
 

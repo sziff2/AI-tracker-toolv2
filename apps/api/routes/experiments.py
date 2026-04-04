@@ -237,8 +237,8 @@ async def run_experiment(body: ExperimentCreate, db: AsyncSession = Depends(get_
 
     try:
         result_a, result_b = await asyncio.gather(
-            call_llm_json_async(prompt_a, max_tokens=8192),
-            call_llm_json_async(prompt_b, max_tokens=8192),
+            call_llm_json_async(prompt_a, max_tokens=8192, feature="experiment", ticker=ticker),
+            call_llm_json_async(prompt_b, max_tokens=8192, feature="experiment", ticker=ticker),
             return_exceptions=True,
         )
     except Exception as e:
@@ -404,7 +404,7 @@ INSTRUCTIONS:
 Return ONLY the improved prompt text. No explanation, no markdown fences."""
 
     try:
-        new_prompt_text = call_llm(refinement_prompt, max_tokens=8192)
+        new_prompt_text = call_llm(refinement_prompt, max_tokens=8192, feature="prompt_refine")
 
         new_variant = PromptVariant(
             id=uuid.uuid4(),

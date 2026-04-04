@@ -275,7 +275,7 @@ Do not include any text outside the JSON object."""
         from services.llm_client import call_llm
         import json as _json
 
-        raw = call_llm(prompt, max_tokens=1000)
+        raw = call_llm(prompt, max_tokens=1000, feature="search_rerank")
         # Strip markdown fences if present
         clean = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
         parsed = _json.loads(clean)

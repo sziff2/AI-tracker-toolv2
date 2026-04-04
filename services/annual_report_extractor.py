@@ -193,7 +193,7 @@ async def extract_annual_report(
         else:
             prompts.append(COMBINED_EXTRACTOR.replace("{text}", chunk_text))
 
-    results = await call_llm_json_parallel(prompts, max_tokens=4096)  # 4k not 8k — faster
+    results = await call_llm_json_parallel(prompts, max_tokens=4096, feature="annual_report_extraction")  # 4k not 8k — faster
 
     all_items = []
     for result in results:

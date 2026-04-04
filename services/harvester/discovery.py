@@ -108,12 +108,15 @@ URL:"""
 
     try:
         import anthropic
+        from services.llm_client import _log_usage
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
             model="claude-haiku-4-5-20251001",  # cheap + fast for this task
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}],
         )
+        _log_usage("claude-haiku-4-5-20251001", message.usage.input_tokens, message.usage.output_tokens,
+                   feature="ir_discovery", ticker=ticker)
         url = message.content[0].text.strip().rstrip("/")
 
         if url == "UNKNOWN" or not url.startswith("http"):

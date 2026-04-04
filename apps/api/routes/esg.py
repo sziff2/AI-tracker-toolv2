@@ -197,7 +197,8 @@ Be concise and investment-focused. When data is missing, say so and suggest wher
 
 User: {body.question}"""
     try:
-        answer = await call_llm_async(prompt, max_tokens=1024, timeout_seconds=25)
+        answer = await call_llm_async(prompt, max_tokens=1024, timeout_seconds=25,
+                                       feature="esg_chat", ticker=ticker.upper())
         return {"answer": answer}
     except TimeoutError:
         return {"answer": "The analysis is taking too long. Please try a simpler question."}
@@ -230,7 +231,7 @@ Return a JSON object:
 }}
 Respond ONLY with JSON. No preamble."""
     try:
-        parsed = await call_llm_json_async(prompt, max_tokens=2048)
+        parsed = await call_llm_json_async(prompt, max_tokens=2048, feature="esg_analyse", ticker=ticker.upper())
     except Exception as e:
         raise HTTPException(502, f"Analysis failed: {str(e)[:200]}")
     row.ai_summary = parsed.get("summary", "")
