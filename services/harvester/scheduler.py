@@ -124,38 +124,29 @@ def format_teams_message(harvest_result: dict) -> dict:
 
     body_text = "\n".join(lines)
 
-    # Teams Adaptive Card format (works with Power Automate Workflows webhooks)
+    # Power Automate Workflows webhook format — Adaptive Card as top-level body
     return {
-        "type": "message",
-        "attachments": [
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
             {
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "contentUrl": None,
-                "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                    "type": "AdaptiveCard",
-                    "version": "1.4",
-                    "body": [
-                        {
-                            "type": "TextBlock",
-                            "text": f"Weekly Harvest Report — {now}",
-                            "weight": "Bolder",
-                            "size": "Medium",
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": body_text,
-                            "wrap": True,
-                        },
-                    ],
-                    "actions": [
-                        {
-                            "type": "Action.OpenUrl",
-                            "title": "Open Platform",
-                            "url": settings.app_base_url,
-                        }
-                    ],
-                },
+                "type": "TextBlock",
+                "text": f"Weekly Harvest Report — {now}",
+                "weight": "Bolder",
+                "size": "Medium",
+            },
+            {
+                "type": "TextBlock",
+                "text": body_text,
+                "wrap": True,
+            },
+        ],
+        "actions": [
+            {
+                "type": "Action.OpenUrl",
+                "title": "Open Platform",
+                "url": settings.app_base_url,
             }
         ],
     }
