@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db
 from apps.api.models import Company, HarvesterSource, HarvestedDocument
+from configs.settings import settings
 from services.harvester.sources.sec_edgar import EDGAR_SOURCES
 from services.harvester.sources.investegate import INVESTEGATE_SOURCES
 
@@ -182,9 +183,26 @@ async def trigger_weekly_harvest(background_tasks: BackgroundTasks):
 
 async def _run_weekly_bg():
     from services.harvester.scheduler import run_and_report
-    result = await run_and_report(trigger="manual")
-    logger.info("[HARVEST] Weekly run complete: new=%d skipped=%d failed=%d report=%s",
-                result["new"], result["skipped"], result["failed"], result.get("report_id"))
+    try:
+        result = await run_and_report(trigger="manual")
+        logger.info("[HARVEST] Weekly run complete: new=%d skipped=%d failed=%d report=%s",
+                    result["new"], result["skipped"], result["failed"], result.get("report_id"))
+    except Exception as exc:
+        logger.error("[HARVEST] Weekly run FAILED: %s", exc, exc_info=True)
+
+
+@router.post("/harvester/test-teams")
+async def test_teams_webhook():
+    """Diagnostic: test Teams webhook with a dummy payload."""
+    from services.harvester.scheduler import format_teams_message, post_teams_report
+    dummy = {"new": 1, "skipped": 2, "failed": 0, "details": [
+        {"ticker": "TEST", "name": "Test Company", "sources_tried": ["edgar"], "candidates_found": 1, "errors": [], "source_used": "edgar"}
+    ]}
+    try:
+        sent = await post_teams_report(dummy)
+        return {"sent": sent, "webhook_configured": bool(settings.teams_webhook_url)}
+    except Exception as exc:
+        return {"sent": False, "error": str(exc)}
 
 
 # ── GET /harvester/reports — recent harvest reports ──────────────────
