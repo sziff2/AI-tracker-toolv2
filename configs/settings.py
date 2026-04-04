@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0
 
+    # ── Budget ────────────────────────────────────────────────────
+    autorun_budget_usd: float = 10.0
+    # Override via env: AUTORUN_BUDGET_USD=20
+
     # ── Scheduling ───────────────────────────────────────────────
     scan_schedule_cron: str = "0 6 * * *"  # Every day at 06:00
 

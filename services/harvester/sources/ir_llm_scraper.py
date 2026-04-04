@@ -22,6 +22,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from services.harvester.sources.robots_check import can_fetch, get_crawl_delay
+
 logger = logging.getLogger(__name__)
 
 _HEADERS = {
@@ -256,8 +258,15 @@ async def scrape_ir_with_llm(
     # Fetch all pages and combine content
     from services.doc_utils import async_fetch_page
 
+    crawl_delay = get_crawl_delay(all_urls[0])
+
     combined_html = ""
     for page_url in all_urls:
+        if not can_fetch(page_url):
+            logger.warning("[LLM-SCRAPE] %s — robots.txt disallows %s, skipping", ticker, page_url)
+            continue
+        if combined_html:
+            await asyncio.sleep(crawl_delay)
         html = await async_fetch_page(page_url, timeout=60)
         if html:
             combined_html += f"\n\n<!-- PAGE: {page_url} -->\n" + html
@@ -316,7 +325,11 @@ async def scrape_ir_with_llm(
                 sib_url = f"{base}{parent}/{sib}"
                 if sib_url == ir_docs_url:
                     continue
+                if not can_fetch(sib_url):
+                    logger.warning("[LLM-SCRAPE] %s — robots.txt disallows sibling %s, skipping", ticker, sib_url)
+                    continue
                 try:
+                    await asyncio.sleep(crawl_delay)
                     sib_resp = await client.get(sib_url)
                     if sib_resp.status_code == 200:
                         sib_cleaned = _clean_page_source(sib_resp.text)

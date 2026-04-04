@@ -14,6 +14,7 @@ This is the fallback source for companies that don't have RSS feeds.
 Results are deduplicated by URL in the harvested_documents table as usual.
 """
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -21,6 +22,8 @@ from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 import httpx
+
+from services.harvester.sources.robots_check import can_fetch, get_crawl_delay
 
 logger = logging.getLogger(__name__)
 
@@ -248,11 +251,19 @@ async def scrape_ir_page(
         headers=_HEADERS,
     ) as client:
 
+        crawl_delay = get_crawl_delay(all_urls[0])
+
         all_main_links = []
         for page_url in pages_to_scrape:
             if page_url in visited:
                 continue
+            if not can_fetch(page_url):
+                logger.warning("[SCRAPE] %s — robots.txt disallows %s, skipping", ticker, page_url)
+                continue
             try:
+                # Respect crawl-delay between requests
+                if visited:
+                    await asyncio.sleep(crawl_delay)
                 # Use Cloudflare-aware fetcher for main pages
                 html = await async_fetch_page(page_url, timeout=20)
                 if not html:
@@ -295,9 +306,13 @@ async def scrape_ir_page(
         for href, text in subpages[:max_subpages]:
             if href in visited:
                 continue
+            if not can_fetch(href):
+                logger.warning("[SCRAPE] %s — robots.txt disallows sub-page %s, skipping", ticker, href)
+                continue
             visited.add(href)
 
             try:
+                await asyncio.sleep(crawl_delay)
                 sub_resp = await client.get(href)
                 sub_resp.raise_for_status()
             except Exception as e:

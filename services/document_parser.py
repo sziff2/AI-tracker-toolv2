@@ -132,10 +132,10 @@ def extract_text_html(file_path: str) -> tuple[list[dict], list[dict]]:
 # Document classification (LLM)
 # ─────────────────────────────────────────────────────────────────
 
-def classify_document(text_preview: str) -> ClassifiedDocument:
+def classify_document(text_preview: str, ticker: str = None) -> ClassifiedDocument:
     """Classify a document using the first ~2000 chars."""
     prompt = DOCUMENT_CLASSIFIER.format(text=text_preview[:2000])
-    data = call_llm_json(prompt, feature="classification", model="claude-haiku-4-5-20251001")
+    data = call_llm_json(prompt, feature="classification", model="claude-haiku-4-5-20251001", ticker=ticker)
     return ClassifiedDocument(**data)
 
 
@@ -189,7 +189,7 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     document._parsed_pages = pages
 
     # 2. Classify
-    classification = classify_document(full_text)
+    classification = classify_document(full_text, ticker=ticker)
 
     # 3. Persist sections (strip null bytes — PostgreSQL rejects \x00 in text)
     for p in pages:

@@ -138,6 +138,8 @@ async def _save_research_output(company_id: uuid.UUID, period_label: str, output
 
 async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: str, doc_id: uuid.UUID, period_label: str):
     """Run the full single-document pipeline in the background."""
+    from services.llm_client import set_llm_context
+    set_llm_context(feature="document_analysis", ticker=ticker, period=period_label)
     completed = []
     output = {}
 
@@ -159,6 +161,8 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
             output["period"] = period_label
             output["pipeline_status"] = []
 
+            parse_ok = False
+
             # ── Step 1: Parse ────────────────────────────────
             await _update_step(job_id, "parse", 10, completed)
             try:
@@ -167,78 +171,105 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
                 output["classification"] = parse_result["classification"]
                 output["pipeline_status"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
                 completed.append("parse")
+                parse_ok = True
             except Exception as e:
+                logger.error("[PIPELINE] %s parse failed for doc %s: %s", ticker, doc_id, e, exc_info=True)
                 output["pipeline_status"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
-                await _update_job(job_id, status="failed", error_message=f"Parse failed: {str(e)[:200]}", result_json=json.dumps(output, default=str))
-                return
 
-            # ── Step 2: Extract ──────────────────────────────
-            await _update_step(job_id, "extract", 25, completed)
-            try:
-                # Try combined extraction first
+            # ── Step 2: Extract (skip if parse failed) ──────
+            extract_ok = False
+            if parse_ok:
+                await _update_step(job_id, "extract", 25, completed)
                 try:
-                    from services.metric_extractor import extract_combined
-                    text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
-                    pages = json.loads(text_path.read_text())
-                    full_text = "\n\n".join(p["text"] for p in pages)
+                    # Try combined extraction first
+                    try:
+                        from services.metric_extractor import extract_combined
+                        text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
+                        pages = json.loads(text_path.read_text())
+                        full_text = "\n\n".join(p["text"] for p in pages)
 
-                    extraction = await extract_combined(db, doc, full_text)
-                    metrics = extraction["metrics"]
-                    guidance = extraction.get("guidance", [])
-                except Exception:
-                    # Fall back to legacy extraction
-                    from services.metric_extractor import extract_metrics
-                    text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
-                    pages = json.loads(text_path.read_text())
-                    full_text = "\n\n".join(p["text"] for p in pages)
-                    metrics = await extract_metrics(db, doc, full_text)
-                    guidance = []
+                        extraction = await extract_combined(db, doc, full_text)
+                        metrics = extraction["metrics"]
+                        guidance = extraction.get("guidance", [])
+                    except Exception:
+                        # Fall back to legacy extraction
+                        from services.metric_extractor import extract_metrics
+                        text_path = Path(settings.storage_base_path) / "processed" / ticker / period_label / "parsed_text.json"
+                        pages = json.loads(text_path.read_text())
+                        full_text = "\n\n".join(p["text"] for p in pages)
+                        metrics = await extract_metrics(db, doc, full_text)
+                        guidance = []
 
-                output["metrics"] = [
-                    {
-                        "metric_name": m.metric_name,
-                        "metric_value": float(m.metric_value) if m.metric_value else None,
-                        "metric_text": m.metric_text,
-                        "unit": m.unit,
-                        "segment": m.segment,
-                        "geography": m.geography,
-                        "source_snippet": m.source_snippet,
-                        "confidence": float(m.confidence) if m.confidence else None,
-                    }
-                    for m in metrics
-                ]
-                output["guidance"] = guidance if isinstance(guidance, list) else []
-                output["pipeline_status"].append({"step": "extract", "status": "ok", "metrics": len(metrics), "guidance": len(output["guidance"])})
-                completed.append("extract")
-            except Exception as e:
-                logger.error("Extraction failed for job %s: %s", job_id, str(e))
-                output["pipeline_status"].append({"step": "extract", "status": "error", "detail": str(e)[:500]})
-                output["extraction_error"] = str(e)[:500]
+                    output["metrics"] = [
+                        {
+                            "metric_name": m.metric_name,
+                            "metric_value": float(m.metric_value) if m.metric_value else None,
+                            "metric_text": m.metric_text,
+                            "unit": m.unit,
+                            "segment": m.segment,
+                            "geography": m.geography,
+                            "source_snippet": m.source_snippet,
+                            "confidence": float(m.confidence) if m.confidence else None,
+                        }
+                        for m in metrics
+                    ]
+                    output["guidance"] = guidance if isinstance(guidance, list) else []
+                    output["pipeline_status"].append({"step": "extract", "status": "ok", "metrics": len(metrics), "guidance": len(output["guidance"])})
+                    completed.append("extract")
+                    extract_ok = True
+                except Exception as e:
+                    logger.error("[PIPELINE] %s extraction failed for job %s: %s", ticker, job_id, e, exc_info=True)
+                    output["pipeline_status"].append({"step": "extract", "status": "error", "detail": str(e)[:500]})
+                    output["extraction_error"] = str(e)[:500]
+            else:
+                logger.warning("[PIPELINE] %s skipping extraction — parse failed", ticker)
+                output["pipeline_status"].append({"step": "extract", "status": "skipped", "detail": "parse failed"})
 
             # ── Steps 3-6: Compare, surprises, briefing, IR (parallel with separate sessions) ──
+            # Run even if extraction failed — some generation steps may still produce useful output
             await _update_step(job_id, "generating", 55, completed)
-            generation_results = await _run_generation_steps(company_id, doc_id, period_label)
-            for step_name, step_result in generation_results.items():
-                output[step_name] = step_result
-                completed.append(step_name)
+            try:
+                generation_results = await _run_generation_steps(company_id, doc_id, period_label)
+                for step_name, step_result in generation_results.items():
+                    output[step_name] = step_result
+                    completed.append(step_name)
+            except Exception as e:
+                logger.error("[PIPELINE] %s generation steps failed for job %s: %s", ticker, job_id, e, exc_info=True)
+                output["pipeline_status"].append({"step": "generate", "status": "error", "detail": str(e)[:200]})
 
             # ── Save to DB ───────────────────────────────────
             await _update_step(job_id, "saving", 90, completed)
             await _save_research_output(company_id, period_label, output, "full_analysis")
 
-        # ── Done ─────────────────────────────────────────────
+        # ── Done — determine final status ────────────────────
+        failed_steps = [s["step"] for s in output.get("pipeline_status", []) if s.get("status") in ("error", "skipped")]
+        if failed_steps and not completed:
+            final_status = "failed"
+            error_msg = f"All steps failed: {', '.join(failed_steps)}"
+        elif failed_steps:
+            final_status = "completed"
+            error_msg = None
+            logger.warning("[PIPELINE] Job %s completed with partial failures: %s (completed: %s)",
+                           job_id, ', '.join(failed_steps), ', '.join(completed))
+        else:
+            final_status = "completed"
+            error_msg = None
+
         await _update_job(
             job_id,
-            status="completed",
+            status=final_status,
             current_step="done",
             progress_pct=100,
             steps_completed=json.dumps(completed),
             result_json=json.dumps(output, default=str),
+            error_message=error_msg,
         )
-        logger.info("Job %s completed: %s / %s", job_id, ticker, period_label)
+        logger.info("[PIPELINE] Job %s %s: %s / %s | completed_steps=%s | failed_steps=%s",
+                     job_id, final_status, ticker, period_label,
+                     ', '.join(completed) or 'none', ', '.join(failed_steps) or 'none')
 
     except Exception as e:
-        logger.error("Job %s failed: %s", job_id, str(e))
+        logger.error("[PIPELINE] Job %s crashed: %s", job_id, str(e), exc_info=True)
         await _update_job(
             job_id,
             status="failed",
@@ -414,13 +445,25 @@ async def run_batch_pipeline(
                     return await _process_one_doc(did, dtype, idx)
 
             tasks = [_limited_process(did, dtype, i) for i, (did, dtype) in enumerate(zip(doc_ids, doc_types))]
-            results = await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Aggregate results
+            # Aggregate results with per-document error tracking
+            doc_failures = []
+            doc_successes = 0
             for i, res in enumerate(results):
-                if res is None:
-                    logger.warning("Result %d is None - document processing failed completely", i)
+                if isinstance(res, Exception):
+                    dtype = doc_types[i] if i < len(doc_types) else "unknown"
+                    logger.error("[BATCH] Document %d (%s) crashed: %s", i, dtype, res, exc_info=res)
+                    doc_failures.append(f"doc_{i}({dtype})")
+                    await _add_log(job_id, f"Document {i} ({dtype}) failed: {str(res)[:100]}", "error")
                     continue
+                if res is None:
+                    dtype = doc_types[i] if i < len(doc_types) else "unknown"
+                    logger.warning("[BATCH] Result %d (%s) is None - document processing failed completely", i, dtype)
+                    doc_failures.append(f"doc_{i}({dtype})")
+                    await _add_log(job_id, f"Document {i} ({dtype}) returned no result", "warn")
+                    continue
+                doc_successes += 1
                 last_doc_id = res["doc_id"]
                 output["documents_processed"].append(res["result"])
                 completed.append(f"doc_{i+1}")
@@ -462,10 +505,15 @@ async def run_batch_pipeline(
                 else:
                     logger.warning("  -> No items to aggregate for doc %s (dtype=%s)", title[:30] if title else "?", dtype)
 
-            # Log aggregation totals for debugging
-            logger.info("Aggregated: earnings=%d, transcript=%d, broker=%d, presentation=%d",
+            # Log aggregation totals and document processing summary
+            logger.info("[BATCH] Aggregated: earnings=%d, transcript=%d, broker=%d, presentation=%d",
                         len(earnings_data), len(transcript_data), len(broker_data), len(presentation_data))
             await _add_log(job_id, f"Extraction complete: {len(earnings_data)} earnings, {len(transcript_data)} transcript, {len(broker_data)} broker, {len(presentation_data)} presentation data blocks")
+
+            if doc_failures:
+                logger.warning("[BATCH] %s: %d/%d documents failed: %s",
+                               ticker, len(doc_failures), total_docs, ', '.join(doc_failures))
+                await _add_log(job_id, f"Document processing: {doc_successes}/{total_docs} succeeded, {len(doc_failures)} failed: {', '.join(doc_failures)}", "warn")
 
             # Include extraction stats in output for UI visibility
             output["extraction_stats"] = {
@@ -492,6 +540,7 @@ async def run_batch_pipeline(
                 except ValueError:
                     return ("thesis_comparison", None)
                 except Exception as e:
+                    logger.error("[BATCH] %s thesis comparison failed: %s", ticker, e, exc_info=True)
                     return ("thesis_comparison", {"error": str(e)[:200]})
 
             async def _do_surprises():
@@ -500,17 +549,26 @@ async def run_batch_pipeline(
                         from services.surprise_detector import detect_surprises
                         s = await detect_surprises(db2, company_id, last_doc_id, period_label)
                         return ("surprises", [x.model_dump() for x in s])
-                except Exception:
+                except Exception as e:
+                    logger.error("[BATCH] %s surprise detection failed: %s", ticker, e, exc_info=True)
                     return ("surprises", [])
 
             # Run thesis comparison and surprises in parallel
-            results = await asyncio.gather(_do_compare(), _do_surprises())
-            for key, val in results:
-                output[key] = val
-                if key == "thesis_comparison" and val:
-                    completed.append("compare")
-                elif key == "surprises":
-                    completed.append("surprises")
+            try:
+                results = await asyncio.gather(_do_compare(), _do_surprises(), return_exceptions=True)
+                for res in results:
+                    if isinstance(res, Exception):
+                        logger.error("[BATCH] %s compare/surprise step crashed: %s", ticker, res, exc_info=res)
+                        continue
+                    key, val = res
+                    output[key] = val
+                    if key == "thesis_comparison" and val:
+                        completed.append("compare")
+                    elif key == "surprises":
+                        completed.append("surprises")
+            except Exception as e:
+                logger.error("[BATCH] %s thesis/surprise gather failed: %s", ticker, e, exc_info=True)
+                await _add_log(job_id, f"Thesis comparison/surprises failed: {str(e)[:100]}", "error")
 
             # ── Synthesis + IR Questions (parallel) ─────────
             await _update_step(job_id, "synthesising", 75, completed)
@@ -620,33 +678,64 @@ async def run_batch_pipeline(
                     return ("ir_questions", [])
 
             # Run synthesis and IR questions in parallel
-            gen_results = await asyncio.gather(_do_synthesis(), _do_ir_questions())
-            for key, val in gen_results:
-                output[key] = val
-                completed.append(key)
-                if key == "synthesis":
-                    if isinstance(val, dict) and val.get("error"):
-                        await _add_log(job_id, f"⚠ Synthesis error: {val.get('error', '')[:100]}", "warn")
-                    else:
-                        await _add_log(job_id, "✓ Synthesis complete — generated analysis output")
-                elif key == "ir_questions":
-                    await _add_log(job_id, f"✓ Generated {len(val) if isinstance(val, list) else 0} IR questions")
+            try:
+                gen_results = await asyncio.gather(_do_synthesis(), _do_ir_questions(), return_exceptions=True)
+                for res in gen_results:
+                    if isinstance(res, Exception):
+                        logger.error("[BATCH] %s synthesis/IR step crashed: %s", ticker, res, exc_info=res)
+                        await _add_log(job_id, f"Synthesis/IR step crashed: {str(res)[:100]}", "error")
+                        continue
+                    key, val = res
+                    output[key] = val
+                    completed.append(key)
+                    if key == "synthesis":
+                        if isinstance(val, dict) and val.get("error"):
+                            await _add_log(job_id, f"Synthesis error: {val.get('error', '')[:100]}", "warn")
+                        else:
+                            await _add_log(job_id, "Synthesis complete — generated analysis output")
+                    elif key == "ir_questions":
+                        await _add_log(job_id, f"Generated {len(val) if isinstance(val, list) else 0} IR questions")
+            except Exception as e:
+                logger.error("[BATCH] %s synthesis/IR gather failed: %s", ticker, e, exc_info=True)
+                await _add_log(job_id, f"Synthesis/IR questions failed: {str(e)[:100]}", "error")
 
             # ── Save ─────────────────────────────────────────
             await _update_step(job_id, "saving", 95, completed)
             await _add_log(job_id, "Saving results to database...")
             await _save_research_output(company_id, period_label, output, "batch_synthesis")
 
-        await _add_log(job_id, "✓ Analysis complete!")
+        # ── Summary ──────────────────────────────────────────
+        step_failures = []
+        if doc_failures:
+            step_failures.extend(doc_failures)
+        for step_key in ("thesis_comparison", "surprises", "synthesis", "ir_questions"):
+            val = output.get(step_key)
+            if isinstance(val, dict) and val.get("error"):
+                step_failures.append(step_key)
+
+        summary_msg = (
+            f"Analysis complete: {doc_successes}/{total_docs} docs processed, "
+            f"{len(completed)} steps completed"
+        )
+        if step_failures:
+            summary_msg += f", {len(step_failures)} failures: {', '.join(step_failures)}"
+            logger.warning("[BATCH] %s completed with failures: %s", ticker, ', '.join(step_failures))
+            await _add_log(job_id, summary_msg, "warn")
+        else:
+            await _add_log(job_id, summary_msg)
+
         await _update_job(
             job_id, status="completed", current_step="done", progress_pct=100,
             steps_completed=json.dumps(completed), result_json=json.dumps(output, default=str),
         )
-        logger.info("Batch job %s completed: %s / %s", job_id, ticker, period_label)
+        logger.info("[BATCH] Job %s completed: %s / %s | steps=%s | failures=%s",
+                     job_id, ticker, period_label,
+                     ', '.join(completed) or 'none',
+                     ', '.join(step_failures) or 'none')
 
     except Exception as e:
-        logger.error("Batch job %s failed: %s", job_id, str(e))
-        await _add_log(job_id, f"✕ Failed: {str(e)[:200]}", "error")
+        logger.error("[BATCH] Job %s crashed: %s", job_id, str(e), exc_info=True)
+        await _add_log(job_id, f"Failed: {str(e)[:200]}", "error")
         await _update_job(
             job_id, status="failed", error_message=str(e)[:500],
             result_json=json.dumps(output, default=str) if output else None,
@@ -734,6 +823,7 @@ async def run_resynthesise_pipeline(
                 except ValueError:
                     return ("thesis_comparison", None)
                 except Exception as e:
+                    logger.error("[RESYNTH] %s thesis comparison failed: %s", ticker, e, exc_info=True)
                     return ("thesis_comparison", {"error": str(e)[:200]})
 
             async def _do_surprises():
@@ -742,16 +832,25 @@ async def run_resynthesise_pipeline(
                         from services.surprise_detector import detect_surprises
                         s = await detect_surprises(db2, company_id, last_doc_id, period_label)
                         return ("surprises", [x.model_dump() for x in s])
-                except Exception:
+                except Exception as e:
+                    logger.error("[RESYNTH] %s surprise detection failed: %s", ticker, e, exc_info=True)
                     return ("surprises", [])
 
-            results = await asyncio.gather(_do_compare(), _do_surprises())
-            for key, val in results:
-                output[key] = val
-                if key == "thesis_comparison" and val:
-                    completed.append("compare")
-                elif key == "surprises":
-                    completed.append("surprises")
+            try:
+                results = await asyncio.gather(_do_compare(), _do_surprises(), return_exceptions=True)
+                for res in results:
+                    if isinstance(res, Exception):
+                        logger.error("[RESYNTH] %s compare/surprise step crashed: %s", ticker, res, exc_info=res)
+                        continue
+                    key, val = res
+                    output[key] = val
+                    if key == "thesis_comparison" and val:
+                        completed.append("compare")
+                    elif key == "surprises":
+                        completed.append("surprises")
+            except Exception as e:
+                logger.error("[RESYNTH] %s thesis/surprise gather failed: %s", ticker, e, exc_info=True)
+                await _add_log(job_id, f"Thesis comparison/surprises failed: {str(e)[:100]}", "error")
 
             # ── Synthesis + IR Questions (parallel) ─────────
             await _update_step(job_id, "synthesising", 60, completed)
@@ -815,7 +914,7 @@ async def run_resynthesise_pipeline(
                     synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192, model=model_id)
                     return ("synthesis", synthesis)
                 except Exception as e:
-                    logger.error("Resynthesis failed for %s/%s: %s", ticker, period_label, str(e)[:500])
+                    logger.error("[RESYNTH] %s/%s synthesis failed: %s", ticker, period_label, str(e)[:500])
                     return ("synthesis", {"error": str(e)[:200]})
 
             async def _do_ir_questions():
@@ -824,36 +923,63 @@ async def run_resynthesise_pipeline(
                         from services.output_generator import generate_ir_questions
                         questions = await generate_ir_questions(db2, company_id, period_label)
                         return ("ir_questions", [q.model_dump() for q in questions])
-                except Exception:
+                except Exception as e:
+                    logger.error("[RESYNTH] %s IR questions failed: %s", ticker, e, exc_info=True)
                     return ("ir_questions", [])
 
-            gen_results = await asyncio.gather(_do_synthesis(), _do_ir_questions())
-            for key, val in gen_results:
-                output[key] = val
-                completed.append(key)
-                if key == "synthesis":
-                    if isinstance(val, dict) and val.get("error"):
-                        await _add_log(job_id, f"⚠ Synthesis error: {val.get('error', '')[:100]}", "warn")
-                    else:
-                        await _add_log(job_id, "✓ Synthesis complete — generated with updated thesis context")
-                elif key == "ir_questions":
-                    await _add_log(job_id, f"✓ Generated {len(val) if isinstance(val, list) else 0} IR questions")
+            try:
+                gen_results = await asyncio.gather(_do_synthesis(), _do_ir_questions(), return_exceptions=True)
+                for res in gen_results:
+                    if isinstance(res, Exception):
+                        logger.error("[RESYNTH] %s synthesis/IR step crashed: %s", ticker, res, exc_info=res)
+                        await _add_log(job_id, f"Synthesis/IR step crashed: {str(res)[:100]}", "error")
+                        continue
+                    key, val = res
+                    output[key] = val
+                    completed.append(key)
+                    if key == "synthesis":
+                        if isinstance(val, dict) and val.get("error"):
+                            await _add_log(job_id, f"Synthesis error: {val.get('error', '')[:100]}", "warn")
+                        else:
+                            await _add_log(job_id, "Synthesis complete — generated with updated thesis context")
+                    elif key == "ir_questions":
+                        await _add_log(job_id, f"Generated {len(val) if isinstance(val, list) else 0} IR questions")
+            except Exception as e:
+                logger.error("[RESYNTH] %s synthesis/IR gather failed: %s", ticker, e, exc_info=True)
+                await _add_log(job_id, f"Synthesis/IR questions failed: {str(e)[:100]}", "error")
 
             # ── Save ─────────────────────────────────────────
             await _update_step(job_id, "saving", 95, completed)
             await _add_log(job_id, "Saving results to database...")
             await _save_research_output(company_id, period_label, output, "batch_synthesis")
 
-        await _add_log(job_id, "✓ Re-synthesis complete!")
+        # ── Summary ──────────────────────────────────────────
+        step_failures = []
+        for step_key in ("thesis_comparison", "surprises", "synthesis", "ir_questions"):
+            val = output.get(step_key)
+            if isinstance(val, dict) and val.get("error"):
+                step_failures.append(step_key)
+
+        summary_msg = f"Re-synthesis complete: {len(completed)} steps completed"
+        if step_failures:
+            summary_msg += f", {len(step_failures)} failures: {', '.join(step_failures)}"
+            logger.warning("[RESYNTH] %s completed with failures: %s", ticker, ', '.join(step_failures))
+            await _add_log(job_id, summary_msg, "warn")
+        else:
+            await _add_log(job_id, summary_msg)
+
         await _update_job(
             job_id, status="completed", current_step="done", progress_pct=100,
             steps_completed=json.dumps(completed), result_json=json.dumps(output, default=str),
         )
-        logger.info("Resynthesis job %s completed: %s / %s", job_id, ticker, period_label)
+        logger.info("[RESYNTH] Job %s completed: %s / %s | steps=%s | failures=%s",
+                     job_id, ticker, period_label,
+                     ', '.join(completed) or 'none',
+                     ', '.join(step_failures) or 'none')
 
     except Exception as e:
-        logger.error("Resynthesis job %s failed: %s", job_id, str(e))
-        await _add_log(job_id, f"✕ Failed: {str(e)[:200]}", "error")
+        logger.error("[RESYNTH] Job %s crashed: %s", job_id, str(e), exc_info=True)
+        await _add_log(job_id, f"Failed: {str(e)[:200]}", "error")
         await _update_job(
             job_id, status="failed", error_message=str(e)[:500],
             result_json=json.dumps(output, default=str) if output else None,

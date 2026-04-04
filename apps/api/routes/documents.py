@@ -7,7 +7,9 @@ import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+
+from apps.api.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 from sqlalchemy import delete, select
@@ -83,7 +85,9 @@ async def upload_document(
 # Upload + process (background — returns job ID immediately)
 # ─────────────────────────────────────────────────────────────────
 @router.post("/companies/{ticker}/documents/upload-and-process", status_code=202)
+@limiter.limit("10/minute")
 async def upload_and_process(
+    request: Request,
     ticker: str,
     file: UploadFile = File(...),
     document_type: str = Form("earnings_release"),

@@ -7,8 +7,10 @@ GET  /autorun/status  → full state for both pipelines + combined log
 """
 import logging
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
+
+from apps.api.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["autorun"])
@@ -38,7 +40,8 @@ class StopRequest(BaseModel):
 
 
 @router.post("/autorun/start")
-async def start_autorun(body: AutoRunRequest, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")
+async def start_autorun(request: Request, body: AutoRunRequest, background_tasks: BackgroundTasks):
     if not _available:
         raise HTTPException(503, "AutoRun module not loaded. Check scripts/autorun.py exists.")
     if body.hours <= 0 or body.hours > 24:

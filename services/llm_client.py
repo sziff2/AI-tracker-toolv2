@@ -6,6 +6,7 @@ Includes token usage tracking and improved error handling.
 import asyncio
 import json
 import logging
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,7 @@ from typing import Any
 import anthropic
 
 from configs.settings import settings
+from services.budget_guard import BudgetGuard, BudgetExceeded  # noqa: F401
 
 # ── Cost per 1M tokens (approximate, update as pricing changes) ──
 _COST_PER_1M = {
@@ -25,15 +27,37 @@ _COST_PER_1M = {
     "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
 }
 
-# Thread-local feature context for logging
-_call_context = {"feature": "unknown", "ticker": None, "period": None}
+# Thread-local context for usage attribution (safe across ThreadPoolExecutor)
+_call_context = threading.local()
 
 
-def set_llm_context(feature: str, ticker: str = None, period: str = None):
-    """Set context for the next LLM call(s) so usage logs know what triggered them."""
-    _call_context["feature"] = feature
-    _call_context["ticker"] = ticker
-    _call_context["period"] = period
+def set_llm_context(feature: str = None, ticker: str = None, period: str = None):
+    """Set context for the next LLM call(s) so usage logs know what triggered them.
+    Thread-safe: each thread-pool worker gets its own copy."""
+    if feature is not None:
+        _call_context.feature = feature
+    if ticker is not None:
+        _call_context.ticker = ticker
+    if period is not None:
+        _call_context.period = period
+
+
+def _get_ctx(key: str, default=None):
+    return getattr(_call_context, key, default)
+
+
+# Active budget guard — set by autorun, checked on every call
+_active_budget_guard: BudgetGuard | None = None
+
+
+def set_budget_guard(guard: BudgetGuard | None):
+    """Attach (or clear) a BudgetGuard checked on every LLM call."""
+    global _active_budget_guard
+    _active_budget_guard = guard
+
+
+def get_budget_guard() -> BudgetGuard | None:
+    return _active_budget_guard
 
 
 def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -41,8 +65,10 @@ def _estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     return round((input_tokens * rates["input"] + output_tokens * rates["output"]) / 1_000_000, 6)
 
 
-def _log_usage(model: str, input_tokens: int, output_tokens: int, duration_ms: int = 0):
-    """Persist LLM usage to database (fire-and-forget)."""
+def _log_usage(model: str, input_tokens: int, output_tokens: int, duration_ms: int = 0,
+               *, feature: str = None, ticker: str = None, period: str = None):
+    """Persist LLM usage to database (fire-and-forget).
+    Explicit kwargs override thread-local context."""
     try:
         from apps.api.database import SyncSessionLocal
         from apps.api.models import LLMUsageLog
@@ -52,12 +78,12 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int, duration_ms: i
                 id=uuid.uuid4(),
                 timestamp=datetime.now(timezone.utc),
                 model=model,
-                feature=_call_context.get("feature", "unknown"),
+                feature=feature or _get_ctx("feature", "unknown"),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 cost_usd=cost,
-                ticker=_call_context.get("ticker"),
-                period_label=_call_context.get("period"),
+                ticker=ticker or _get_ctx("ticker"),
+                period_label=period or _get_ctx("period"),
                 duration_ms=duration_ms,
             ))
             db.commit()
@@ -110,10 +136,21 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None, model: str | None = None, feature: str | None = None) -> str:
+def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None,
+             model: str | None = None, feature: str | None = None,
+             ticker: str | None = None, period: str | None = None) -> str:
     client = get_client()
     model = model or settings.llm_model
 
+    # Set thread-local context so nested/parallel calls inherit it
+    if feature:
+        _call_context.feature = feature
+    if ticker:
+        _call_context.ticker = ticker
+    if period:
+        _call_context.period = period
+
+    t0 = time.time()
     try:
         resp = client.messages.create(
             model=model,
@@ -138,14 +175,18 @@ def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float |
         logger.error("Anthropic API error: %s", e.message)
         raise
 
+    duration_ms = int((time.time() - t0) * 1000)
     text = resp.content[0].text.strip()
     usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
-    if feature:
-        _call_context["feature"] = feature
-    _log_usage(model, resp.usage.input_tokens, resp.usage.output_tokens)
+    _log_usage(model, resp.usage.input_tokens, resp.usage.output_tokens, duration_ms,
+               feature=feature, ticker=ticker, period=period)
+    # Budget guard — track spend and raise BudgetExceeded if over cap
+    if _active_budget_guard is not None:
+        _active_budget_guard.track(resp.usage.input_tokens, resp.usage.output_tokens, model)
     logger.debug(
-        "LLM response: %d chars, stop=%s, tokens_in=%d, tokens_out=%d",
+        "LLM response: %d chars, stop=%s, tokens_in=%d, tokens_out=%d, feature=%s, ticker=%s",
         len(text), resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens,
+        feature or _get_ctx("feature", "?"), ticker or _get_ctx("ticker", "?"),
     )
     return text
 
@@ -220,12 +261,34 @@ def call_llm_json(prompt: str, **kwargs) -> Any:
     return _parse_json(raw)
 
 
+def _snapshot_context() -> dict:
+    """Capture current thread-local context for propagation to executor threads."""
+    return {
+        "feature": _get_ctx("feature"),
+        "ticker": _get_ctx("ticker"),
+        "period": _get_ctx("period"),
+    }
+
+
+def _restore_context(snapshot: dict):
+    """Apply a context snapshot to the current thread-local."""
+    for k, v in snapshot.items():
+        if v is not None:
+            setattr(_call_context, k, v)
+
+
 async def call_llm_async(prompt: str, timeout_seconds: int = 90, **kwargs) -> str:
     """Run LLM call in thread pool with timeout for Railway compatibility."""
     loop = asyncio.get_event_loop()
+    ctx = _snapshot_context()
+
+    def _run():
+        _restore_context(ctx)
+        return call_llm(prompt, **kwargs)
+
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(_executor, lambda: call_llm(prompt, **kwargs)),
+            loop.run_in_executor(_executor, _run),
             timeout=timeout_seconds
         )
     except asyncio.TimeoutError:
@@ -236,7 +299,13 @@ async def call_llm_async(prompt: str, timeout_seconds: int = 90, **kwargs) -> st
 async def call_llm_json_async(prompt: str, **kwargs) -> Any:
     """Run LLM call in thread pool so multiple can run in parallel."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_executor, lambda: call_llm_json(prompt, **kwargs))
+    ctx = _snapshot_context()
+
+    def _run():
+        _restore_context(ctx)
+        return call_llm_json(prompt, **kwargs)
+
+    return await loop.run_in_executor(_executor, _run)
 
 
 async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 3, timeout_seconds: int = 120, **kwargs) -> list[Any]:

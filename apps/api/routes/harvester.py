@@ -15,8 +15,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
+
+from apps.api.rate_limit import limiter
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -259,7 +261,8 @@ async def test_fetch(url: str):
 # ── POST /harvester/llm-scan — LLM-powered IR page scan ───────────
 
 @router.post("/harvester/llm-scan/{ticker:path}")
-async def llm_scan_ir(ticker: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def llm_scan_ir(request: Request, ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Use the LLM to scan a company's IR page and find all documents.
     Returns the list for human review — does NOT auto-ingest.

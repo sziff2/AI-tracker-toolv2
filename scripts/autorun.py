@@ -45,7 +45,8 @@ from apps.api.models import (
     ABExperiment, Company, Document, ExtractedMetric,
     PromptVariant, ThesisVersion, ExtractionFeedback,
 )
-from services.llm_client import call_llm, call_llm_json
+from services.llm_client import call_llm, call_llm_json, set_budget_guard
+from services.budget_guard import BudgetGuard, BudgetExceeded
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,7 +67,7 @@ MAX_TOKENS_HALLUC    = 1024
 MAX_TOKENS_RUBRIC    = 1500
 DOC_CHAR_LIMIT       = 8000
 
-# Cost guard — hard stop when estimated spend exceeds this
+# Legacy cost constants (kept for backwards compat but BudgetGuard is primary)
 COST_PER_EXPERIMENT  = 0.30   # USD conservative estimate per experiment
 MAX_COST_USD         = 10.0   # default hard cap per run
 
@@ -1208,6 +1209,11 @@ async def run_pipeline_loop(
     )
     deadline = time.time() + hours * 3600
 
+    # Install budget guard — tracks actual token spend across all LLM calls
+    budget = BudgetGuard()  # reads AUTORUN_BUDGET_USD from settings
+    set_budget_guard(budget)
+    _log(pipeline, "info", f"Budget guard active — cap ${budget.budget_usd:.2f}")
+
     _state[pipeline].update({
         "running": True,
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -1233,16 +1239,8 @@ async def run_pipeline_loop(
             round_num += 1
             remaining_h = (deadline - time.time()) / 3600
 
-            # Cost guard — stop if estimated spend exceeds cap
-            estimated_spend = _state[pipeline]["experiments_run"] * COST_PER_EXPERIMENT
-            if estimated_spend >= MAX_COST_USD:
-                _log(pipeline, "warning",
-                     f"Cost cap reached — stopping (est. ${estimated_spend:.2f} ≥ ${MAX_COST_USD})",
-                     "Increase MAX_COST_USD in autorun.py to run longer")
-                break
-
             _log(pipeline, "info", f"─── Round {round_num} ───",
-                 f"{remaining_h:.1f}h remaining | est. spend ${estimated_spend:.2f}")
+                 f"{remaining_h:.1f}h remaining | actual spend ${budget.total_spend:.2f} / ${budget.budget_usd:.2f}")
 
             # Run prompt types in parallel (up to 3 concurrent to respect rate limits)
             async def run_one(pt):
@@ -1276,10 +1274,16 @@ async def run_pipeline_loop(
                      f"Sleeping {SLEEP_BETWEEN_ROUNDS}s…")
                 await asyncio.sleep(SLEEP_BETWEEN_ROUNDS)
 
+    except BudgetExceeded as e:
+        _log(pipeline, "warning",
+             f"Budget cap reached — stopping gracefully",
+             f"${budget.total_spend:.2f} spent in {budget.call_count} calls. "
+             f"Set AUTORUN_BUDGET_USD env var to increase the cap.")
     except Exception as e:
         _log(pipeline, "error", f"Pipeline crashed", str(e))
         _state[pipeline]["errors"] += 1
     finally:
+        set_budget_guard(None)  # clear guard so other pipelines are not affected
         _state[pipeline]["running"] = False
         _state[pipeline]["current_type"] = None
         _state[pipeline]["current_step"] = None

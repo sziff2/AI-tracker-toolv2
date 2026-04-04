@@ -8,11 +8,17 @@ Start with:
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.responses import PlainTextResponse
 
 from apps.api.database import async_engine, Base
+from apps.api.rate_limit import limiter
 from apps.api.routes import (
     companies_router,
     documents_router,
@@ -90,6 +96,10 @@ async def lifespan(app: FastAPI):
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
+        # LLM usage log — ensure cost-attribution columns exist
+        for col in ["ticker TEXT", "period_label TEXT", "duration_ms INTEGER"]:
+            col_name = col.split()[0]
+            await conn.execute(sa_text(f"ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS {col}"))
     yield
     await async_engine.dispose()
 
@@ -100,14 +110,43 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS (adjust in production) ─────────────────────────────────
+# ── Rate limiting ──────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# ── CORS ───────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://ai-tracker-tool-production.up.railway.app",
+        "http://localhost:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── GZip compression ──────────────────────────────────────────
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# ── Security headers ──────────────────────────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' https://api.anthropic.com"
+    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 # ── Route registration ──────────────────────────────────────────
 PREFIX = settings.api_prefix
@@ -125,6 +164,11 @@ app.include_router(execution_router, prefix=PREFIX)
 app.include_router(autorun_router, prefix=PREFIX)
 app.include_router(harvester_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def robots():
+    return "User-agent: *\nDisallow: /"
 
 
 @app.get("/health")

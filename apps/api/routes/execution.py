@@ -16,8 +16,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
+from apps.api.rate_limit import limiter
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +61,8 @@ async def _get_company(db, ticker):
 # ═══════════════════════════════════════════════════════════════
 
 @router.post("/companies/{ticker}/execution/extract")
-async def extract_statements(ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def extract_statements(request: Request, ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
     """
     Extract forward-looking management statements from all documents for this company.
     If period is specified, only process that period's documents.
@@ -185,7 +188,8 @@ async def extract_statements(ticker: str, period: str = None, db: AsyncSession =
 # ═══════════════════════════════════════════════════════════════
 
 @router.post("/companies/{ticker}/execution/assess")
-async def assess_outcomes(ticker: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def assess_outcomes(request: Request, ticker: str, db: AsyncSession = Depends(get_db)):
     """
     Use LLM to assess open management statements against actual extracted metrics.
     Updates statement statuses and scores, rebuilds the scorecard.
