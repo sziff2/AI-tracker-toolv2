@@ -194,7 +194,7 @@ async def _run_weekly_bg():
 @router.post("/harvester/test-teams")
 async def test_teams_webhook():
     """Diagnostic: test Teams webhook with a dummy payload."""
-    from services.harvester.scheduler import format_teams_message, post_teams_report
+    from services.harvester.scheduler import post_teams_report
     dummy = {"new": 1, "skipped": 2, "failed": 0, "details": [
         {"ticker": "TEST", "name": "Test Company", "sources_tried": ["edgar"], "candidates_found": 1, "errors": [], "source_used": "edgar"}
     ]}
@@ -203,6 +203,25 @@ async def test_teams_webhook():
         return {"sent": sent, "webhook_configured": bool(settings.teams_webhook_url)}
     except Exception as exc:
         return {"sent": False, "error": str(exc)}
+
+
+@router.post("/harvester/test-weekly-sync")
+async def test_weekly_sync():
+    """Diagnostic: run weekly harvest synchronously to surface errors."""
+    from services.harvester.scheduler import run_and_report
+    try:
+        result = await run_and_report(trigger="manual")
+        return {
+            "ok": True,
+            "new": result.get("new"),
+            "skipped": result.get("skipped"),
+            "failed": result.get("failed"),
+            "report_id": result.get("report_id"),
+            "detail_count": len(result.get("details", [])),
+        }
+    except Exception as exc:
+        import traceback
+        return {"ok": False, "error": str(exc), "traceback": traceback.format_exc()}
 
 
 # ── GET /harvester/reports — recent harvest reports ──────────────────
