@@ -41,6 +41,99 @@ class SourceUpdate(BaseModel):
     notes:       Optional[str] = None
 
 
+# ── GET /harvester/status ─────────────────────────────────────────
+
+@router.get("/harvester/status")
+async def harvester_status(db: AsyncSession = Depends(get_db)):
+    """Per-company harvester status: ok/stale/failed/never_run/no_source/new_docs."""
+    from sqlalchemy import func, text
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    stale_threshold = now - timedelta(days=7)
+
+    # All active companies
+    companies_q = await db.execute(
+        select(Company.id, Company.ticker, Company.name, Company.cik)
+        .where(Company.coverage_status == "active")
+        .order_by(Company.ticker)
+    )
+    companies = companies_q.all()
+
+    # Harvester sources keyed by company_id
+    sources_q = await db.execute(select(HarvesterSource))
+    sources = {s.company_id: s for s in sources_q.scalars().all()}
+
+    # Harvested documents stats per company: latest doc date, pending count, last error
+    hd_stats_q = await db.execute(text("""
+        SELECT
+            company_id,
+            MAX(discovered_at) AS last_harvested,
+            MAX(CASE WHEN ingested THEN discovered_at END) AS latest_ingested_at,
+            COUNT(*) FILTER (WHERE NOT ingested AND error IS NULL) AS pending_count,
+            MAX(CASE WHEN error IS NOT NULL THEN discovered_at END) AS last_error_at,
+            MAX(error) AS last_error
+        FROM harvested_documents
+        GROUP BY company_id
+    """))
+    hd_stats = {}
+    for row in hd_stats_q.all():
+        hd_stats[row.company_id] = row
+
+    # Latest document date per company (from documents table)
+    doc_stats_q = await db.execute(text("""
+        SELECT company_id, MAX(published_at) AS latest_doc_date
+        FROM documents
+        GROUP BY company_id
+    """))
+    doc_dates = {row.company_id: row.latest_doc_date for row in doc_stats_q.all()}
+
+    result = []
+    for co_id, co_ticker, co_name, co_cik in companies:
+        src = sources.get(co_id)
+        has_ir_url = bool(src and src.ir_docs_url)
+        has_edgar = co_ticker in EDGAR_SOURCES
+        has_investegate = co_ticker in INVESTEGATE_SOURCES
+        has_source = has_ir_url or has_edgar or has_investegate
+
+        stats = hd_stats.get(co_id)
+        last_harvested = stats.last_harvested if stats else None
+        pending_count = stats.pending_count if stats else 0
+        last_error = stats.last_error if stats else None
+        last_error_at = stats.last_error_at if stats else None
+
+        latest_doc_date = doc_dates.get(co_id)
+
+        # Status logic
+        if not has_source:
+            status = "no_source"
+        elif last_harvested is None:
+            status = "never_run"
+        elif last_error_at and (not last_harvested or last_error_at >= last_harvested):
+            # Most recent harvest attempt had an error
+            status = "failed"
+        elif last_harvested < stale_threshold:
+            status = "stale"
+        elif pending_count > 0:
+            status = "new_docs"
+        else:
+            status = "ok"
+
+        result.append({
+            "ticker": co_ticker,
+            "name": co_name,
+            "last_harvested": last_harvested.isoformat() if last_harvested else None,
+            "latest_doc_date": latest_doc_date.isoformat() if latest_doc_date else None,
+            "new_docs": pending_count,
+            "status": status,
+            "has_ir_url": has_ir_url,
+            "has_edgar": has_edgar,
+            "last_error": last_error,
+        })
+
+    return result
+
+
 # ── GET /harvester/sources ────────────────────────────────────────
 
 @router.get("/harvester/sources")
@@ -203,25 +296,6 @@ async def test_teams_webhook():
         return {"sent": sent, "webhook_configured": bool(settings.teams_webhook_url)}
     except Exception as exc:
         return {"sent": False, "error": str(exc)}
-
-
-@router.post("/harvester/test-weekly-sync")
-async def test_weekly_sync():
-    """Diagnostic: run weekly harvest synchronously to surface errors."""
-    from services.harvester.scheduler import run_and_report
-    try:
-        result = await run_and_report(trigger="manual")
-        return {
-            "ok": True,
-            "new": result.get("new"),
-            "skipped": result.get("skipped"),
-            "failed": result.get("failed"),
-            "report_id": result.get("report_id"),
-            "detail_count": len(result.get("details", [])),
-        }
-    except Exception as exc:
-        import traceback
-        return {"ok": False, "error": str(exc), "traceback": traceback.format_exc()}
 
 
 # ── GET /harvester/reports — recent harvest reports ──────────────────

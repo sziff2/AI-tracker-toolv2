@@ -6,7 +6,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db, get_company_or_404
@@ -515,4 +515,36 @@ async def patch_thesis_field(ticker: str, body: dict, db: AsyncSession = Depends
     setattr(thesis, field, value)
     await db.commit()
     return {"status": "saved", "field": field}
+
+
+# ── KPI Actuals (auto-extracted from briefings) ─────────────────
+
+@router.get("/{ticker}/kpi-actuals")
+async def get_kpi_actuals(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Return all auto-extracted KPI actuals for a company."""
+    company = await get_company_or_404(db, ticker)
+    result = await db.execute(
+        text(
+            "SELECT id, company_id, period, year, kpi_name, value, value_bool, value_text, "
+            "source_doc_id, extracted_at "
+            "FROM kpi_actuals WHERE company_id = :cid ORDER BY year DESC, period DESC, kpi_name"
+        ),
+        {"cid": company.id},
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(r.id),
+            "company_id": str(r.company_id),
+            "period": r.period,
+            "year": r.year,
+            "kpi_name": r.kpi_name,
+            "value": float(r.value) if r.value is not None else None,
+            "value_bool": r.value_bool,
+            "value_text": r.value_text,
+            "source_doc_id": str(r.source_doc_id) if r.source_doc_id else None,
+            "extracted_at": r.extracted_at.isoformat() if r.extracted_at else None,
+        }
+        for r in rows
+    ]
 

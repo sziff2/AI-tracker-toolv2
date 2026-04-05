@@ -2,6 +2,7 @@
 Budget guard for LLM pipelines.
 Tracks cumulative token spend and enforces a hard cap.
 """
+import asyncio
 import logging
 from configs.settings import settings
 
@@ -36,8 +37,26 @@ class BudgetGuard:
             logger.warning("[BUDGET] At %.0f%% of $%.2f budget ($%.2f spent)",
                           self.total_spend / self.budget_usd * 100, self.budget_usd, self.total_spend)
             self._warned = True
+            try:
+                from services.slack_alerts import send_slack
+                asyncio.create_task(send_slack(
+                    f"Budget warning: ${self.total_spend:.2f} of ${self.budget_usd:.2f} "
+                    f"({self.total_spend / self.budget_usd * 100:.0f}%) after {self.call_count} calls",
+                    "warn",
+                ))
+            except RuntimeError:
+                pass  # no running event loop (e.g. sync context)
 
         if self.total_spend >= self.budget_usd:
+            try:
+                from services.slack_alerts import send_slack
+                asyncio.create_task(send_slack(
+                    f"Budget EXCEEDED: ${self.total_spend:.2f} >= ${self.budget_usd:.2f} "
+                    f"after {self.call_count} calls",
+                    "error",
+                ))
+            except RuntimeError:
+                pass
             raise BudgetExceeded(
                 f"Budget exceeded: ${self.total_spend:.2f} >= ${self.budget_usd:.2f} "
                 f"after {self.call_count} calls"

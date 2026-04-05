@@ -22,6 +22,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from services.harvester.http_retry import fetch_with_retry
 from services.harvester.sources.robots_check import can_fetch, get_crawl_delay
 
 logger = logging.getLogger(__name__)
@@ -160,7 +161,7 @@ async def _try_fetch_api_endpoints(
     extra_content = ""
     for api_url in api_urls:
         try:
-            resp = await client.get(api_url, headers={
+            resp = await fetch_with_retry(api_url, client, retries=2, timeout=15, headers={
                 **_HEADERS,
                 "Accept": "application/json, text/plain, */*",
             })
@@ -186,7 +187,7 @@ async def _try_ssr_fetch(
     pre-rendered HTML to crawlers.
     """
     try:
-        resp = await client.get(url, headers=_SSR_HEADERS)
+        resp = await fetch_with_retry(url, client, retries=2, timeout=15, headers=_SSR_HEADERS)
         if resp.status_code == 200:
             cleaned = _clean_page_source(resp.text)
             visible = _extract_visible_text(cleaned)
@@ -330,7 +331,7 @@ async def scrape_ir_with_llm(
                     continue
                 try:
                     await asyncio.sleep(crawl_delay)
-                    sib_resp = await client.get(sib_url)
+                    sib_resp = await fetch_with_retry(sib_url, client, retries=2, timeout=15)
                     if sib_resp.status_code == 200:
                         sib_cleaned = _clean_page_source(sib_resp.text)
                         remaining = _MAX_PAGE_CHARS - len(cleaned)
@@ -393,13 +394,25 @@ async def scrape_ir_with_llm(
         if doc_type not in valid_types:
             doc_type = "other"
 
+        # Parse date_str from LLM into a real datetime
+        published_at = None
+        if date_str:
+            for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y", "%B %d, %Y", "%d %B %Y"):
+                try:
+                    published_at = datetime.strptime(date_str, fmt).replace(tzinfo=timezone.utc)
+                    break
+                except ValueError:
+                    continue
+        if not published_at:
+            published_at = datetime.now(timezone.utc)
+
         candidates.append({
             "ticker": ticker,
             "source": "ir_llm",
             "source_url": url,
             "headline": title[:300] or url.split("/")[-1],
             "description": "",
-            "published_at": datetime.now(timezone.utc),
+            "published_at": published_at,
             "pdf_url": url,
             "period_label": period,
             "document_type": doc_type,

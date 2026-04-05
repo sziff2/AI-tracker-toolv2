@@ -1282,6 +1282,14 @@ async def run_pipeline_loop(
     except Exception as e:
         _log(pipeline, "error", f"Pipeline crashed", str(e))
         _state[pipeline]["errors"] += 1
+        try:
+            from services.slack_alerts import send_slack
+            asyncio.create_task(send_slack(
+                f"Autorun pipeline *{pipeline}* crashed: {str(e)[:200]}",
+                "error",
+            ))
+        except Exception:
+            pass
     finally:
         set_budget_guard(None)  # clear guard so other pipelines are not affected
         _state[pipeline]["running"] = False

@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from services.harvester.http_retry import fetch_with_retry
 from services.harvester.sources.robots_check import can_fetch, get_crawl_delay
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,57 @@ _PERIOD_PATTERNS = [
     # Bare year as last resort
     (r"(\d{4})",                              lambda m: f"{m.group(1)}_Q4"),
 ]
+
+
+_MONTH_MAP = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "june": 6, "july": 7, "august": 8, "september": 9,
+    "october": 10, "november": 11, "december": 12,
+}
+
+
+def _extract_date(text: str) -> Optional[datetime]:
+    """Try to extract a publication date from a URL/filename string.
+
+    Matches: YYYY-MM-DD, YYYYMMDD, DD-Mon-YYYY, Mon-YYYY, YYYY/MM/DD
+    Returns a timezone-aware datetime or None.
+    """
+    # YYYY-MM-DD or YYYY/MM/DD
+    m = re.search(r'(20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])', text)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    # YYYYMMDD (8 consecutive digits starting with 20)
+    m = re.search(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])', text)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    # DD-Mon-YYYY or DD Mon YYYY (e.g. 15-Jan-2025, 15 January 2025)
+    m = re.search(r'(\d{1,2})[\s-]([A-Za-z]{3,9})[\s-](20\d{2})', text)
+    if m:
+        mon = _MONTH_MAP.get(m.group(2).lower())
+        if mon:
+            try:
+                return datetime(int(m.group(3)), mon, int(m.group(1)), tzinfo=timezone.utc)
+            except ValueError:
+                pass
+
+    # Mon-YYYY or Mon YYYY (e.g. Jan-2025, January 2025) — default to 1st
+    m = re.search(r'([A-Za-z]{3,9})[\s-](20\d{2})', text)
+    if m:
+        mon = _MONTH_MAP.get(m.group(1).lower())
+        if mon:
+            return datetime(int(m.group(2)), mon, 1, tzinfo=timezone.utc)
+
+    return None
 
 
 def _base(url: str) -> str:
@@ -313,7 +365,7 @@ async def scrape_ir_page(
 
             try:
                 await asyncio.sleep(crawl_delay)
-                sub_resp = await client.get(href)
+                sub_resp = await fetch_with_retry(href, client, retries=2, timeout=15)
                 sub_resp.raise_for_status()
             except Exception as e:
                 logger.debug("[SCRAPE] Sub-page failed %s: %s", href, e)
@@ -346,13 +398,16 @@ def _make_candidate(ticker: str, pdf_url: str, link_text: str, context: str) -> 
     period_label = _infer_period(full_context)
     doc_type = _classify_doc_type(full_context)
 
+    # Try to extract a real publication date from URL/filename
+    published_at = _extract_date(full_context) or datetime.now(timezone.utc)
+
     return {
         "ticker":        ticker,
         "source":        "ir_scrape",
         "source_url":    pdf_url,          # dedup key
         "headline":      headline[:300],
         "description":   "",
-        "published_at":  datetime.now(timezone.utc),
+        "published_at":  published_at,
         "pdf_url":       pdf_url,
         "period_label":  period_label,
         "document_type": doc_type,

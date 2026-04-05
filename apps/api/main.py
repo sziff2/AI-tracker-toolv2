@@ -5,7 +5,9 @@ Start with:
     uvicorn apps.api.main:app --reload
 """
 
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -35,6 +37,8 @@ from apps.api.routes import (
 )
 from apps.api.routes.feedback import router as feedback_router
 from configs.settings import settings
+
+START_TIME = time.time()
 
 
 @asynccontextmanager
@@ -94,6 +98,22 @@ async def lifespan(app: FastAPI):
                 details_json TEXT,
                 teams_sent BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        # KPI actuals — extracted KPIs from briefings
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS kpi_actuals (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id),
+                period TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                kpi_name TEXT NOT NULL,
+                value DOUBLE PRECISION,
+                value_bool BOOLEAN,
+                value_text TEXT,
+                source_doc_id UUID REFERENCES documents(id),
+                extracted_at TIMESTAMPTZ,
+                UNIQUE(company_id, period, year, kpi_name)
             )
         """))
         # LLM usage log — ensure cost-attribution columns exist
@@ -173,7 +193,13 @@ async def robots():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": settings.app_version}
+    return {
+        "ok": True,
+        "status": "ok",
+        "version": settings.app_version,
+        "uptime": round(time.time() - START_TIME, 1),
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

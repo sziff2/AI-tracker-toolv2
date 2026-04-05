@@ -241,6 +241,16 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
             await _update_step(job_id, "saving", 90, completed)
             await _save_research_output(company_id, period_label, output, "full_analysis")
 
+            # ── KPI extraction (Haiku pass) ──────────────────
+            try:
+                from services.kpi_extractor import extract_kpis_from_briefing
+                kpi_result = await extract_kpis_from_briefing(company_id, period_label, output, doc_id)
+                if kpi_result.get("status") == "ok":
+                    logger.info("[PIPELINE] KPI extraction saved %d KPIs for %s/%s",
+                                kpi_result.get("kpis_saved", 0), ticker, period_label)
+            except Exception as e:
+                logger.warning("[PIPELINE] KPI extraction failed for %s/%s: %s", ticker, period_label, e)
+
         # ── Done — determine final status ────────────────────
         failed_steps = [s["step"] for s in output.get("pipeline_status", []) if s.get("status") in ("error", "skipped")]
         if failed_steps and not completed:
@@ -704,6 +714,18 @@ async def run_batch_pipeline(
             await _add_log(job_id, "Saving results to database...")
             await _save_research_output(company_id, period_label, output, "batch_synthesis")
 
+            # ── KPI extraction (Haiku pass) ──────────────────
+            try:
+                from services.kpi_extractor import extract_kpis_from_briefing
+                kpi_result = await extract_kpis_from_briefing(company_id, period_label, output)
+                if kpi_result.get("status") == "ok":
+                    await _add_log(job_id, f"KPI extraction: saved {kpi_result.get('kpis_saved', 0)} KPIs")
+                elif kpi_result.get("status") == "skipped":
+                    await _add_log(job_id, "KPI extraction skipped — no briefing text")
+            except Exception as e:
+                logger.warning("[BATCH] KPI extraction failed for %s/%s: %s", ticker, period_label, e)
+                await _add_log(job_id, f"KPI extraction failed: {str(e)[:100]}", "warn")
+
         # ── Summary ──────────────────────────────────────────
         step_failures = []
         if doc_failures:
@@ -952,6 +974,18 @@ async def run_resynthesise_pipeline(
             await _update_step(job_id, "saving", 95, completed)
             await _add_log(job_id, "Saving results to database...")
             await _save_research_output(company_id, period_label, output, "batch_synthesis")
+
+            # ── KPI extraction (Haiku pass) ──────────────────
+            try:
+                from services.kpi_extractor import extract_kpis_from_briefing
+                kpi_result = await extract_kpis_from_briefing(company_id, period_label, output)
+                if kpi_result.get("status") == "ok":
+                    await _add_log(job_id, f"KPI extraction: saved {kpi_result.get('kpis_saved', 0)} KPIs")
+                elif kpi_result.get("status") == "skipped":
+                    await _add_log(job_id, "KPI extraction skipped — no briefing text")
+            except Exception as e:
+                logger.warning("[RESYNTH] KPI extraction failed for %s/%s: %s", ticker, period_label, e)
+                await _add_log(job_id, f"KPI extraction failed: {str(e)[:100]}", "warn")
 
         # ── Summary ──────────────────────────────────────────
         step_failures = []
