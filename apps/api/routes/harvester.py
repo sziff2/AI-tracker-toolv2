@@ -245,12 +245,12 @@ async def update_harvester_source(
 
 @router.post("/harvester/run")
 async def trigger_harvest_run(
-    background_tasks: BackgroundTasks,
     ticker: Optional[str] = None,
     skip_llm: bool = False,
 ):
+    import asyncio
     tickers = [ticker.upper()] if ticker else None
-    background_tasks.add_task(_run_harvest_bg, tickers, skip_llm)
+    asyncio.create_task(_run_harvest_bg(tickers, skip_llm))
     return {
         "status": "harvest_started",
         "scope": tickers or "all active companies",
@@ -284,9 +284,10 @@ async def test_harvest_sync(ticker: str = "LKQ US"):
 # ── POST /harvester/run-weekly — trigger weekly harvest + report ─────
 
 @router.post("/harvester/run-weekly")
-async def trigger_weekly_harvest(background_tasks: BackgroundTasks):
+async def trigger_weekly_harvest():
     """Manually trigger a weekly-style harvest with report and Teams notification."""
-    background_tasks.add_task(_run_weekly_bg)
+    import asyncio
+    asyncio.create_task(_run_weekly_bg())
     return {"status": "weekly_harvest_started"}
 
 
