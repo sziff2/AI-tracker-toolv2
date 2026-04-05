@@ -38,19 +38,19 @@ class BudgetGuard:
                           self.total_spend / self.budget_usd * 100, self.budget_usd, self.total_spend)
             self._warned = True
             try:
-                from services.slack_alerts import send_slack
-                asyncio.create_task(send_slack(
+                from services.alerts import send_alert
+                asyncio.create_task(send_alert(
                     f"Budget warning: ${self.total_spend:.2f} of ${self.budget_usd:.2f} "
                     f"({self.total_spend / self.budget_usd * 100:.0f}%) after {self.call_count} calls",
-                    "warn",
+                    "warning",
                 ))
             except RuntimeError:
                 pass  # no running event loop (e.g. sync context)
 
         if self.total_spend >= self.budget_usd:
             try:
-                from services.slack_alerts import send_slack
-                asyncio.create_task(send_slack(
+                from services.alerts import send_alert
+                asyncio.create_task(send_alert(
                     f"Budget EXCEEDED: ${self.total_spend:.2f} >= ${self.budget_usd:.2f} "
                     f"after {self.call_count} calls",
                     "error",

@@ -1283,8 +1283,8 @@ async def run_pipeline_loop(
         _log(pipeline, "error", f"Pipeline crashed", str(e))
         _state[pipeline]["errors"] += 1
         try:
-            from services.slack_alerts import send_slack
-            asyncio.create_task(send_slack(
+            from services.alerts import send_alert
+            asyncio.create_task(send_alert(
                 f"Autorun pipeline *{pipeline}* crashed: {str(e)[:200]}",
                 "error",
             ))

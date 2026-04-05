@@ -298,6 +298,21 @@ async def test_teams_webhook():
         return {"sent": False, "error": str(exc)}
 
 
+@router.post("/harvester/test-alert")
+async def test_alert():
+    """Test the Teams alert system (budget warnings, pipeline errors)."""
+    from services.alerts import send_alert
+    try:
+        sent = await send_alert(
+            "This is a test alert from AI Tracker. "
+            "Budget warnings and pipeline errors will appear here.",
+            level="info",
+        )
+        return {"sent": sent, "webhook_configured": bool(settings.teams_webhook_url)}
+    except Exception as exc:
+        return {"sent": False, "error": str(exc)}
+
+
 # ── GET /harvester/reports — recent harvest reports ──────────────────
 
 @router.get("/harvester/reports")
