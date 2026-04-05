@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
             CREATE TABLE IF NOT EXISTS harvest_reports (
                 id UUID PRIMARY KEY,
                 run_at TIMESTAMPTZ NOT NULL,
-                trigger TEXT NOT NULL,
+                "trigger" TEXT NOT NULL,
                 summary_json TEXT,
                 details_json TEXT,
                 teams_sent BOOLEAN DEFAULT FALSE,
@@ -117,9 +117,12 @@ async def lifespan(app: FastAPI):
             )
         """))
         # LLM usage log — ensure cost-attribution columns exist
-        for col in ["ticker TEXT", "period_label TEXT", "duration_ms INTEGER"]:
-            col_name = col.split()[0]
-            await conn.execute(sa_text(f"ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS {col}"))
+        try:
+            for col in ["ticker TEXT", "period_label TEXT", "duration_ms INTEGER"]:
+                col_name = col.split()[0]
+                await conn.execute(sa_text(f"ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS {col}"))
+        except Exception:
+            pass  # table may not exist yet on fresh deploy
     yield
     await async_engine.dispose()
 
