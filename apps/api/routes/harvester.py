@@ -260,9 +260,25 @@ async def trigger_harvest_run(
 
 async def _run_harvest_bg(tickers, skip_llm=False):
     from services.harvester import run_harvest
-    result = await run_harvest(tickers=tickers, skip_llm=skip_llm)
-    logger.info("[HARVEST] Manual run complete: new=%d skipped=%d failed=%d",
-                result["new"], result["skipped"], result["failed"])
+    try:
+        result = await run_harvest(tickers=tickers, skip_llm=skip_llm)
+        logger.info("[HARVEST] Manual run complete: new=%d skipped=%d failed=%d",
+                    result["new"], result["skipped"], result["failed"])
+    except Exception as exc:
+        logger.error("[HARVEST] Manual run FAILED: %s", exc, exc_info=True)
+
+
+@router.post("/harvester/test-harvest-sync")
+async def test_harvest_sync(ticker: str = "LKQ US"):
+    """Diagnostic: run harvest for one company synchronously to surface errors."""
+    from services.harvester import run_harvest
+    try:
+        result = await run_harvest(tickers=[ticker.upper()], skip_llm=True)
+        return {"ok": True, "new": result["new"], "skipped": result["skipped"],
+                "failed": result["failed"], "details": result.get("details", [])}
+    except Exception as exc:
+        import traceback
+        return {"ok": False, "error": str(exc), "traceback": traceback.format_exc()}
 
 
 # ── POST /harvester/run-weekly — trigger weekly harvest + report ─────
