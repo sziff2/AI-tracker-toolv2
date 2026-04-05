@@ -314,6 +314,33 @@ async def test_teams_webhook():
         return {"sent": False, "error": str(exc)}
 
 
+@router.post("/harvester/test-report-pipeline")
+async def test_report_pipeline():
+    """Diagnostic: harvest one company, save report, post to Teams — all synchronous."""
+    from services.harvester import run_harvest
+    from services.harvester.scheduler import save_report, post_teams_report
+    steps = {}
+    try:
+        result = await run_harvest(tickers=["ALLY US"], skip_llm=True)
+        steps["harvest"] = {"ok": True, "new": result["new"], "skipped": result["skipped"]}
+    except Exception as exc:
+        import traceback
+        return {"steps": steps, "error": f"harvest: {exc}", "tb": traceback.format_exc()}
+    try:
+        report_id = await save_report(result, trigger="test")
+        steps["save_report"] = {"ok": True, "report_id": report_id}
+    except Exception as exc:
+        import traceback
+        steps["save_report"] = {"ok": False, "error": str(exc), "tb": traceback.format_exc()}
+    try:
+        sent = await post_teams_report(result, report_id=report_id if "save_report" in steps and steps["save_report"]["ok"] else None)
+        steps["teams"] = {"ok": True, "sent": sent}
+    except Exception as exc:
+        import traceback
+        steps["teams"] = {"ok": False, "error": str(exc), "tb": traceback.format_exc()}
+    return steps
+
+
 @router.post("/harvester/test-alert")
 async def test_alert():
     """Test the Teams alert system (budget warnings, pipeline errors)."""
