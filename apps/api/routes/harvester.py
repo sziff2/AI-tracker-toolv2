@@ -285,20 +285,22 @@ async def test_harvest_sync(ticker: str = "LKQ US"):
 
 @router.post("/harvester/run-weekly")
 async def trigger_weekly_harvest():
-    """Manually trigger a weekly-style harvest with report and Teams notification."""
-    import asyncio
-    asyncio.create_task(_run_weekly_bg())
-    return {"status": "weekly_harvest_started"}
-
-
-async def _run_weekly_bg():
+    """Run weekly harvest with report and Teams notification.
+    Runs synchronously — may take 5-15 minutes for all companies."""
     from services.harvester.scheduler import run_and_report
     try:
         result = await run_and_report(trigger="manual")
-        logger.info("[HARVEST] Weekly run complete: new=%d skipped=%d failed=%d report=%s",
-                    result["new"], result["skipped"], result["failed"], result.get("report_id"))
+        return {
+            "status": "complete",
+            "new": result.get("new", 0),
+            "skipped": result.get("skipped", 0),
+            "failed": result.get("failed", 0),
+            "report_id": result.get("report_id"),
+            "companies": len(result.get("details", [])),
+        }
     except Exception as exc:
-        logger.error("[HARVEST] Weekly run FAILED: %s", exc, exc_info=True)
+        import traceback
+        return {"status": "failed", "error": str(exc), "traceback": traceback.format_exc()}
 
 
 @router.post("/harvester/test-teams")
