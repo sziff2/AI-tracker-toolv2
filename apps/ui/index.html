@@ -482,6 +482,7 @@ function toast(message,type,duration){
   container.appendChild(t);
   setTimeout(function(){if(t.parentElement)t.remove();},duration);
 }
+function timeSince(iso){if(!iso)return 'Never';var s=Math.floor((Date.now()-new Date(iso))/1000);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 
 function confirmAction(title, message, onConfirm) {
@@ -4703,6 +4704,18 @@ async function uploadSelectedDocs(ticker){
   };
 })();
 
+function _hsStatus(row){
+  var src=row.active_source||'none';
+  if(src==='none'&&!row.ir_docs_url)return{badge:'🔗',label:'No source',color:'var(--text4)'};
+  if(!row.last_checked_at)return{badge:'🔘',label:'Never run',color:'var(--text4)'};
+  var days=(Date.now()-new Date(row.last_checked_at))/86400000;
+  if(days>7)return{badge:'⚠️',label:'Stale',color:'var(--amber)'};
+  return{badge:'✅',label:'OK',color:'var(--green)'};
+}
+function _hsToggleConfig(safe){
+  var row=E('hs-cfg-'+safe);if(!row)return;
+  row.style.display=row.style.display==='none'?'table-row':'none';
+}
 async function loadHarvesterSourcesPanel(){
   var el=E('harvester-sources-table');if(!el)return;
   el.innerHTML='<div class="ld" style="margin:8px 0;font-size:13px">Loading…</div>';
@@ -4712,33 +4725,55 @@ async function loadHarvesterSourcesPanel(){
     var rows=await r.json();
     if(!rows.length){el.innerHTML='<div style="font-family:var(--sans);font-size:13px;color:var(--text4)">No active companies found.</div>';return;}
     var h='<table class="kt" style="margin-top:4px">';
-    h+='<thead><tr><th>Ticker</th><th>Company</th><th style="text-align:center">Source</th><th>IR Documents URL</th><th style="text-align:center">Lock</th><th></th></tr></thead><tbody>';
+    h+='<thead><tr><th style="width:50px">Status</th><th>Ticker</th><th>Company</th><th style="width:80px;text-align:center">Source</th><th style="width:80px">Last Run</th><th style="width:90px"></th></tr></thead><tbody>';
     rows.forEach(function(row){
       var safe=row.ticker.replace(/ /g,'_').replace(/\./g,'_');
-      var isEdgar=row.active_source==='edgar';
-      var isInvestegate=row.active_source==='investegate';
+      var st=_hsStatus(row);
+      var isEdgar=row.active_source==='edgar'||row.active_source==='edgar+investegate';
+      var isInvestegate=row.active_source==='investegate'||row.active_source==='edgar+investegate';
       var srcClr=isEdgar?'var(--green)':isInvestegate?'var(--blue)':row.active_source==='ir_scrape'?'var(--gold)':'var(--text4)';
-      var srcLabel=isEdgar?'🏛 EDGAR':isInvestegate?'📰 RNS':row.active_source==='ir_scrape'?'🔎 Scraper':'⚠ None';
-      var chk=row.override?'checked':'';
-      var lastChk=row.last_checked_at?row.last_checked_at.split('T')[0]:'—';
-      var inputDisabled=isEdgar?'disabled':'';
-      var inputBg=isEdgar?'var(--bg)':'var(--bg3)';
-      var inputColor=isEdgar?'var(--text4)':'var(--text)';
+      var srcLabel=row.active_source==='edgar+investegate'?'🏛📰':isEdgar?'🏛 EDGAR':isInvestegate?'📰 RNS':row.active_source==='ir_scrape'?'🔎 Scraper':'—';
+      var lastRun=row.last_checked_at?timeSince(row.last_checked_at):'—';
+      var lastRunTitle=row.last_checked_at?row.last_checked_at.split('T')[0]:'Never';
+      // Main row
       h+='<tr>';
-      h+='<td class="kn">'+esc(row.ticker)+'</td>';
+      h+='<td style="text-align:center" title="'+esc(st.label)+'"><span style="font-size:14px">'+st.badge+'</span></td>';
+      h+='<td class="kn" style="cursor:pointer" onclick="sideSelectCo(\''+esc(row.ticker)+'\')">'+esc(row.ticker)+'</td>';
       h+='<td style="font-size:12px;color:var(--text2)">'+esc(row.name)+'</td>';
-      h+='<td style="text-align:center"><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+srcClr+'">'+srcLabel+'</span>'+(lastChk!=='—'?'<div style="font-size:10px;color:var(--text4)">'+esc(lastChk)+'</div>':'')+'</td>';
-      h+='<td><input id="hs-docs-'+safe+'" value="'+esc(row.ir_docs_url||'')+'" placeholder="'+(isEdgar?'Handled by EDGAR':'https://company.com/investors/results/')+'" '+inputDisabled+' style="width:100%;min-width:200px;background:'+inputBg+';border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:'+inputColor+';font-family:var(--sans);font-size:11px;outline:none" onfocus="this.style.borderColor=\'var(--gold)\'" onblur="this.style.borderColor=\'var(--border)\'"></td>';
-      h+='<td style="text-align:center"><input type="checkbox" '+chk+' '+(isEdgar?'disabled':'')+' title="Lock — prevent re-discovery" onchange="saveHarvesterSourcePanel(\''+esc(row.ticker)+'\',null,this.checked)" style="cursor:pointer;accent-color:var(--amber);width:14px;height:14px"></td>';
+      h+='<td style="text-align:center"><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+srcClr+'">'+srcLabel+'</span></td>';
+      h+='<td style="font-family:var(--sans);font-size:11px;color:var(--text3)" title="'+esc(lastRunTitle)+'">'+esc(lastRun)+'</td>';
       h+='<td><div style="display:flex;gap:4px">';
-      if(!isEdgar)h+='<button class="btn2" style="font-size:10px;padding:3px 8px;white-space:nowrap" onclick="saveHarvesterSourcePanelFromRow(\''+esc(row.ticker)+'\',\''+safe+'\')">Save</button>';
-      h+='<button class="btn2" style="font-size:10px;padding:3px 8px;white-space:nowrap" onclick="runHarvestPanel(\''+esc(row.ticker)+'\',this)">'+(isEdgar?'▶ Run':'▶ Test')+'</button>';
+      h+='<button class="btn2" style="font-size:10px;padding:3px 8px" title="Fast, free. Finds PDF links on IR page." onclick="runHarvestPanel(\''+esc(row.ticker)+'\',this)">▶ Run</button>';
+      h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="_hsToggleConfig(\''+safe+'\')">⚙</button>';
       h+='</div></td>';
       h+='</tr>';
+      // Expandable config row (hidden by default)
+      var chk=row.override?'checked':'';
+      h+='<tr id="hs-cfg-'+safe+'" style="display:none;background:var(--bg3)"><td colspan="6" style="padding:12px 16px">';
+      h+='<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">';
+      h+='<div style="flex:1;min-width:250px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:4px">IR Documents URL</div>';
+      h+='<textarea id="hs-docs-'+safe+'" class="fi" style="font-size:11px;min-height:40px;font-family:var(--mono)" placeholder="https://company.com/investors/results/">'+esc(row.ir_docs_url||'')+'</textarea></div>';
+      h+='<div style="display:flex;flex-direction:column;gap:8px;padding-top:16px">';
+      h+='<label style="font-family:var(--sans);font-size:11px;color:var(--text2);display:flex;gap:6px;align-items:center"><input type="checkbox" '+chk+' onchange="saveHarvesterSourcePanel(\''+esc(row.ticker)+'\',null,this.checked)" style="accent-color:var(--amber)"> Lock — prevent auto-rediscovery</label>';
+      h+='<div style="display:flex;gap:6px">';
+      h+='<button class="btn2" style="font-size:10px;padding:4px 10px" onclick="saveHarvesterSourcePanelFromRow(\''+esc(row.ticker)+'\',\''+safe+'\')">Save</button>';
+      h+='<button class="btn2" style="font-size:10px;padding:4px 10px" title="Slower, ~£0.05/scan. Sends page to Claude. Use when Scraper finds nothing." onclick="runLLMScanPanel(\''+esc(row.ticker)+'\',this)">🤖 LLM Scan</button>';
+      h+='</div></div></div>';
+      h+='</td></tr>';
     });
     h+='</tbody></table>';
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="err" style="margin:0">'+esc(e.message)+'</div>';}
+}
+async function runLLMScanPanel(ticker,btn){
+  var orig=btn.textContent;btn.textContent='Scanning…';btn.disabled=true;
+  try{
+    var r=await fetch('/api/v1/harvester/llm-scan/'+encodeURIComponent(ticker),{method:'POST'});
+    if(!r.ok)throw new Error('Failed');
+    var d=await r.json();
+    btn.textContent='Done ✓ ('+d.documents_found+' found)';
+    setTimeout(function(){btn.textContent=orig;btn.disabled=false;},3000);
+  }catch(e){btn.textContent=orig;btn.disabled=false;toast('LLM scan failed: '+e.message);}
 }
 
 async function saveHarvesterSourcePanelFromRow(ticker,safe){
