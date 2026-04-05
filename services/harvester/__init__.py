@@ -12,7 +12,9 @@ in the Data Hub — analysts paste the IR documents page URL
 for any company that needs it.
 """
 
+import asyncio
 import logging
+import time
 
 from sqlalchemy import select
 
@@ -56,11 +58,14 @@ async def run_harvest(
 
     logger.info("[HARVEST] Starting harvest for %d companies (skip_llm=%s)", len(companies), skip_llm)
 
+    COMPANY_TIMEOUT = 90  # seconds per company
+
     all_candidates = []
     all_details = []
 
-    for company in companies:
-        src = sources.get(company.id)
+    async def _harvest_one(company, src, skip_llm):
+        """Harvest a single company. Returns (candidates, detail)."""
+        candidates = []
         used_source = None
         detail = {
             "ticker": company.ticker,
@@ -74,104 +79,86 @@ async def run_harvest(
         if company.ticker in EDGAR_SOURCES:
             detail["sources_tried"].append("edgar")
             try:
-                candidates = await fetch_sec_edgar(company.ticker)
-                if candidates:
-                    all_candidates.extend(candidates)
-                    detail["candidates_found"] += len(candidates)
+                found = await fetch_sec_edgar(company.ticker)
+                if found:
+                    candidates.extend(found)
+                    detail["candidates_found"] += len(found)
                     used_source = "edgar"
-                    logger.info(
-                        "[HARVEST] %s → EDGAR (%d candidates)",
-                        company.ticker, len(candidates)
-                    )
+                    logger.info("[HARVEST] %s → EDGAR (%d)", company.ticker, len(found))
             except Exception as exc:
                 detail["errors"].append(f"EDGAR: {exc}")
-                logger.error(
-                    "[HARVEST] EDGAR error for %s: %s",
-                    company.ticker, exc, exc_info=True
-                )
+                logger.error("[HARVEST] EDGAR error for %s: %s", company.ticker, exc)
 
         # ── Priority 2: Investegate (UK RNS) ─────────────────────
-        # Runs even if EDGAR found results — catches UK-specific
-        # trading updates that don't appear as SEC filings.
         if company.ticker in INVESTEGATE_SOURCES:
             detail["sources_tried"].append("investegate")
             try:
-                candidates = await fetch_investegate(company.ticker)
-                if candidates:
-                    all_candidates.extend(candidates)
-                    detail["candidates_found"] += len(candidates)
+                found = await fetch_investegate(company.ticker)
+                if found:
+                    candidates.extend(found)
+                    detail["candidates_found"] += len(found)
                     if used_source is None:
                         used_source = "investegate"
-                    logger.info(
-                        "[HARVEST] %s → Investegate (%d candidates)",
-                        company.ticker, len(candidates)
-                    )
+                    logger.info("[HARVEST] %s → Investegate (%d)", company.ticker, len(found))
             except Exception as exc:
                 detail["errors"].append(f"Investegate: {exc}")
-                logger.error(
-                    "[HARVEST] Investegate error for %s: %s",
-                    company.ticker, exc, exc_info=True
-                )
+                logger.error("[HARVEST] Investegate error for %s: %s", company.ticker, exc)
 
         # ── Priority 3: IR page scraper (regex) ──────────────────
-        # Runs even for EDGAR/Investegate companies — catches presentations,
-        # transcripts, and supplements that don't appear in SEC filings.
         ir_docs_url = src.ir_docs_url if src else None
         if ir_docs_url:
             detail["sources_tried"].append("ir_scrape")
             try:
-                candidates = await scrape_ir_page(
-                    ticker=company.ticker,
-                    ir_docs_url=ir_docs_url,
-                )
-                if candidates:
-                    all_candidates.extend(candidates)
-                    detail["candidates_found"] += len(candidates)
+                found = await scrape_ir_page(ticker=company.ticker, ir_docs_url=ir_docs_url)
+                if found:
+                    candidates.extend(found)
+                    detail["candidates_found"] += len(found)
                     if used_source is None:
                         used_source = "ir_scrape"
-                    logger.info(
-                        "[HARVEST] %s → IR scraper (%d candidates)",
-                        company.ticker, len(candidates)
-                    )
+                    logger.info("[HARVEST] %s → IR scraper (%d)", company.ticker, len(found))
             except Exception as exc:
                 detail["errors"].append(f"IR scraper: {exc}")
-                logger.error(
-                    "[HARVEST] IR scraper error for %s: %s",
-                    company.ticker, exc, exc_info=True
-                )
+                logger.error("[HARVEST] IR scraper error for %s: %s", company.ticker, exc)
 
         # ── Priority 4: LLM-powered scraper (fallback) ──────────
         if not skip_llm and used_source is None and ir_docs_url:
             detail["sources_tried"].append("ir_llm")
             try:
-                candidates = await scrape_ir_with_llm(
-                    ticker=company.ticker,
-                    company_name=company.name,
-                    ir_docs_url=ir_docs_url,
-                )
-                if candidates:
-                    all_candidates.extend(candidates)
-                    detail["candidates_found"] += len(candidates)
+                found = await scrape_ir_with_llm(
+                    ticker=company.ticker, company_name=company.name, ir_docs_url=ir_docs_url)
+                if found:
+                    candidates.extend(found)
+                    detail["candidates_found"] += len(found)
                     used_source = "ir_llm"
-                    logger.info(
-                        "[HARVEST] %s → LLM scraper (%d candidates)",
-                        company.ticker, len(candidates)
-                    )
+                    logger.info("[HARVEST] %s → LLM scraper (%d)", company.ticker, len(found))
             except Exception as exc:
                 detail["errors"].append(f"LLM scraper: {exc}")
-                logger.error(
-                    "[HARVEST] LLM scraper error for %s: %s",
-                    company.ticker, exc, exc_info=True
-                )
+                logger.error("[HARVEST] LLM scraper error for %s: %s", company.ticker, exc)
 
         if used_source is None:
-            logger.debug(
-                "[HARVEST] %s — no source configured. "
-                "Add CIK to EDGAR_SOURCES or set ir_docs_url in the Harvester Sources UI.",
-                company.ticker
-            )
+            logger.debug("[HARVEST] %s — no source configured", company.ticker)
 
         detail["source_used"] = used_source
+        return candidates, detail
+
+    for company in companies:
+        src = sources.get(company.id)
+        t0 = time.time()
+        try:
+            candidates, detail = await asyncio.wait_for(
+                _harvest_one(company, src, skip_llm),
+                timeout=COMPANY_TIMEOUT,
+            )
+            all_candidates.extend(candidates)
+        except asyncio.TimeoutError:
+            elapsed = round(time.time() - t0, 1)
+            detail = {
+                "ticker": company.ticker, "name": company.name,
+                "sources_tried": [], "candidates_found": 0,
+                "errors": [f"Timed out after {elapsed}s (limit {COMPANY_TIMEOUT}s)"],
+                "source_used": None,
+            }
+            logger.warning("[HARVEST] %s timed out after %ss", company.ticker, elapsed)
         all_details.append(detail)
 
     logger.info("[HARVEST] %d total candidates before dedup", len(all_candidates))
