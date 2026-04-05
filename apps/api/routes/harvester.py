@@ -337,7 +337,7 @@ async def list_harvest_reports(limit: int = 10, db: AsyncSession = Depends(get_d
     import json as _json
     from sqlalchemy import text
     result = await db.execute(
-        text("SELECT id, run_at, trigger, summary_json, teams_sent, created_at "
+        text('SELECT id, run_at, "trigger", summary_json, teams_sent, created_at '
              "FROM harvest_reports ORDER BY run_at DESC LIMIT :limit"),
         {"limit": limit},
     )
@@ -360,7 +360,7 @@ async def get_latest_report(db: AsyncSession = Depends(get_db)):
     import json as _json
     from sqlalchemy import text
     result = await db.execute(
-        text("SELECT id, run_at, trigger, summary_json, details_json, teams_sent "
+        text('SELECT id, run_at, "trigger", summary_json, details_json, teams_sent '
              "FROM harvest_reports ORDER BY run_at DESC LIMIT 1")
     )
     row = result.first()

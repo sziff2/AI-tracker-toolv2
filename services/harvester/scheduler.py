@@ -37,7 +37,7 @@ async def save_report(harvest_result: dict, trigger: str = "auto_weekly") -> str
 
     async with AsyncSessionLocal() as db:
         await db.execute(text("""
-            INSERT INTO harvest_reports (id, run_at, trigger, summary_json, details_json, teams_sent)
+            INSERT INTO harvest_reports (id, run_at, "trigger", summary_json, details_json, teams_sent)
             VALUES (:id, :run_at, :trigger, :summary, :details, false)
         """), {
             "id": report_id,
