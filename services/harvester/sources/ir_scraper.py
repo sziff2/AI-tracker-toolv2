@@ -278,10 +278,28 @@ async def scrape_ir_page(
     base = _base(all_urls[0])
     ir_domain = urlparse(all_urls[0]).netloc
 
-    # Pages to scrape: only the explicitly configured URLs
-    # (sibling discovery was removed — it probed 11 URL variations per company,
-    # each with timeouts + retries, making the full harvest take 30+ minutes)
+    # Pages to scrape: configured URLs + fast sibling discovery
     pages_to_scrape = list(all_urls)
+
+    # Probe sibling pages with a short timeout (no cloudscraper fallback)
+    _SIBLING_PATTERNS = [
+        "previous-results", "results-archive", "results",
+        "reports-and-presentations", "quarterly-results",
+    ]
+    parsed_url = urlparse(all_urls[0])
+    parent = '/'.join(parsed_url.path.rstrip('/').split('/')[:-1])
+    async with httpx.AsyncClient(timeout=3.0, follow_redirects=True, headers=_HEADERS) as probe:
+        for sibling in _SIBLING_PATTERNS:
+            sib_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parent}/{sibling}"
+            if sib_url in pages_to_scrape or sib_url == ir_docs_url:
+                continue
+            try:
+                resp = await probe.head(sib_url)
+                if resp.status_code == 200:
+                    pages_to_scrape.append(sib_url)
+                    logger.debug("[SCRAPE] %s — discovered sibling %s", ticker, sibling)
+            except Exception:
+                pass  # fast fail — don't retry on sibling discovery
 
     from services.doc_utils import async_fetch_page
 
