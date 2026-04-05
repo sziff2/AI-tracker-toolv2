@@ -283,24 +283,26 @@ async def test_harvest_sync(ticker: str = "LKQ US"):
 
 # ── POST /harvester/run-weekly — trigger weekly harvest + report ─────
 
+_running_tasks = set()  # prevent garbage collection of background tasks
+
 @router.post("/harvester/run-weekly")
 async def trigger_weekly_harvest():
-    """Run weekly harvest with report and Teams notification.
-    Runs synchronously — may take 5-15 minutes for all companies."""
+    """Trigger weekly harvest in background. Report posted to Teams on completion."""
+    import asyncio
+    task = asyncio.create_task(_run_weekly_bg())
+    _running_tasks.add(task)
+    task.add_done_callback(_running_tasks.discard)
+    return {"status": "weekly_harvest_started"}
+
+
+async def _run_weekly_bg():
     from services.harvester.scheduler import run_and_report
     try:
         result = await run_and_report(trigger="manual")
-        return {
-            "status": "complete",
-            "new": result.get("new", 0),
-            "skipped": result.get("skipped", 0),
-            "failed": result.get("failed", 0),
-            "report_id": result.get("report_id"),
-            "companies": len(result.get("details", [])),
-        }
+        logger.info("[HARVEST] Weekly run complete: new=%d skipped=%d failed=%d report=%s",
+                    result["new"], result["skipped"], result["failed"], result.get("report_id"))
     except Exception as exc:
-        import traceback
-        return {"status": "failed", "error": str(exc), "traceback": traceback.format_exc()}
+        logger.error("[HARVEST] Weekly run FAILED: %s", exc, exc_info=True)
 
 
 @router.post("/harvester/test-teams")
