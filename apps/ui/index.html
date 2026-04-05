@@ -469,6 +469,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function friendlyError(msg){if(!msg)return msg;var m=String(msg);var map=[[/column .* does not exist/i,'Database schema is out of date. Contact your administrator.'],[/relation .* does not exist/i,'A required table is missing. The app may need a restart.'],[/anthropic.*rate.limit/i,'AI rate limit reached. Wait 60 seconds and try again.'],[/budget.*exceeded/i,'Spending limit reached for this AutoResearch run.'],[/duplicate.*checksum/i,'This document has already been ingested.'],[/file too large/i,'File exceeds the 50 MB limit.'],[/connection refused/i,'Cannot reach the server. Check your connection.'],[/timeout/i,'Request timed out. Try again.']];for(var i=0;i<map.length;i++){if(map[i][0].test(m))return map[i][1];}return m;}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 
 function confirmAction(title, message, onConfirm) {
@@ -534,7 +535,7 @@ async function fbSaveComment(id,ticker,period,section,promptType,comment){
   }catch(e){console.warn('Comment save failed',e);}
 }
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
+function showPage(p){if(p==='new'){p='cockpit';window._ckActiveTab='documents';}['new','cockpit','lab','data','portfolio','analytics','optimise','autorun'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -746,7 +747,7 @@ async function ckSubmitNewPeriod(ticker){
 }
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
-function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();}
+function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();try{var r=JSON.parse(localStorage.getItem('op_recent_tickers')||'[]');r=[ticker,...r.filter(x=>x!==ticker)].slice(0,5);localStorage.setItem('op_recent_tickers',JSON.stringify(r));}catch(e){}}
 async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
 // ── Files ────────────────────────────────────────────────────
@@ -807,6 +808,52 @@ function renderCockpit(ticker,d){
 }
 function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
 
+// ── Thesis Evidence helper (rendered at top of Thesis tab) ───
+function _buildThesisEvidence(d){
+  let h='';
+  const allAssessments=(d.all_assessments||[]).slice().sort((x,y)=>(y.period||'').localeCompare(x.period||''));
+  const abp=d.analyses_by_period||{};
+  const abpPeriods=Object.keys(abp).sort().reverse();
+  if(allAssessments.length===0&&abpPeriods.length===0)return '';
+  const periodsSet=[...new Set([...allAssessments.map(x=>x.period).filter(Boolean),...abpPeriods])].sort().reverse();
+  let evidenceLines=[];
+  periodsSet.forEach((period,idx)=>{
+    const weight=Math.max(1.0-idx*0.25,0.25);
+    const assessment=allAssessments.find(x=>x.period===period);
+    const analysis=abp[period];
+    const dir=assessment?.thesis_direction||null;
+    const dirColour=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
+    let bottomLine='';
+    if(analysis?.content){const c=analysis.content;bottomLine=c.synthesis?.bottom_line||c.briefing?.bottom_line||c.synthesis?.thesis_impact||'';}
+    if(!bottomLine&&assessment?.summary)bottomLine=assessment.summary;
+    if(!bottomLine&&!dir)return;
+    const weightLabel=idx===0?'Most recent':idx===1?'Prior period':idx+' periods ago';
+    const opacity=idx===0?'1':Math.max(weight,0.5).toString();
+    evidenceLines.push({period,dir,dirColour,dirLabel:dir?dir.toUpperCase():null,bottomLine,weightLabel,isRecent:idx===0,opacity,weight});
+  });
+  if(!evidenceLines.length)return '';
+  let strengthenedW=0,weakenedW=0,neutralW=0;
+  evidenceLines.forEach(e=>{if(e.dir==='strengthened')strengthenedW+=e.weight;else if(e.dir==='weakened')weakenedW+=e.weight;else if(e.dir)neutralW+=e.weight;});
+  const totalW=strengthenedW+weakenedW+neutralW;
+  let overallDir='—',overallColour='var(--text3)';
+  if(totalW>0){if(strengthenedW>=weakenedW&&strengthenedW>=neutralW){overallDir='STRENGTHENING';overallColour='var(--green)';}else if(weakenedW>strengthenedW&&weakenedW>=neutralW){overallDir='WEAKENING';overallColour='var(--red)';}else{overallDir='MIXED / NEUTRAL';overallColour='var(--amber)';}}
+  h+='<div class="cd gold" style="margin-bottom:12px;padding:20px 24px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">Thesis Evidence — Across All Periods</div><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+overallColour+'">'+overallDir+'</span></div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:14px">Evidence weighted by recency — most recent period carries full weight, each prior period weighted progressively lower.</div>';
+  evidenceLines.forEach(e=>{
+    h+='<div style="margin-bottom:14px;opacity:'+e.opacity+';border-left:2px solid '+(e.dir?e.dirColour:'var(--border)')+';padding-left:14px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
+    h+='<span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">'+(normalisePeriodLabel(e.period)||esc(e.period))+'</span>';
+    if(e.dirLabel)h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;color:'+e.dirColour+';background:rgba(255,255,255,.05);padding:1px 7px;border-radius:4px">'+e.dirLabel+'</span>';
+    h+='<span style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-left:auto">'+esc(e.weightLabel)+'</span>';
+    h+='</div>';
+    if(e.bottomLine)h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65">'+esc(e.bottomLine)+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+
 // ── Thesis tab (with IC Summary) ─────────────────────────────
 function renderCkThesis(d,companyName,ticker){
   if(!ticker)ticker=E('ck-company').value;
@@ -831,6 +878,9 @@ function renderCkThesis(d,companyName,ticker){
   h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
   h+='<button class="btn2" style="font-size:11px;padding:6px 12px" onclick="runLLMUpdateThesis(\''+ticker+'\')">&#x1FA84; Update from Analysis</button>';
   h+='</div>';
+
+  // Thesis Evidence — rendered first so analysts see the direction signal immediately
+  h+=_buildThesisEvidence(d);
 
   // IC Summary strip
   h+='<div class="cd gold" style="padding:20px 24px">';
@@ -886,49 +936,6 @@ function renderCkThesis(d,companyName,ticker){
   h+='<textarea class="fi" style="font-size:13px;min-height:100px;border:none;background:transparent;padding:0;color:var(--text2)" onchange="saveThesisField(\''+ticker+'\',\'valuation_framework\',this.value)">'+esc(t.valuation_framework||'')+'</textarea></div>';
   h+='</div>';
 
-  // Period-weighted evidence summary (Assessment History and Thesis Versions hidden)
-  const allAssessments=(d.all_assessments||[]).slice().sort((x,y)=>(y.period||'').localeCompare(x.period||''));
-  const abp=d.analyses_by_period||{};
-  const abpPeriods=Object.keys(abp).sort().reverse();
-  if(allAssessments.length>0||abpPeriods.length>0){
-    const periodsSet=[...new Set([...allAssessments.map(x=>x.period).filter(Boolean),...abpPeriods])].sort().reverse();
-    let evidenceLines=[];
-    periodsSet.forEach((period,idx)=>{
-      const weight=Math.max(1.0-idx*0.25,0.25);
-      const assessment=allAssessments.find(x=>x.period===period);
-      const analysis=abp[period];
-      const dir=assessment?.thesis_direction||null;
-      const dirColour=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--amber)';
-      let bottomLine='';
-      if(analysis?.content){const c=analysis.content;bottomLine=c.synthesis?.bottom_line||c.briefing?.bottom_line||c.synthesis?.thesis_impact||'';}
-      if(!bottomLine&&assessment?.summary)bottomLine=assessment.summary;
-      if(!bottomLine&&!dir)return;
-      const weightLabel=idx===0?'Most recent':idx===1?'Prior period':idx+' periods ago';
-      const opacity=idx===0?'1':Math.max(weight,0.5).toString();
-      evidenceLines.push({period,dir,dirColour,dirLabel:dir?dir.toUpperCase():null,bottomLine,weightLabel,isRecent:idx===0,opacity,weight});
-    });
-    if(evidenceLines.length){
-      let strengthenedW=0,weakenedW=0,neutralW=0;
-      evidenceLines.forEach(e=>{if(e.dir==='strengthened')strengthenedW+=e.weight;else if(e.dir==='weakened')weakenedW+=e.weight;else if(e.dir)neutralW+=e.weight;});
-      const totalW=strengthenedW+weakenedW+neutralW;
-      let overallDir='—',overallColour='var(--text3)';
-      if(totalW>0){if(strengthenedW>=weakenedW&&strengthenedW>=neutralW){overallDir='STRENGTHENING';overallColour='var(--green)';}else if(weakenedW>strengthenedW&&weakenedW>=neutralW){overallDir='WEAKENING';overallColour='var(--red)';}else{overallDir='MIXED / NEUTRAL';overallColour='var(--amber)';}}
-      h+='<div class="cd gold" style="margin-top:12px;padding:20px 24px">';
-      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div class="cd-t" style="margin:0">Thesis Evidence — Across All Periods</div><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+overallColour+'">'+overallDir+'</span></div>';
-      h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:14px">Evidence weighted by recency — most recent period carries full weight, each prior period weighted progressively lower.</div>';
-      evidenceLines.forEach(e=>{
-        h+='<div style="margin-bottom:14px;opacity:'+e.opacity+';border-left:2px solid '+(e.dir?e.dirColour:'var(--border)')+';padding-left:14px">';
-        h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">';
-        h+='<span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">'+esc(e.period)+'</span>';
-        if(e.dirLabel)h+='<span style="font-family:var(--sans);font-size:10px;font-weight:600;color:'+e.dirColour+';background:rgba(255,255,255,.05);padding:1px 7px;border-radius:4px">'+e.dirLabel+'</span>';
-        h+='<span style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-left:auto">'+esc(e.weightLabel)+'</span>';
-        h+='</div>';
-        if(e.bottomLine)h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65">'+esc(e.bottomLine)+'</div>';
-        h+='</div>';
-      });
-      h+='</div>';
-    }
-  }
   // Global chat bar
   h+='<div style="margin-top:24px"><h2>Ask a Question</h2>';
   h+='<div style="display:flex;gap:8px;margin-top:8px;align-items:center"><input class="fi" id="ck-chat-input" placeholder="Ask anything about '+esc(companyName)+' across all periods…" style="flex:1;font-size:13px" onkeydown="if(event.key===\'Enter\')askGlobal(\''+ticker+'\')"><select id="ck-chat-model" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askGlobal(\''+ticker+'\')">Ask</button></div>';
@@ -937,7 +944,14 @@ function renderCkThesis(d,companyName,ticker){
 }
 
 async function saveThesisField(ticker,field,value){
-  try{await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});}catch(e){}
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:field,value:value})});
+    if(r.ok){
+      // Brief "Saved" indicator
+      const el=document.activeElement;
+      if(el){const ind=document.createElement('span');ind.textContent=' Saved \u2713';ind.style.cssText='color:var(--green);font-family:var(--sans);font-size:11px;margin-left:6px';el.parentElement.appendChild(ind);setTimeout(()=>ind.remove(),1500);}
+    }else{alert('Save failed: '+(await r.text()).slice(0,100));}
+  }catch(e){alert('Save failed: '+e.message);}
 }
 
 async function runLLMUpdateThesis(ticker){
@@ -1100,7 +1114,7 @@ function renderCkResults(ticker,d){
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Ingest documents via the Documents tab, then click "+ New Period" to analyse them.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+esc(p)+'</h2><div style="display:flex;gap:6px"><button class="btn" style="font-size:12px;padding:8px 18px" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">Run Analysis</button><button class="btn2" style="font-size:11px;padding:5px 12px" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">Re-run Synthesis</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px"><button class="btn" style="font-size:12px;padding:8px 18px" title="Re-parses documents and re-extracts all metrics. Use after adding new documents. (~$0.80 Sonnet)" onclick="reprocessPeriod(\''+ticker+'\',\''+esc(p)+'\')">⚙ Full Reprocess</button><button class="btn2" style="font-size:11px;padding:5px 12px" title="Rewrites the analysis output only. Metrics unchanged. Use after editing your thesis. (~$0.15 Sonnet)" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">✍ Regenerate Briefing</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     // Ask a Question at top
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
     // Analysis Output
@@ -1710,7 +1724,29 @@ let esgCache={};
 // ── Guidance tab ──────────────────────────────────────────────
 async function loadGuidance(ticker){
   const c=E('ck-guidance');if(!c)return;
-  c.innerHTML='<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">📊</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:16px">Guidance tracking coming soon. This will show management guidance vs actual results over time.</div></div>';
+  c.innerHTML='<div class="ld">Loading guidance…</div>';
+  try{
+    const r=await fetch('/api/v1/companies/'+enc(ticker)+'/cockpit');
+    if(!r.ok)throw new Error('Failed');
+    const d=await r.json();
+    const abp=d.analyses_by_period||{};
+    const periods=Object.keys(abp).sort().reverse();
+    let rows=[];
+    periods.forEach(p=>{
+      const metrics=(abp[p]?.content?.metrics||abp[p]?.content?.raw_items||[]);
+      metrics.forEach(m=>{
+        const seg=(m.segment||'').toLowerCase();
+        const name=(m.metric_name||'').toLowerCase();
+        if(seg.includes('guidance')||seg.includes('outlook')||name.includes('guidance')||name.includes('outlook')||name.includes('forecast')||name.includes('target'))
+          rows.push({period:p,name:m.metric_name||'—',value:m.value,unit:m.unit||''});
+      });
+    });
+    if(!rows.length){c.innerHTML='<div style="text-align:center;padding:40px;font-family:var(--sans);font-size:13px;color:var(--text4)">No guidance data extracted yet. Run analysis on documents to populate.</div>';return;}
+    let h='<h2>Management Guidance</h2><table class="tbl" style="margin-top:12px"><thead><tr><th>Period</th><th>Metric</th><th>Guided Value</th></tr></thead><tbody>';
+    rows.forEach(r=>{h+='<tr><td>'+(normalisePeriodLabel(r.period)||esc(r.period))+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.value!=null?r.value+' '+r.unit:'—')+'</td></tr>';});
+    h+='</tbody></table>';
+    c.innerHTML=h;
+  }catch(e){c.innerHTML='<div style="color:var(--red);padding:20px;font-family:var(--sans);font-size:13px">Failed to load guidance data.</div>';}
 }
 
 // ── Moat / Competitive Advantage tab ─────────────────────────
@@ -3684,7 +3720,7 @@ function gsPopulateTickers(){
 document.addEventListener('keydown',function(e){
   if((e.metaKey||e.ctrlKey)&&e.key==='k'){
     e.preventDefault();
-    var inp=E('gs-input');if(inp){inp.focus();inp.select();}
+    var inp=E('gs-input');if(inp){inp.focus();inp.select();if(!inp.value.trim())_showSearchHistory();}
   }
 });
 document.addEventListener('click',function(e){
@@ -3694,8 +3730,21 @@ document.addEventListener('click',function(e){
 function closeSearch(){var p=E('gs-panel');if(p)p.classList.remove('open');}
 var GS_TYPE_ICONS={section:'📄',metric:'📊',statement:'💬',note:'📝'};
 var GS_TYPE_LABELS={section:'Document',metric:'Metric',statement:'Statement',note:'Note'};
+function _addSearchHistory(q){try{var h=JSON.parse(localStorage.getItem('op_search_history')||'[]');h=[q,...h.filter(x=>x!==q)].slice(0,10);localStorage.setItem('op_search_history',JSON.stringify(h));}catch(e){}}
+function _showSearchHistory(){
+  var inner=E('gs-inner'),panel=E('gs-panel');if(!inner||!panel)return;
+  var hist=[];try{hist=JSON.parse(localStorage.getItem('op_search_history')||'[]');}catch(e){}
+  var recent=[];try{recent=JSON.parse(localStorage.getItem('op_recent_tickers')||'[]');}catch(e){}
+  if(!hist.length&&!recent.length)return;
+  panel.classList.add('open');
+  var h='';
+  if(recent.length){h+='<div style="padding:8px 16px;font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em">Recent Companies</div>';h+='<div style="padding:4px 16px 12px;display:flex;gap:6px;flex-wrap:wrap">';recent.forEach(t=>{h+='<button class="btn2" style="padding:4px 10px;font-size:11px" onclick="sideSelectCo(\''+esc(t)+'\');closeSearch()">'+esc(t)+'</button>';});h+='</div>';}
+  if(hist.length){h+='<div style="padding:8px 16px;font-family:var(--sans);font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.1em">Recent Searches</div>';hist.forEach(q=>{h+='<div class="gs-result" style="cursor:pointer" onclick="E(\'gs-input\').value=\''+esc(q)+'\';runSearch()"><span style="color:var(--text2);font-family:var(--sans);font-size:13px">'+esc(q)+'</span></div>';});}
+  inner.innerHTML=h;
+}
 async function runSearch(){
   var q=(E('gs-input').value||'').trim();if(!q)return;
+  _addSearchHistory(q);
   var ticker=(E('gs-ticker').value||'').trim()||null;
   var btn=E('gs-btn'),panel=E('gs-panel'),inner=E('gs-inner');
   btn.disabled=true;btn.textContent='Searching\u2026';
