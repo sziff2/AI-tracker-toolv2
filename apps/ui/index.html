@@ -396,7 +396,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div class="cd-t">💼 Portfolio Holdings</div>
       <div style="font-family:var(--sans);font-size:12px;color:var(--text2);margin-bottom:12px">Import holdings for a portfolio. Select portfolio first, then upload. Columns: Ticker, Weight %, Cost Basis (optional), Name (optional), Sector (optional), Country (optional).</div>
       <div style="margin-bottom:8px"><select class="fi" id="dh-port-select" style="max-width:250px"><option value="">— Select portfolio —</option></select></div>
-      <div class="af" onclick="if(!E('dh-port-select').value){alert('Select a portfolio first.');return;}E('dh-holdings-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
+      <div class="af" onclick="if(!E('dh-port-select').value){toast('Select a portfolio first.');return;}E('dh-holdings-file').click()" style="margin-top:0"><span style="font-size:18px">📎</span> Upload CSV</div>
       <input type="file" id="dh-holdings-file" accept=".csv,.tsv,.txt" style="display:none" onchange="handleDHFile(this,'holdings')">
       <div id="dh-holdings-result" style="margin-top:8px"></div>
     </div>
@@ -470,6 +470,18 @@ let UF=[],CC=[];const HFI=document.getElementById('hfi');
 function E(id){return document.getElementById(id);}
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function friendlyError(msg){if(!msg)return msg;var m=String(msg);var map=[[/column .* does not exist/i,'Database schema is out of date. Contact your administrator.'],[/relation .* does not exist/i,'A required table is missing. The app may need a restart.'],[/anthropic.*rate.limit/i,'AI rate limit reached. Wait 60 seconds and try again.'],[/budget.*exceeded/i,'Spending limit reached for this AutoResearch run.'],[/duplicate.*checksum/i,'This document has already been ingested.'],[/file too large/i,'File exceeds the 50 MB limit.'],[/connection refused/i,'Cannot reach the server. Check your connection.'],[/timeout/i,'Request timed out. Try again.']];for(var i=0;i<map.length;i++){if(map[i][0].test(m))return map[i][1];}return m;}
+function toast(message,type,duration){
+  type=type||'error';duration=duration||5000;
+  var container=E('toast-container');
+  if(!container){container=document.createElement('div');container.id='toast-container';container.style.cssText='position:fixed;top:80px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:380px';document.body.appendChild(container);}
+  var colours={error:'#C0392B',success:'#1A7A4A',warning:'#D4A017',info:'#1F3F6D'};
+  var t=document.createElement('div');
+  t.style.cssText='background:var(--bg2);border:1px solid var(--border);border-left:4px solid '+(colours[type]||colours.info)+';border-radius:8px;padding:12px 16px;font-family:var(--sans);font-size:13px;color:var(--text);box-shadow:0 4px 16px rgba(0,0,0,0.3);display:flex;align-items:flex-start;gap:10px;cursor:pointer;animation:fadeIn .2s ease-out';
+  t.innerHTML='<span style="flex:1;line-height:1.5">'+esc(friendlyError(message))+'</span><span style="color:var(--text4);font-size:16px;line-height:1" onclick="this.parentElement.remove()">×</span>';
+  t.onclick=function(){t.remove();};
+  container.appendChild(t);
+  setTimeout(function(){if(t.parentElement)t.remove();},duration);
+}
 function card(cls,t,c){return '<div class="cd '+cls+'"><div class="cd-t">'+esc(t)+'</div><div class="cd-c">'+c+'</div></div>';}
 
 function confirmAction(title, message, onConfirm) {
@@ -552,6 +564,10 @@ document.addEventListener('DOMContentLoaded',function(){
   var s=suggestPeriod();
   ['period-type','np-type'].forEach(function(id){var el=E(id);if(el)el.value=s.type;});
   ['period-year','np-year'].forEach(function(id){var el=E(id);if(el)el.value=s.year;});
+  // Restore URL state
+  var p=new URLSearchParams(location.search);
+  var co=p.get('co'),tab=p.get('tab');
+  if(co){setTimeout(function(){var sel=E('ck-company');if(sel){sel.value=co;showPage('cockpit');loadCockpit();if(tab)window._ckActiveTab=tab;}},200);}
 });
 
 // ── Companies ───────────────────────────────────────────────
@@ -641,7 +657,7 @@ function ckShowNewPeriod(ticker){
 function ckHideNewPeriod(){const p=E('ck-new-period-panel');if(p)p.style.display='none';NP_FILES=[];}
 async function npImportFromEdgar(ticker){
   var pt=E('np-type')?.value,yr=E('np-year')?.value;
-  if(!pt||!yr){alert('Select period type and year first.');return;}
+  if(!pt||!yr){toast('Select period type and year first.');return;}
   var period=yr+'_'+pt;
   var btn=E('np-edgar-btn'),statusEl=E('np-edgar-status');
   btn.disabled=true;btn.textContent='Looking up…';
@@ -747,8 +763,8 @@ async function ckSubmitNewPeriod(ticker){
 }
 async function onCompanySelect(){const v=E('company-select').value,ts=E('thesis-sec'),ta=E('thesis-arr');if(v==='__new__'){E('new-co').style.display='grid';['ticker','co-name','sector','country','th-core','th-risks','th-val'].forEach(x=>E(x).value='');ts.classList.remove('open');ta.textContent='▸';}else if(v){E('new-co').style.display='none';const c=CC.find(x=>x.ticker===v);if(c){E('ticker').value=c.ticker;E('co-name').value=c.name;E('sector').value=c.sector||'';}try{const r=await fetch('/api/v1/companies/'+enc(v)+'/thesis');if(r.ok){const t=await r.json();const a=t.find(x=>x.active)||t[0];if(a){E('th-core').value=a.core_thesis||'';E('th-risks').value=a.key_risks||'';E('th-val').value=a.valuation_framework||'';ts.classList.add('open');ta.textContent='▾';}else{E('th-core').value='';E('th-risks').value='';E('th-val').value='';ts.classList.remove('open');ta.textContent='▸';}}}catch(e){}}}
 function getTicker(){const s=E('company-select').value;return(s&&s!=='__new__')?s:E('ticker').value.trim().toUpperCase();}
-function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();try{var r=JSON.parse(localStorage.getItem('op_recent_tickers')||'[]');r=[ticker,...r.filter(x=>x!==ticker)].slice(0,5);localStorage.setItem('op_recent_tickers',JSON.stringify(r));}catch(e){}}
-async function generateThesis(){const t=getTicker();if(!t){alert('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){alert('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
+function sideSelectCo(ticker){E('ck-company').value=ticker;showPage('cockpit');loadCockpit();loadDD();try{var r=JSON.parse(localStorage.getItem('op_recent_tickers')||'[]');r=[ticker,...r.filter(x=>x!==ticker)].slice(0,5);localStorage.setItem('op_recent_tickers',JSON.stringify(r));}catch(e){}history.replaceState({},'','?co='+encodeURIComponent(ticker));}
+async function generateThesis(){const t=getTicker();if(!t){toast('Select a company first.');return;}const btn=E('gen-thesis-btn');btn.disabled=true;btn.textContent='Generating…';try{await ensureCo(t);const r=await fetch('/api/v1/companies/'+enc(t)+'/generate-thesis',{method:'POST'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');const d=await r.json();E('th-core').value=d.core_thesis||'';E('th-risks').value=d.key_risks||'';E('th-val').value=d.valuation_framework||'';E('thesis-sec').classList.add('open');E('thesis-arr').textContent='▾';}catch(e){toast('Failed: '+e.message);}btn.textContent='✨ Auto-generate thesis';btn.disabled=false;}
 
 // ── Files ────────────────────────────────────────────────────
 function addFile(){HFI.click();}
@@ -786,7 +802,13 @@ async function submitForm(){
 function resetForm(){E('form-section').style.display='block';E('result-section').style.display='none';E('sub-btn').disabled=false;E('sub-btn').textContent='Analyse & Synthesise';E('loading').style.display='none';E('error').style.display='none';E('status').style.display='none';UF=[];renderFL();}
 
 // ═══ COCKPIT ═══════════════════════════════════════════════
-async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}c.innerHTML='<div class="ld">Loading…</div>';try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');const activeTab=window._ckActiveTab||'thesis';renderCockpit(t,await r.json());if(activeTab!=='thesis'){const tabNames={thesis:'Thesis',results:'Results',kpis:'KPIs',guidance:'Guidance',moat:'Competitive Analysis',execution:'Mgmt Execution',decisions:'Valuation',esg:'ESG',documents:'Documents'};const tabLabel=tabNames[activeTab]||activeTab;const tabBtn=Array.from(document.querySelectorAll('.tab')).find(b=>b.textContent===tabLabel);if(tabBtn)ckTab(activeTab,tabBtn);}}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}}
+var _ckCache={};
+function _ckInvalidate(ticker){delete _ckCache[ticker];}
+async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}
+  // Check cache (30s TTL)
+  var cached=_ckCache[t];
+  if(cached&&Date.now()-cached.loadedAt<30000){const activeTab=window._ckActiveTab||'thesis';renderCockpit(t,cached.data);if(activeTab!=='thesis'){const tabNames={thesis:'Thesis',results:'Results',kpis:'KPIs',guidance:'Guidance',moat:'Competitive Analysis',execution:'Mgmt Execution',decisions:'Valuation',esg:'ESG',documents:'Documents'};const tabLabel=tabNames[activeTab]||activeTab;const tabBtn=Array.from(document.querySelectorAll('.tab')).find(b=>b.textContent===tabLabel);if(tabBtn)ckTab(activeTab,tabBtn);}return;}
+  c.innerHTML='<div class="ld">Loading…</div>';try{const r=await fetch('/api/v1/companies/'+enc(t)+'/cockpit');if(!r.ok)throw new Error('Failed');const data=await r.json();_ckCache[t]={data:data,loadedAt:Date.now()};const activeTab=window._ckActiveTab||'thesis';renderCockpit(t,data);if(activeTab!=='thesis'){const tabNames={thesis:'Thesis',results:'Results',kpis:'KPIs',guidance:'Guidance',moat:'Competitive Analysis',execution:'Mgmt Execution',decisions:'Valuation',esg:'ESG',documents:'Documents'};const tabLabel=tabNames[activeTab]||activeTab;const tabBtn=Array.from(document.querySelectorAll('.tab')).find(b=>b.textContent===tabLabel);if(tabBtn)ckTab(activeTab,tabBtn);}}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}}
 
 function renderCockpit(ticker,d){
   const c=E('ck-content'),co=d.company;let h='';
@@ -806,7 +828,7 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-documents" style="display:none"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
-function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
+function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');try{var u=new URL(location.href);u.searchParams.set('tab',t);history.replaceState({},'',u.toString());}catch(e){}if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
 
 // ── Thesis Evidence helper (rendered at top of Thesis tab) ───
 function _buildThesisEvidence(d){
@@ -949,9 +971,10 @@ async function saveThesisField(ticker,field,value){
     if(r.ok){
       // Brief "Saved" indicator
       const el=document.activeElement;
+      _ckInvalidate(ticker);
       if(el){const ind=document.createElement('span');ind.textContent=' Saved \u2713';ind.style.cssText='color:var(--green);font-family:var(--sans);font-size:11px;margin-left:6px';el.parentElement.appendChild(ind);setTimeout(()=>ind.remove(),1500);}
-    }else{alert('Save failed: '+(await r.text()).slice(0,100));}
-  }catch(e){alert('Save failed: '+e.message);}
+    }else{toast('Save failed: '+(await r.text()).slice(0,100));}
+  }catch(e){toast('Save failed: '+e.message);}
 }
 
 async function runLLMUpdateThesis(ticker){
@@ -964,18 +987,18 @@ async function runLLMUpdateThesis(ticker){
     setTimeout(()=>{btn.textContent='Update from Analysis';btn.disabled=false;},2000);
     loadCockpit();
   }catch(e){
-    alert('Update failed: '+e.message);
+    toast('Update failed: '+e.message);
     btn.textContent='Update from Analysis';btn.disabled=false;
   }
 }
 
 async function ckCreateThesis(ticker){
   const core=E('ck-create-th-core').value.trim();
-  if(!core){alert('Enter a core thesis.');return;}
+  if(!core){toast('Enter a core thesis.');return;}
   try{
     await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:E('ck-create-th-risks').value.trim()||null,valuation_framework:E('ck-create-th-val').value.trim()||null})});
     loadCockpit();
-  }catch(e){alert('Failed: '+e.message);}
+  }catch(e){toast('Failed: '+e.message);}
 }
 async function ckAutoGenThesis(ticker){
   const btn=event.target;btn.disabled=true;btn.textContent='Generating…';
@@ -983,7 +1006,7 @@ async function ckAutoGenThesis(ticker){
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/generate-thesis',{method:'POST'});
     if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
     btn.textContent='Done!';loadCockpit();
-  }catch(e){alert('Failed: '+e.message);btn.textContent='✨ Auto-generate';btn.disabled=false;}
+  }catch(e){toast('Failed: '+e.message);btn.textContent='✨ Auto-generate';btn.disabled=false;}
 }
 
 // ── KPIs tab ─────────────────────────────────────────────────
@@ -1163,7 +1186,7 @@ function showResPeriod(p,btn){
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
-  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){alert('Delete failed: '+e.message);}
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){toast('Delete failed: '+e.message);}
 }
 
 function handleAddDocs(input,ticker,period){
@@ -1235,7 +1258,7 @@ async function resynthesisePeriod(ticker,period){
       resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">🔄 Re-synthesising with updated thesis…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
     }
     pollReprocess(d.job_id,ticker,period);
-  }catch(e){alert('Re-synthesis failed: '+e.message);}
+  }catch(e){toast('Re-synthesis failed: '+e.message);}
 }
 async function reprocessPeriod(ticker,period){
   if(!confirm('Reprocess documents for '+period+'? This will clear existing metrics and outputs, then re-parse and re-extract all documents from scratch.'))return;
@@ -1250,16 +1273,19 @@ async function reprocessPeriod(ticker,period){
     }
     // Poll for progress
     pollReprocess(d.job_id,ticker,period);
-  }catch(e){alert('Reprocess failed: '+e.message);}
+  }catch(e){toast('Reprocess failed: '+e.message);}
 }
-function pollReprocess(jobId,ticker,period){
+function pollReprocess(jobId,ticker,period){window._reprocessStart=Date.now();
   const poll=setInterval(async()=>{
     try{
       const r=await fetch('/api/v1/jobs/'+jobId);if(!r.ok)return;
       const j=await r.json();
       const bar=E('reprocess-bar');const step=E('reprocess-step');const logEl=E('reprocess-log');
       if(bar)bar.style.width=(j.progress_pct||0)+'%';
-      if(step)step.textContent=(j.current_step||'Processing…')+' — '+(j.progress_pct||0)+'%';
+      var stepLabels={parsing:'Parsing documents',extracting:'Extracting metrics',comparing:'Comparing to thesis',synthesising:'Generating briefing',synthesis:'Generating briefing',extraction:'Extracting metrics',surprises:'Detecting surprises',ir_questions:'Generating IR questions'};
+      var stepName=stepLabels[(j.current_step||'').toLowerCase()]||j.current_step||'Processing…';
+      var elapsed=window._reprocessStart?Math.round((Date.now()-window._reprocessStart)/1000)+'s':'';
+      if(step)step.textContent=stepName+' — '+(j.progress_pct||0)+'%'+(elapsed?' ('+elapsed+')':'');
       // Update log stream
       if(logEl&&j.log_entries?.length){
         let logHtml='';
@@ -1274,7 +1300,9 @@ function pollReprocess(jobId,ticker,period){
       }
       if(j.status==='completed'){
         clearInterval(poll);
-        if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete</span>';
+        var totalTime=window._reprocessStart?Math.round((Date.now()-window._reprocessStart)/1000):0;
+        if(step)step.innerHTML='<span style="color:var(--green)">✓ Analysis complete'+(totalTime?' in '+totalTime+'s':'')+'</span>';
+        _ckInvalidate(ticker);
         setTimeout(()=>loadCockpit(),1500);
       }else if(j.status==='failed'){
         clearInterval(poll);
@@ -1289,11 +1317,11 @@ async function updateDocMeta(docId,fields,ticker){
     if(!r.ok)throw new Error('Failed');
     // If period changed, reload cockpit to move doc to correct period
     if(fields.period_label){loadCockpit();}
-  }catch(e){alert('Update failed: '+e.message);}
+  }catch(e){toast('Update failed: '+e.message);}
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
-  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';loadCockpit();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';loadCockpit();}catch(e){toast('Failed: '+e.message);}
 }
 
 async function askGlobal(ticker){
@@ -1607,17 +1635,17 @@ async function saveScenarios(ticker){
 
 // ── Actions ──────────────────────────────────────────────────
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
-async function setOverallScore(t,p,s){document.querySelectorAll('.sb[data-period="'+p+'"]').forEach(b=>{if(!b.dataset.kpi)b.classList.toggle('on',parseInt(b.textContent)===s);});alert('Overall score is computed from individual KPI scores. Set scores on individual KPIs below.');}
-async function setKPIValue(t,k,p,currentVal){const newVal=prompt('Enter value:',currentVal||'');if(newVal===null)return;const numVal=newVal===''?null:parseFloat(newVal);try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:isNaN(numVal)?null:numVal,value_text:newVal})});loadCockpit();}catch(e){alert('Failed: '+e.message);}}
+async function setOverallScore(t,p,s){document.querySelectorAll('.sb[data-period="'+p+'"]').forEach(b=>{if(!b.dataset.kpi)b.classList.toggle('on',parseInt(b.textContent)===s);});toast('Overall score is computed from individual KPI scores. Set scores on individual KPIs below.','info');}
+async function setKPIValue(t,k,p,currentVal){const newVal=prompt('Enter value:',currentVal||'');if(newVal===null)return;const numVal=newVal===''?null:parseFloat(newVal);try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:isNaN(numVal)?null:numVal,value_text:newVal})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
 async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
 async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
 async function editKPI(t,k,currentName,currentUnit){
   const newName=prompt('KPI name:',currentName);if(!newName||newName===currentName&&!confirm('Change unit too?')){}
   const newUnit=prompt('Unit:',currentUnit);
-  if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});loadCockpit();}catch(e){alert('Failed: '+e.message);}}
+  if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
 }
-async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){alert('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
-async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){alert('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){toast('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){toast('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
 
 // ── Renderers for new analysis results ──────────────────────
 
@@ -1965,18 +1993,18 @@ function filterExecStmts(status,btn){
 async function extractStatements(ticker){
   if(!confirm('Extract management statements from all uploaded documents for '+ticker+'? This uses LLM calls.'))return;
   const c=E('ck-execution');c.innerHTML='<div class="ld">Extracting management statements… This may take a minute.</div>';
-  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/extract',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Extracted '+d.extracted+' statements from '+d.documents_processed+' documents.');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/extract',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();toast('Extracted '+d.extracted+' statements from '+d.documents_processed+' documents.','success');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
 async function assessOutcomes(ticker){
   if(!confirm('Assess open statements against actual results for '+ticker+'? This uses LLM calls.'))return;
   const c=E('ck-execution');c.innerHTML='<div class="ld">Assessing outcomes… Comparing promises vs reality.</div>';
-  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/assess',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Assessed '+d.assessed+' statements.');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/execution/assess',{method:'POST'});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();toast('Assessed '+d.assessed+' statements.','success');loadExecution(ticker);}catch(e){c.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
 
 async function manualScore(ticker,stmtId,status){
   const evidence=prompt('Brief evidence for this score (optional):');
-  try{await fetch('/api/v1/companies/'+enc(ticker)+'/execution/statements/'+stmtId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,outcome_evidence:evidence||null})});loadExecution(ticker);}catch(e){alert(e.message);}
+  try{await fetch('/api/v1/companies/'+enc(ticker)+'/execution/statements/'+stmtId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,outcome_evidence:evidence||null})});loadExecution(ticker);}catch(e){toast(e.message);}
 }
 
 // ── Metrics tab ──────────────────────────────────────────────
@@ -2271,7 +2299,7 @@ async function askESG(ticker){
 }
 
 // ═══ PROMPT LAB ═════════════════════════════════════════════
-async function seedVariants(){try{const r=await fetch('/api/v1/experiments/seed',{method:'POST'});const d=await r.json();alert('Seeded: '+(d.seeded.length?d.seeded.join(', '):'All already exist'));loadLab();}catch(e){alert('Failed: '+e.message);}}
+async function seedVariants(){try{const r=await fetch('/api/v1/experiments/seed',{method:'POST'});const d=await r.json();toast('Seeded: '+(d.seeded.length?d.seeded.join(', '):'All already exist'),'success');loadLab();}catch(e){toast('Failed: '+e.message);}}
 
 async function loadLab(){
   const c=E('lab-content');if(!c)return;c.innerHTML='<div class="ld">Loading…</div>';
@@ -2377,20 +2405,20 @@ function labToggleAll(id){
   if(btn)btn.textContent=hidden?'Show fewer':'Show all';
 }
 
-async function activateVariant(id){if(!confirm('Promote as active default?'))return;try{await fetch('/api/v1/experiments/variants/'+id+'/activate',{method:'POST'});loadLab();}catch(e){alert(e.message);}}
-async function refineType(type){if(!confirm('LLM refine '+type+'? Needs 3+ judged experiments.'))return;try{const r=await fetch('/api/v1/experiments/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();alert('Created '+d.new_variant_name+' (gen '+d.generation+')');loadLab();}catch(e){alert(e.message);}}
-function newVariant(type){const name=prompt('Variant name:');if(!name)return;const text=prompt('Full prompt text (must contain {text}):');if(!text)return;fetch('/api/v1/experiments/variants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,variant_name:name,prompt_text:text})}).then(()=>loadLab()).catch(e=>alert(e.message));}
+async function activateVariant(id){if(!confirm('Promote as active default?'))return;try{await fetch('/api/v1/experiments/variants/'+id+'/activate',{method:'POST'});loadLab();}catch(e){toast(e.message);}}
+async function refineType(type){if(!confirm('LLM refine '+type+'? Needs 3+ judged experiments.'))return;try{const r=await fetch('/api/v1/experiments/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();toast('Created '+d.new_variant_name+' (gen '+d.generation+')','success');loadLab();}catch(e){toast(e.message);}}
+function newVariant(type){const name=prompt('Variant name:');if(!name)return;const text=prompt('Full prompt text (must contain {text}):');if(!text)return;fetch('/api/v1/experiments/variants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,variant_name:name,prompt_text:text})}).then(()=>loadLab()).catch(e=>toast(e.message));}
 
 async function runExperiment(){
   const type=E('lab-type').value,ticker=E('lab-ticker').value.trim(),period=E('lab-period').value.trim(),input=E('lab-input').value.trim();
-  if(!input){alert('Paste test input.');return;}const res=E('lab-result');res.innerHTML='<div class="ld">Running both variants…</div>';
+  if(!input){toast('Paste test input.');return;}const res=E('lab-result');res.innerHTML='<div class="ld">Running both variants…</div>';
   try{const r=await fetch('/api/v1/experiments/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt_type:type,ticker:ticker||null,period_label:period||null,input_text:input})});if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}const d=await r.json();
     let h='<div class="g2" style="margin-top:0"><div class="cd" style="border-left-color:var(--gold)"><div class="cd-t">A: '+esc(d.variant_a.name)+' (active)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_a,null,2))+'</div></div><div class="cd" style="border-left-color:var(--green)"><div class="cd-t">B: '+esc(d.variant_b.name)+' (challenger)</div><div class="cd-c" style="font-size:12px;max-height:300px;overflow-y:auto">'+esc(JSON.stringify(d.output_b,null,2))+'</div></div></div>';
     h+='<div style="margin-top:16px;padding:16px;background:var(--bg2);border-radius:10px"><div class="fl">Judge</div><div class="form-row"><select id="lab-winner"><option value="">Pick winner…</option><option value="a">A wins</option><option value="b">B wins</option><option value="tie">Tie</option></select><input id="lab-ra" type="number" min="1" max="5" placeholder="Rate A 1-5" style="max-width:100px"><input id="lab-rb" type="number" min="1" max="5" placeholder="Rate B 1-5" style="max-width:100px"></div><div class="form-row" style="margin-top:6px"><input id="lab-fb" placeholder="Why is the winner better?"><button onclick="judgeExp(\''+d.experiment_id+'\')">Submit</button></div></div>';
     res.innerHTML=h;
   }catch(e){res.innerHTML='<div class="err">'+esc(e.message)+'</div>';}
 }
-async function judgeExp(id){const w=E('lab-winner').value;if(!w){alert('Pick a winner.');return;}try{const r=await fetch('/api/v1/experiments/'+id+'/judge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({winner:w,rating_a:E('lab-ra').value?parseInt(E('lab-ra').value):null,rating_b:E('lab-rb').value?parseInt(E('lab-rb').value):null,feedback:E('lab-fb').value.trim()||null})});if(!r.ok)throw new Error('Failed');const d=await r.json();alert('Recorded.'+(d.auto_promoted?' '+d.message:''));loadLab();}catch(e){alert(e.message);}}
+async function judgeExp(id){const w=E('lab-winner').value;if(!w){toast('Pick a winner.');return;}try{const r=await fetch('/api/v1/experiments/'+id+'/judge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({winner:w,rating_a:E('lab-ra').value?parseInt(E('lab-ra').value):null,rating_b:E('lab-rb').value?parseInt(E('lab-rb').value):null,feedback:E('lab-fb').value.trim()||null})});if(!r.ok)throw new Error('Failed');const d=await r.json();toast('Recorded.'+(d.auto_promoted?' '+d.message:''));loadLab();}catch(e){toast(e.message);}}
 
 function handlePAIFile(input){
   const file=input.files[0];if(!file)return;
@@ -2659,7 +2687,7 @@ async function loadPortfolios(){
 
 async function createPortfolio(){
   const name=prompt('Portfolio name (e.g. OverGlob):');if(!name)return;
-  try{const r=await fetch('/api/v1/portfolios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});if(r.ok){const d=await r.json();await loadPortfolios();E('port-select').value=d.id;loadPortfolioDetail();}}catch(e){alert(e.message);}
+  try{const r=await fetch('/api/v1/portfolios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});if(r.ok){const d=await r.json();await loadPortfolios();E('port-select').value=d.id;loadPortfolioDetail();}}catch(e){toast(e.message);}
 }
 
 async function loadPortfolioDetail(){
@@ -2846,8 +2874,8 @@ function renderPortfolio(portId,d){
 
 async function addHolding(portId){
   const t=E('ph-ticker').value.trim(),w=E('ph-weight').value,cb=E('ph-cost').value;
-  if(!t){alert('Enter ticker.');return;}
-  try{await fetch('/api/v1/portfolios/'+portId+'/holdings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t.toUpperCase(),weight:parseFloat(w)||0,cost_basis:cb?parseFloat(cb):null})});loadPortfolioDetail();}catch(e){alert(e.message);}
+  if(!t){toast('Enter ticker.');return;}
+  try{await fetch('/api/v1/portfolios/'+portId+'/holdings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker:t.toUpperCase(),weight:parseFloat(w)||0,cost_basis:cb?parseFloat(cb):null})});loadPortfolioDetail();}catch(e){toast(e.message);}
 }
 async function removeHolding(portId,hId){
   if(!confirm('Remove this holding?'))return;
@@ -2855,19 +2883,19 @@ async function removeHolding(portId,hId){
 }
 async function setPrice(portId){
   const t=E('vs-ticker').value.trim(),p=E('vs-price').value;
-  if(!t||!p){alert('Enter ticker and price.');return;}
-  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/price',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:parseFloat(p)})});alert('Price set for '+t.toUpperCase());loadPortfolioDetail();}catch(e){alert(e.message);}
+  if(!t||!p){toast('Enter ticker and price.');return;}
+  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/price',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:parseFloat(p)})});toast('Price set for '+t.toUpperCase(),'success');loadPortfolioDetail();}catch(e){toast(e.message);}
 }
 async function setScenarios(portId){
-  const t=E('vs-ticker').value.trim();if(!t){alert('Enter ticker first.');return;}
+  const t=E('vs-ticker').value.trim();if(!t){toast('Enter ticker first.');return;}
   const scenarios=[];
   const bear=E('vs-bear').value,base=E('vs-base').value,bull=E('vs-bull').value;
   const bp=E('vs-bp').value,bap=E('vs-bap').value,bup=E('vs-bup').value;
   if(bear)scenarios.push({scenario_type:'bear',target_price:parseFloat(bear),probability:bp?parseFloat(bp):20});
   if(base)scenarios.push({scenario_type:'base',target_price:parseFloat(base),probability:bap?parseFloat(bap):50});
   if(bull)scenarios.push({scenario_type:'bull',target_price:parseFloat(bull),probability:bup?parseFloat(bup):30});
-  if(!scenarios.length){alert('Enter at least one target price.');return;}
-  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios})});alert('Scenarios saved for '+t.toUpperCase());loadPortfolioDetail();}catch(e){alert(e.message);}
+  if(!scenarios.length){toast('Enter at least one target price.');return;}
+  try{await fetch('/api/v1/companies/'+enc(t.toUpperCase())+'/scenarios',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenarios})});toast('Scenarios saved for '+t.toUpperCase(),'success');loadPortfolioDetail();}catch(e){toast(e.message);}
 }
 
 // ═══ PORTFOLIO CSV EXPORT / IMPORT ═══════════════════════════════════════
@@ -2909,20 +2937,20 @@ async function exportPortfolioCSV(){
     a.href=url;a.download=(d.name||'portfolio').replace(/\s+/g,'_')+'_holdings.csv';
     document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},100);
-  }catch(e){alert('Export failed: '+e.message);}
+  }catch(e){toast('Export failed: '+e.message);}
 }
 
 async function importPortfolioCSV(input){
-  const id=E('port-select').value;if(!id){alert('Select a portfolio first.');return;}
+  const id=E('port-select').value;if(!id){toast('Select a portfolio first.');return;}
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=async function(e){
     try{
       const lines=e.target.result.split('\n').filter(l=>l.trim());
-      if(!lines.length){alert('Empty file.');return;}
+      if(!lines.length){toast('Empty file.');return;}
       const header=parseCSVLine(lines[0]).map(c=>c.trim().toLowerCase());
       const col=name=>header.indexOf(name);
-      if(col('ticker')<0){alert('CSV must have a "Ticker" column. Headers found: '+header.join(', '));return;}
+      if(col('ticker')<0){toast('CSV must have a "Ticker" column. Headers found: '+header.join(', '));return;}
       const holdings=[],prices=[],scenarios=[];
       for(let i=1;i<lines.length;i++){
         const cells=parseCSVLine(lines[i]);
@@ -2973,7 +3001,7 @@ async function importPortfolioCSV(input){
         }
         if(scens.length)scenarios.push({ticker,scens});
       }
-      if(!holdings.length){alert('No valid rows found.');return;}
+      if(!holdings.length){toast('No valid rows found.');return;}
       const r=await fetch('/api/v1/portfolios/'+id+'/holdings/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({holdings})});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Holdings import failed');}
       const d=await r.json();
@@ -2990,9 +3018,9 @@ async function importPortfolioCSV(input){
       if(scenarios.length)msg+=', '+scenarios.length+' scenario sets';
       if(created.length)msg+='. Auto-created: '+created.join(', ');
       if(notFound.length)msg+='. Not found: '+notFound.join(', ');
-      alert(msg);
+      toast(msg,'info');
       loadPortfolioDetail();
-    }catch(err){alert('Import failed: '+err.message);}
+    }catch(err){toast('Import failed: '+err.message);}
   };
   reader.readAsText(file);
   input.value='';
@@ -3803,8 +3831,8 @@ function arSetMode(mode){_arMode=mode;['extraction','output','log','usage'].forE
 function arRenderTypeToggles(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-types');if(!el)return;el.innerHTML=AR_PROMPT_TYPES[pipeline].map(t=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="${t.id}" checked style="accent-color:var(--gold);margin-top:2px;flex-shrink:0"><div><div style="font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text)">${t.label}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">Docs: ${t.doc}</div></div></label>`).join('');}
 function arRenderEvals(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-evals');if(!el)return;el.innerHTML=AR_EVALS[pipeline].map(ev=>`<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${ev.colour};border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">${ev.name}</span><span style="font-family:var(--mono);font-size:11px;color:${ev.colour};background:rgba(255,255,255,.04);padding:2px 8px;border-radius:4px;font-weight:600">${ev.weight}</span></div><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:6px;font-style:italic">${ev.how}</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:7px">${ev.description}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text3);line-height:1.55;border-top:1px solid var(--border);padding-top:7px"><strong style="color:var(--text4)">Why it matters:</strong> ${ev.why}</div></div>`).join('');}
 function arGetSelectedTypes(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const container=E('ar-'+pfx+'-types');if(!container)return AR_PROMPT_TYPES[pipeline].map(t=>t.id);return Array.from(container.querySelectorAll('input:checked')).map(i=>i.value);}
-async function arStart(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const hours=parseFloat(E('ar-'+pfx+'-hours').value);const types=arGetSelectedTypes(pipeline);if(!types.length){alert('Select at least one prompt type.');return;}confirmAction('Start AutoResearch?','Start '+(pipeline==='extraction'?'Extraction':'Output')+' AutoRun for '+hours+'h across '+types.length+' type'+(types.length>1?'s':'')+'. Estimated cost: ~$2-8 depending on duration and model. Ensure you have run "Seed Default Variants" in Prompt Lab first.',async function(){try{const r=await fetch('/api/v1/autorun/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours,prompt_types:types,pipeline})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Failed');arRefreshStatus();arStartPoll();}catch(e){alert('Failed: '+e.message);}});}
-async function arStop(pipeline){if(!confirm('Request graceful stop?'))return;try{await fetch('/api/v1/autorun/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipeline})});arRefreshStatus();}catch(e){alert('Stop failed: '+e.message);}}
+async function arStart(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const hours=parseFloat(E('ar-'+pfx+'-hours').value);const types=arGetSelectedTypes(pipeline);if(!types.length){toast('Select at least one prompt type.');return;}confirmAction('Start AutoResearch?','Start '+(pipeline==='extraction'?'Extraction':'Output')+' AutoRun for '+hours+'h across '+types.length+' type'+(types.length>1?'s':'')+'. Estimated cost: ~$2-8 depending on duration and model. Ensure you have run "Seed Default Variants" in Prompt Lab first.',async function(){try{const r=await fetch('/api/v1/autorun/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours,prompt_types:types,pipeline})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Failed');arRefreshStatus();arStartPoll();}catch(e){toast('Failed: '+e.message);}});}
+async function arStop(pipeline){if(!confirm('Request graceful stop?'))return;try{await fetch('/api/v1/autorun/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipeline})});arRefreshStatus();}catch(e){toast('Stop failed: '+e.message);}}
 async function arRefreshStatus(){try{const r=await fetch('/api/v1/autorun/status');if(!r.ok)return;arRenderStatus(await r.json());}catch(e){const el=E('ar-log-content');if(el)el.innerHTML='<span style="color:var(--red)">Could not reach AutoRun API — check autorun router is registered in main.py.</span>';}}
 function arRenderStatus(d){['extraction','output'].forEach(pipeline=>{const pState=d[pipeline]||{};const pfx=pipeline==='extraction'?'ext':'out';const running=pState.running||false;const startBtn=E('ar-'+pfx+'-start'),stopBtn=E('ar-'+pfx+'-stop'),statusEl=E('ar-'+pfx+'-status'),statsEl=E('ar-'+pfx+'-stats');if(startBtn){startBtn.disabled=running;startBtn.textContent=running?'⏸ Running…':'▶ Start';}if(stopBtn)stopBtn.style.display=running?'inline-block':'none';if(statusEl){if(running){statusEl.innerHTML=`<span style="color:var(--gold)">● Running — job ${esc(pState.job_id||'')}</span><br><span style="color:var(--text4);font-size:11px">${esc(pState.current_step||pState.current_type||'running…')}</span>`;}else if(pState.job_id){statusEl.innerHTML=`<span style="color:var(--green)">✓ Last run: ${esc(pState.job_id)}${pState.experiments_run>0?' — '+pState.experiments_run+' experiments, '+pState.promotions+' promotions':''}</span>`;}else{statusEl.textContent='Idle';}}if(statsEl&&(pState.experiments_run>0||pState.running)){statsEl.style.display='block';const se=E('ar-'+pfx+'-stat-exp'),sp=E('ar-'+pfx+'-stat-pro'),sd=E('ar-'+pfx+'-stat-delta');if(se)se.textContent=pState.experiments_run??'—';if(sp)sp.textContent=pState.promotions??'—';if(sd)sd.textContent=pState.avg_delta!=null?(pState.avg_delta>=0?'+':'')+pState.avg_delta.toFixed(2):'—';}});const logEl=E('ar-log-content');if(logEl){const logs=(d.log||[]).slice(0,200);if(logs.length){logEl.innerHTML=logs.map(entry=>{const ts=(entry.ts||'').substring(11,19);const col=entry.level==='error'?'var(--red)':entry.level==='warning'?'var(--amber)':(entry.msg||'').startsWith('✓')?'var(--green)':(entry.msg||'').startsWith('─')?'var(--gold)':'var(--text2)';const pipe=entry.pipeline?`<span style="font-family:var(--mono);font-size:10px;color:var(--text4);margin-right:6px;background:var(--bg3);padding:1px 5px;border-radius:3px">${esc(entry.pipeline)}</span>`:'';return `<div>${pipe}<span style="color:var(--text4)">${ts}</span>  <span style="color:${col}">${esc(entry.msg||'')}</span>${entry.detail?` <span style="color:var(--text4)">${esc(entry.detail)}</span>`:''}</div>`;}).join('');}else{logEl.innerHTML='<span style="color:var(--text4)">No activity yet.</span>';}}}
 async function loadUsage(){
@@ -4215,7 +4243,7 @@ function edgarDocTypeOpts(selected){
 }
 var _edgarFilings=[];var _edgarTicker='';
 async function browseEdgar(ticker){
-  var cik=(E('ck-edgar-cik')||{}).value;if(!cik){alert('Enter a CIK number.');return;}
+  var cik=(E('ck-edgar-cik')||{}).value;if(!cik){toast('Enter a CIK number.');return;}
   _edgarTicker=ticker;
   var el=E('edgar-results');if(!el)return;
   el.innerHTML='<div class="ld">Fetching filings…</div>';
@@ -4286,7 +4314,7 @@ function edgarUpdateSelCount(){
   }
 }
 function edgarApplyBulkPeriod(){
-  var period=E('edgar-bulk-period').value;if(!period){alert('Select a period first.');return;}
+  var period=E('edgar-bulk-period').value;if(!period){toast('Select a period first.');return;}
   document.querySelectorAll('.edgar-chk:checked').forEach(function(c){
     var sel=document.querySelector('.edgar-period[data-idx="'+c.dataset.idx+'"]');
     if(sel)sel.value=period;
@@ -4294,7 +4322,7 @@ function edgarApplyBulkPeriod(){
 }
 async function edgarIngestSelected(){
   var checked=[].slice.call(document.querySelectorAll('.edgar-chk:checked'));
-  if(!checked.length){alert('Select at least one filing.');return;}
+  if(!checked.length){toast('Select at least one filing.');return;}
   var statusEl=E('edgar-ingest-status');
   var btn=E('edgar-ingest-btn');
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-sm"></span> Ingesting...';}
@@ -4370,7 +4398,7 @@ async function saveCkDocsUrl(ticker){
     if(!r.ok)throw new Error('Save failed');
     input.style.borderColor='var(--green)';
     setTimeout(function(){input.style.borderColor='';},1500);
-  }catch(e){alert('Failed to save URL: '+e.message);}
+  }catch(e){toast('Failed to save URL: '+e.message);}
 }
 
 // ── Harvester table filter (Features 1 & 4) ──
@@ -4433,7 +4461,7 @@ function hvUpdateSelCount(){
   }
 }
 function hvApplyBulkPeriod(){
-  var period=E('hv-bulk-period').value;if(!period){alert('Select a period first.');return;}
+  var period=E('hv-bulk-period').value;if(!period){toast('Select a period first.');return;}
   document.querySelectorAll('.hv-chk:checked').forEach(function(c){
     var sel=document.querySelector('.hv-period[data-idx="'+c.dataset.idx+'"]');
     if(sel)sel.value=period;
@@ -4441,7 +4469,7 @@ function hvApplyBulkPeriod(){
 }
 async function hvIngestSelected(){
   var checked=[].slice.call(document.querySelectorAll('.hv-chk:checked'));
-  if(!checked.length){alert('Select at least one document.');return;}
+  if(!checked.length){toast('Select at least one document.');return;}
   var statusEl=E('hv-ingest-status');
   var btn=E('hv-ingest-btn');
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-sm"></span> Ingesting...';}
@@ -4569,7 +4597,7 @@ async function runLLMScan(ticker,btn){
     setTimeout(function(){btn.textContent=orig;btn.disabled=false;},2000);
     loadCkDocuments(ticker);
   }catch(e){
-    alert('LLM scan failed: '+e.message);
+    toast('LLM scan failed: '+e.message);
     btn.textContent=orig;btn.disabled=false;
   }
 }
@@ -4587,20 +4615,20 @@ async function runHarvestAndReload(ticker,btn){
     },7000);
   }catch(e){
     btn.textContent=orig;btn.disabled=false;
-    alert('Harvest failed: '+e.message);
+    toast('Harvest failed: '+e.message);
   }
 }
 
 async function uploadSelectedDocs(ticker){
   var el=E('ck-documents');if(!el)return;
   var rows=el.querySelectorAll('[data-url] input[type=checkbox]:checked');
-  if(!rows.length){alert('Select at least one document first.');return;}
+  if(!rows.length){toast('Select at least one document first.');return;}
   var docs=[];
   rows.forEach(function(cb){
     var row=cb.closest('[data-url]');
     if(row&&row.dataset.url)docs.push({url:row.dataset.url,headline:row.dataset.headline||''});
   });
-  if(!docs.length){alert('Selected documents have no URLs.');return;}
+  if(!docs.length){toast('Selected documents have no URLs.');return;}
 
   // Fetch each PDF as a blob and push into UF as a real File object
   var btn=el.querySelector('button[onclick*="uploadSelectedDocs"]');
@@ -4631,7 +4659,7 @@ async function uploadSelectedDocs(ticker){
   if(btn){btn.textContent='Send to New Analysis →';btn.disabled=false;}
 
   if(!fetched.length){
-    alert('Could not fetch any of the selected documents. Try opening them via ↗ and uploading manually.');
+    toast('Could not fetch any of the selected documents. Try opening them via ↗ and uploading manually.');
     return;
   }
 
@@ -4732,7 +4760,7 @@ async function saveHarvesterSourcePanel(ticker,irDocsUrl,override,reload){
     });
     if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Save failed');
     if(reload)loadHarvesterSourcesPanel();
-  }catch(e){alert('Save failed: '+e.message);}
+  }catch(e){toast('Save failed: '+e.message);}
 }
 
 async function runHarvestPanel(ticker,btn){
@@ -4742,7 +4770,7 @@ async function runHarvestPanel(ticker,btn){
     if(!r.ok)throw new Error('Failed');
     btn.textContent='Done ✓';
     setTimeout(function(){btn.textContent=orig;btn.disabled=false;loadHarvestLogPanel();},2500);
-  }catch(e){btn.textContent=orig;btn.disabled=false;alert('Failed: '+e.message);}
+  }catch(e){btn.textContent=orig;btn.disabled=false;toast('Failed: '+e.message);}
 }
 
 async function triggerFullHarvestRun(){
@@ -4753,7 +4781,7 @@ async function triggerFullHarvestRun(){
     if(!r.ok)throw new Error('Failed');
     btn.textContent='Started ✓';
     setTimeout(function(){btn.textContent='▶ Run All';btn.disabled=false;loadHarvestLogPanel();},3000);
-  }catch(e){btn.textContent='▶ Run All';btn.disabled=false;alert('Failed: '+e.message);}
+  }catch(e){btn.textContent='▶ Run All';btn.disabled=false;toast('Failed: '+e.message);}
 }
 
 var _harvestLogPanelOpen=false;
