@@ -161,18 +161,20 @@ async def run_harvest(
             logger.warning("[HARVEST] %s timed out after %ss", company.ticker, elapsed)
         all_details.append(detail)
 
-    # Update last_checked_at for all harvested companies
+    # Update last_checked_at for all harvested companies (upsert — create row if missing)
     try:
         from datetime import datetime, timezone as tz
+        import uuid as _uuid
+        now = datetime.now(tz.utc)
         async with AsyncSessionLocal() as db:
             from sqlalchemy import text
-            company_ids = [c.id for c in companies]
-            if company_ids:
-                await db.execute(
-                    text("UPDATE harvester_sources SET last_checked_at = :now WHERE company_id = ANY(:ids)"),
-                    {"now": datetime.now(tz.utc), "ids": company_ids},
-                )
-                await db.commit()
+            for company in companies:
+                await db.execute(text("""
+                    INSERT INTO harvester_sources (id, company_id, last_checked_at)
+                    VALUES (:id, :cid, :now)
+                    ON CONFLICT (company_id) DO UPDATE SET last_checked_at = :now
+                """), {"id": str(_uuid.uuid4()), "cid": str(company.id), "now": now})
+            await db.commit()
     except Exception as exc:
         logger.warning("[HARVEST] Failed to update last_checked_at: %s", exc)
 
