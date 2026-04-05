@@ -154,7 +154,7 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                     Document.source == "manual",
                 )
             )
-            if existing_manual.scalar_one_or_none():
+            if existing_manual.scalars().first():
                 logger.info(
                     "[DISPATCH] Skipping %s %s — manual document already exists for this period",
                     ticker, period_label
