@@ -86,7 +86,7 @@ def format_teams_message(harvest_result: dict) -> dict:
     }
     details = harvest_result.get("details", [])
     classified = _classify_details(details)
-    now = datetime.now(timezone.utc).strftime("%A %-d %b %Y")
+    now = datetime.now(timezone.utc).strftime("%A %d %b %Y")
 
     # Build text sections
     lines = []
@@ -187,7 +187,19 @@ async def post_teams_report(harvest_result: dict, report_id: str | None = None) 
 async def run_and_report(trigger: str = "auto_weekly") -> dict:
     """Full weekly flow: harvest → save report → post to Teams."""
     result = await run_weekly_harvest()
-    report_id = await save_report(result, trigger=trigger)
-    await post_teams_report(result, report_id=report_id)
+    logger.info("[REPORT] Harvest complete — new=%d skipped=%d failed=%d, saving report...",
+                result.get("new", 0), result.get("skipped", 0), result.get("failed", 0))
+
+    report_id = None
+    try:
+        report_id = await save_report(result, trigger=trigger)
+    except Exception as exc:
+        logger.error("[REPORT] Failed to save report: %s", exc, exc_info=True)
+
+    try:
+        await post_teams_report(result, report_id=report_id)
+    except Exception as exc:
+        logger.error("[REPORT] Failed to post to Teams: %s", exc, exc_info=True)
+
     result["report_id"] = report_id
     return result
