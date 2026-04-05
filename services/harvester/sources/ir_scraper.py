@@ -278,22 +278,10 @@ async def scrape_ir_page(
     base = _base(all_urls[0])
     ir_domain = urlparse(all_urls[0]).netloc
 
-    # Build list of pages to scrape: all provided URLs + sibling discovery
+    # Pages to scrape: only the explicitly configured URLs
+    # (sibling discovery was removed — it probed 11 URL variations per company,
+    # each with timeouts + retries, making the full harvest take 30+ minutes)
     pages_to_scrape = list(all_urls)
-    # Auto-discover sibling pages from the first URL
-    parsed_url = urlparse(all_urls[0])
-    path = parsed_url.path.rstrip('/')
-    _SIBLING_PATTERNS = [
-        "previous-results", "past-results", "historical-results",
-        "results-archive", "results", "reports", "reports-and-presentations",
-        "results-reports-and-presentations", "financial-results",
-        "quarterly-results", "annual-results",
-    ]
-    parent = '/'.join(path.split('/')[:-1])
-    for sibling in _SIBLING_PATTERNS:
-        sibling_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parent}/{sibling}"
-        if sibling_url != ir_docs_url and sibling_url not in pages_to_scrape:
-            pages_to_scrape.append(sibling_url)
 
     from services.doc_utils import async_fetch_page
 
