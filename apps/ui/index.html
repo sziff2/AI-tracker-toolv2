@@ -4038,6 +4038,25 @@ async function loadCkDocuments(ticker){
       else{hiddenCount++;}
     });
 
+    // Sort newest first (by published_at or discovered_at)
+    function _docDate(d){return d.published_at||d.discovered_at||'';}
+    newDocs.sort(function(a,b){return _docDate(b).localeCompare(_docDate(a));});
+    ingestedDocs.sort(function(a,b){return _docDate(b).localeCompare(_docDate(a));});
+
+    // Flag suspicious periods — period year doesn't appear in headline
+    function _suspiciousPeriod(doc){
+      if(!doc.period)return false;
+      var periodYear=doc.period.split('_')[0];
+      if(!periodYear||!/^\d{4}$/.test(periodYear))return false;
+      var headline=(doc.headline||'').toLowerCase();
+      // If headline contains a 4-digit year that matches period, it's fine
+      if(headline.indexOf(periodYear)>=0)return false;
+      // If headline has no year at all (e.g. "Half Year Report"), flag it
+      if(!/\d{4}/.test(headline))return true;
+      // If headline has a different year, definitely suspicious
+      return true;
+    }
+
     // ── In database section (collapsed) ──
     if(ingestedDocs.length){
       h+='<details style="margin-bottom:16px"><summary style="font-family:var(--sans);font-size:13px;color:var(--text3);cursor:pointer;padding:8px 0">In database — '+ingestedDocs.length+' document'+(ingestedDocs.length>1?'s':'')+'</summary>';
@@ -4168,9 +4187,12 @@ async function loadCkDocuments(ticker){
       h+='</div></td>';
       h+='<td><span style="font-size:10px;font-family:var(--sans);font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text3)">'+srcIcon+' '+srcLabel+'</span></td>';
       h+='<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+esc(dt)+'</td>';
-      // Period with inferred indicator
+      // Period with inferred/suspicious indicator
+      var isSuspicious=_suspiciousPeriod(doc);
       h+='<td>';
-      if(doc.period_inferred){
+      if(isSuspicious){
+        h+='<select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px;border-color:#f59e0b;background:rgba(245,158,11,.08)" title="⚠ Period may be wrong — headline has no matching year">'+edgarPeriodOpts(period)+'</select>';
+      } else if(doc.period_inferred){
         h+='<select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px;border-color:#f59e0b" title="Period auto-detected from filename">'+edgarPeriodOpts(period)+'</select>';
       } else {
         h+='<select class="fi hv-period" data-idx="'+i+'" style="font-size:11px;padding:3px 6px">'+edgarPeriodOpts(period)+'</select>';
