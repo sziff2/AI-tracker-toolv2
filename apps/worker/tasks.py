@@ -38,9 +38,10 @@ celery_app.conf.update(
 # ─────────────────────────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
     # Weekly harvest — Monday 00:00 UTC (1 AM BST), skips LLM scraper
+    # TEMP: also run Tuesday 00:00 UTC for testing, remove after confirmed
     "weekly-harvest": {
         "task": "apps.worker.tasks.weekly_harvest_and_report",
-        "schedule": crontab(hour=0, minute=0, day_of_week=1),
+        "schedule": crontab(hour=0, minute=0, day_of_week='1,2'),
     },
 }
 
