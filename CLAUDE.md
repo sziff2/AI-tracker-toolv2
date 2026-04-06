@@ -60,6 +60,35 @@ The platform is transitioning to a modular agent architecture where each analysi
 - `agent_max_parallel` — concurrency limit (default 8)
 - `agent_pipeline_budget_usd` — per-pipeline spending cap (default $2)
 
+## Financial Extraction Architecture (Planned — 0.8)
+The extraction pipeline is being redesigned to pre-segment documents before LLM calls.
+
+### Current Approach (one big prompt)
+- Sends full document text to LLM, asks "extract all metrics"
+- ~15-25% period misattribution, ~5-10% BS/P&L confusion, ~10% segment errors
+
+### New Approach (pre-segment → parallel targeted extraction → reconciliation)
+```
+Document → structural parser (no LLM) → FinancialDocumentStructure
+  → classify tables (P&L / BS / CF / Segment / KPI / Guidance)
+  → parse column headers into periods
+  → split multi-period tables into single-period
+  → detect currency + unit scale
+Then → parallel LLM calls (one per statement × period, focused short prompts)
+Then → reconciliation (Q sum vs FY, segment sum vs consolidated, BS equation)
+```
+
+### New Files (when built)
+- `services/financial_statement_segmenter.py` — structural parsing (no LLM)
+- `services/statement_extractors.py` — per-statement type LLM prompts
+- `services/extraction_reconciler.py` — cross-checks
+
+### Key Principle
+Agents should never see raw financial statements. By the time analysis agents run, data is classified by statement type, tagged with correct period/currency/scale, and reconciled.
+
+### Reference
+Full architecture: `Dev plans/_0.8_financial-extraction-architecture.md`
+
 ## Analysis Pipeline
 `Document → parse (PDF/HTML/DOCX) → extract metrics → compare thesis → detect surprises → synthesise`
 - Already-parsed documents are skipped on re-run (checks sections_count + metrics_count)
