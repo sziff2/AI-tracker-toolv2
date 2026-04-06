@@ -4176,13 +4176,13 @@ async function loadCkDocuments(ticker){
       if(lang){
         h+='<span style="font-size:9px;font-family:var(--sans);font-weight:600;padding:1px 4px;border-radius:3px;background:var(--bg3);color:var(--text4);border:1px solid var(--border);flex-shrink:0" title="Non-English document">'+lang+'</span>';
       }
-      // Feature 3: Duplicate badge
-      if(isDup){
-        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:#f59e0b;color:#fff;flex-shrink:0" title="Possible duplicate">Dup?</span>';
-      }
-      // Cross-reference likely duplicate badge (title match against ingested docs)
-      if(likelyDuplicate){
-        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:#d97706;color:#fff;flex-shrink:0" title="Title matches an ingested document — likely duplicate">⚠ Likely duplicate</span>';
+      // Feature 3: Duplicate badge (dismissible via localStorage)
+      var _dismissed=JSON.parse(localStorage.getItem('op_dismissed_dups_'+ticker)||'[]');
+      var docKey=(doc.source_url||doc.headline||'').slice(0,80);
+      if((isDup||likelyDuplicate)&&_dismissed.indexOf(docKey)<0){
+        var badge=likelyDuplicate?'⚠ Likely dup':'Dup?';
+        var bgCol=likelyDuplicate?'#d97706':'#f59e0b';
+        h+='<span style="font-size:9px;font-family:var(--sans);font-weight:700;padding:1px 4px;border-radius:3px;background:'+bgCol+';color:#fff;flex-shrink:0;cursor:pointer" title="Click to dismiss" onclick="event.stopPropagation();this.remove();var d=JSON.parse(localStorage.getItem(\'op_dismissed_dups_'+esc(ticker)+'\')||\'[]\');d.push(\''+esc(docKey).replace(/'/g,"\\'")+'\');localStorage.setItem(\'op_dismissed_dups_'+esc(ticker)+'\',JSON.stringify(d))">'+badge+' ×</span>';
       }
       h+='</div></td>';
       h+='<td><span style="font-size:10px;font-family:var(--sans);font-weight:600;padding:2px 6px;border-radius:4px;background:var(--bg3);color:var(--text3)">'+srcIcon+' '+srcLabel+'</span></td>';
@@ -4504,7 +4504,15 @@ function hvUpdateSelCount(){
 }
 function hvApplyBulkPeriod(){
   var period=E('hv-bulk-period').value;if(!period){toast('Select a period first.');return;}
-  document.querySelectorAll('.hv-chk:checked').forEach(function(c){
+  var checked=document.querySelectorAll('.hv-chk:checked');
+  // Check if selected docs span multiple detected periods
+  var detectedPeriods=new Set();
+  checked.forEach(function(c){var sel=document.querySelector('.hv-period[data-idx="'+c.dataset.idx+'"]');if(sel&&sel.value)detectedPeriods.add(sel.value);});
+  if(detectedPeriods.size>1){
+    var periodList=[...detectedPeriods].map(function(p){return normalisePeriodLabel(p)||p;}).join(', ');
+    if(!confirm('Selected documents span multiple periods: '+periodList+'.\n\nApply '+(normalisePeriodLabel(period)||period)+' to all '+checked.length+' documents?'))return;
+  }
+  checked.forEach(function(c){
     var sel=document.querySelector('.hv-period[data-idx="'+c.dataset.idx+'"]');
     if(sel)sel.value=period;
   });
