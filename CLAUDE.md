@@ -54,6 +54,28 @@ The platform is transitioning to a modular agent architecture where each analysi
 - `context_contracts` — macro assumptions shared across agents
 - `sector_theses` — per-sector thesis linked to context contracts
 
+### Clean Break Design (Planned)
+Existing plumbing (parser, extractor, normaliser, LLM client) stays unchanged. Everything above it — analysis, comparison, synthesis, output — is rebuilt as agents. Current services to be replaced:
+- `thesis_comparator.py` → absorbed into Financial Analyst agent
+- `surprise_detector.py` → absorbed into Financial Analyst agent
+- `output_generator.py` → replaced by Research Agenda + PM Agent
+- `background_processor.py` → replaced by Orchestrator
+
+Agent tiers in the full architecture: TASK → DOCUMENT → SPECIALIST → INDUSTRY → SECTOR → MACRO → PORTFOLIO → META. Each agent declares a `layer` (0-9) for execution ordering within a pipeline run.
+
+### Context Contract (Planned)
+Every agent receives a shared `ContextContract` containing macro assumptions (regime, rates, credit, growth, FX, commodities, inflation, geopolitical risks) that no agent may contradict. Set by macro agents with analyst overrides. Stored in `context_contracts` table.
+
+This ensures consistency: if the analyst sets "higher for longer rates", both the REIT bear case and bank bull case respect that assumption.
+
+### Thesis Generation Cascade (Planned)
+Thesis is generated as a structured document with pillars (not free text). Each pillar links to macro dependencies and sector views from the context contract. When macro assumptions change, affected theses are flagged for re-evaluation.
+
+### Reference Docs
+- `Dev plans/_agent-architecture-clean-break.md` — full agent design, tiers, orchestration
+- `Dev plans/_thesis-architecture.md` — context contracts, thesis generation, consistency
+- `Dev plans/_0.8_financial-extraction-architecture.md` — pre-segmented extraction pipeline
+
 ### Settings
 - `agent_default_model` — Sonnet (quality agents)
 - `agent_fast_model` — Haiku (extraction/QC agents)
