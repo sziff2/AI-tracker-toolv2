@@ -203,4 +203,56 @@ async def refresh_prices(tickers: list[str] | None = None) -> dict:
 
     logger.info("[PRICE] Refresh complete: %d updated, %d failed, %d skipped",
                 summary["updated"], summary["failed"], summary["skipped"])
+
+    # Auto-snapshot current prices against existing scenarios for chart tracking
+    snapshots = await _snapshot_prices_against_scenarios()
+    summary["snapshots"] = snapshots
+
     return summary
+
+
+async def _snapshot_prices_against_scenarios() -> int:
+    """For each company with scenarios + a fresh price, create a ScenarioSnapshot.
+    This makes the valuation chart track price movement over time automatically."""
+    from apps.api.database import AsyncSessionLocal
+    from sqlalchemy import text
+
+    count = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            # Get all companies that have both scenarios and a recent price
+            rows = await db.execute(text("""
+                SELECT vs.company_id, vs.scenario_type, vs.target_price, vs.probability, vs.currency,
+                       pr.price AS current_price
+                FROM valuation_scenarios vs
+                JOIN LATERAL (
+                    SELECT price FROM price_records
+                    WHERE company_id = vs.company_id
+                    ORDER BY price_date DESC LIMIT 1
+                ) pr ON true
+                WHERE vs.target_price IS NOT NULL
+            """))
+            scenarios = rows.all()
+
+            now = datetime.now(timezone.utc)
+            for s in scenarios:
+                await db.execute(text("""
+                    INSERT INTO scenario_snapshots (id, company_id, snapshot_date, scenario_type,
+                        target_price, probability, current_price, currency, source)
+                    VALUES (:id, :cid, :date, :type, :target, :prob, :price, :curr, 'auto_price')
+                """), {
+                    "id": str(uuid.uuid4()),
+                    "cid": str(s.company_id),
+                    "date": now,
+                    "type": s.scenario_type,
+                    "target": float(s.target_price),
+                    "prob": float(s.probability) if s.probability else None,
+                    "price": float(s.current_price),
+                    "curr": s.currency or "USD",
+                })
+                count += 1
+            await db.commit()
+            logger.info("[PRICE] Created %d scenario snapshots", count)
+    except Exception as exc:
+        logger.warning("[PRICE] Scenario snapshot failed: %s", exc)
+    return count
