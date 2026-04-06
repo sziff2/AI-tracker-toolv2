@@ -43,6 +43,11 @@ celery_app.conf.beat_schedule = {
         "task": "apps.worker.tasks.weekly_harvest_and_report",
         "schedule": crontab(hour=0, minute=0, day_of_week='1,2'),
     },
+    # Daily price refresh — 18:00 UTC (after US market close, 7pm BST)
+    "daily-prices": {
+        "task": "apps.worker.tasks.refresh_prices_task",
+        "schedule": crontab(hour=18, minute=0),
+    },
 }
 
 
@@ -61,6 +66,20 @@ def weekly_harvest_and_report():
 async def _async_weekly_harvest():
     from services.harvester.scheduler import run_and_report
     return await run_and_report(trigger="auto_weekly")
+
+
+@celery_app.task(name="apps.worker.tasks.refresh_prices_task")
+def refresh_prices_task():
+    """Daily price refresh for all active companies."""
+    import asyncio
+    result = asyncio.run(_async_refresh_prices())
+    logger.info("[PRICES] Daily refresh: %s", result)
+    return result
+
+
+async def _async_refresh_prices():
+    from services.price_feed import refresh_prices
+    return await refresh_prices()
 
 
 @celery_app.task(name="apps.worker.tasks.harvest_new_documents")

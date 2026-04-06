@@ -409,6 +409,15 @@ async def bulk_price_update(body: list[BulkPriceRow], db: AsyncSession = Depends
     return {"updated": len([r for r in results if r["status"] == "updated"]), "results": results}
 
 
+@router.post("/prices/refresh")
+async def trigger_price_refresh(ticker: str = None):
+    """Refresh prices from Yahoo Finance. Optionally for one ticker only."""
+    from services.price_feed import refresh_prices
+    tickers = [ticker.upper()] if ticker else None
+    result = await refresh_prices(tickers=tickers)
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════
 # VALUATION SCENARIOS
 # ═══════════════════════════════════════════════════════════════
