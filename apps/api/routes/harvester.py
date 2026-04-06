@@ -286,13 +286,21 @@ async def test_harvest_sync(ticker: str = "LKQ US"):
 _running_tasks = set()  # prevent garbage collection of background tasks
 
 @router.post("/harvester/run-weekly")
-async def trigger_weekly_harvest():
-    """Trigger weekly harvest in background. Report posted to Teams on completion."""
-    import asyncio
-    task = asyncio.create_task(_run_weekly_bg())
-    _running_tasks.add(task)
-    task.add_done_callback(_running_tasks.discard)
-    return {"status": "weekly_harvest_started"}
+async def trigger_weekly_harvest(via_celery: bool = True):
+    """Trigger weekly harvest. Default sends to Celery worker; set via_celery=false for in-process."""
+    if via_celery:
+        try:
+            from apps.worker.tasks import weekly_harvest_and_report
+            weekly_harvest_and_report.delay()
+            return {"status": "sent_to_celery_worker"}
+        except Exception as exc:
+            return {"status": "celery_failed", "error": str(exc), "hint": "Is the worker service running?"}
+    else:
+        import asyncio
+        task = asyncio.create_task(_run_weekly_bg())
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+        return {"status": "weekly_harvest_started_in_process"}
 
 
 async def _run_weekly_bg():
