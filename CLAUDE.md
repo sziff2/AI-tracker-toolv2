@@ -31,6 +31,35 @@ Priority: SEC EDGAR → Investegate RNS → IR regex scraper → LLM scraper
 - Manual trigger: `POST /harvester/run-weekly`
 - Reports: `GET /harvester/reports`, `GET /harvester/reports/latest`
 
+## Agent Architecture
+The platform is transitioning to a modular agent architecture where each analysis step is an independent agent.
+
+### Directory Structure
+- `agents/` — agent package
+  - `base.py` — `BaseAgent` abstract class, `AgentResult` dataclass, `AgentTier` enum
+  - `registry.py` — `AgentRegistry` with auto-discovery and dependency-ordered execution
+
+### Key Concepts
+- **Agents are stateless** — receive inputs dict, call LLM, return `AgentResult`. No DB access inside agents.
+- **Orchestrator handles DB** — reads inputs, calls agents, persists results to `agent_outputs` table.
+- **Agent tiers**: EXTRACTION (parse docs), ANALYSIS (compare/score), SYNTHESIS (generate outputs), META (QC/calibration).
+- **Model routing**: Extraction/Meta agents use Haiku (fast/cheap), Analysis/Synthesis agents use Sonnet (quality). Override per-agent via `model_override`.
+- **Dependency ordering**: Agents declare `depends_on` list; `AgentRegistry.get_execution_order()` does topological sort.
+- **Predictions**: Agents can return trackable predictions via `extract_predictions()`, resolved later for calibration.
+
+### DB Tables
+- `agent_outputs` — one row per agent execution with output_json, confidence, qc_score
+- `agent_calibration` — per-agent accuracy tracking
+- `pipeline_runs` — audit trail: one row per "Run Analysis" click with full per-agent breakdown
+- `context_contracts` — macro assumptions shared across agents
+- `sector_theses` — per-sector thesis linked to context contracts
+
+### Settings
+- `agent_default_model` — Sonnet (quality agents)
+- `agent_fast_model` — Haiku (extraction/QC agents)
+- `agent_max_parallel` — concurrency limit (default 8)
+- `agent_pipeline_budget_usd` — per-pipeline spending cap (default $2)
+
 ## Analysis Pipeline
 `Document → parse (PDF/HTML/DOCX) → extract metrics → compare thesis → detect surprises → synthesise`
 - Already-parsed documents are skipped on re-run (checks sections_count + metrics_count)

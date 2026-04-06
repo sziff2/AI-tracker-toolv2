@@ -1,6 +1,6 @@
 """
 LLM client with both sync and async support for parallel calls.
-Includes token usage tracking and improved error handling.
+Includes token usage tracking, retry logic, and improved error handling.
 """
 
 import asyncio
@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 import anthropic
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from configs.settings import settings
 from services.budget_guard import BudgetGuard, BudgetExceeded  # noqa: F401
@@ -93,7 +99,28 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int, duration_ms: i
 logger = logging.getLogger(__name__)
 
 _client: anthropic.Anthropic | None = None
+_async_client: anthropic.AsyncAnthropic | None = None
 _executor = ThreadPoolExecutor(max_workers=int(settings.llm_max_tokens / 500) or 6)
+
+# Concurrency semaphore for async paths (limits parallel LLM requests)
+_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Lazily create semaphore (must be created inside a running event loop)."""
+    global _semaphore
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(settings.agent_max_parallel)
+    return _semaphore
+
+
+# ── Retry decorator for retryable API errors ────────────────────
+_retry_policy = retry(
+    retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIConnectionError)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=30),
+    reraise=True,
+)
 
 
 # ── Token usage tracking ─────────────────────────────────────────
@@ -112,6 +139,16 @@ class _UsageTracker:
 
     def record_failure(self):
         self.failed_requests += 1
+
+    @property
+    def total(self) -> float:
+        """Total estimated cost in USD across all tracked requests."""
+        # Use a blended default rate (sonnet pricing)
+        rates = _COST_PER_1M.get(settings.llm_model, {"input": 3.0, "output": 15.0})
+        return round(
+            (self.total_input_tokens * rates["input"]
+             + self.total_output_tokens * rates["output"]) / 1_000_000, 6
+        )
 
     @property
     def summary(self) -> dict:
@@ -134,6 +171,17 @@ def get_client() -> anthropic.Anthropic:
             timeout=120.0,  # 120 second timeout for large synthesis/extraction calls
         )
     return _client
+
+
+def get_async_client() -> anthropic.AsyncAnthropic:
+    """Return a singleton AsyncAnthropic client."""
+    global _async_client
+    if _async_client is None:
+        _async_client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=120.0,
+        )
+    return _async_client
 
 
 def call_llm(prompt: str, *, max_tokens: int | None = None, temperature: float | None = None,
@@ -286,14 +334,65 @@ async def call_llm_async(prompt: str, timeout_seconds: int = 90, **kwargs) -> st
         _restore_context(ctx)
         return call_llm(prompt, **kwargs)
 
-    try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(_executor, _run),
-            timeout=timeout_seconds
+    sem = _get_semaphore()
+    async with sem:
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(_executor, _run),
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            logger.warning("LLM call timed out after %ds", timeout_seconds)
+            raise TimeoutError(f"LLM request timed out after {timeout_seconds}s")
+
+
+@_retry_policy
+async def call_llm_native_async(
+    prompt: str,
+    *,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    model: str | None = None,
+    feature: str | None = None,
+    ticker: str | None = None,
+    period: str | None = None,
+    timeout_seconds: int = 90,
+) -> str:
+    """Truly-async LLM call using AsyncAnthropic (no ThreadPoolExecutor).
+    Includes retry on RateLimitError/APIConnectionError and concurrency semaphore."""
+    client = get_async_client()
+    model = model or settings.llm_model
+
+    sem = _get_semaphore()
+    async with sem:
+        t0 = time.time()
+        try:
+            resp = await asyncio.wait_for(
+                client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens or settings.llm_max_tokens,
+                    temperature=temperature if temperature is not None else settings.llm_temperature,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Native async LLM call timed out after %ds", timeout_seconds)
+            raise TimeoutError(f"LLM request timed out after {timeout_seconds}s")
+
+        duration_ms = int((time.time() - t0) * 1000)
+        text = resp.content[0].text.strip()
+        usage_tracker.record(resp.usage.input_tokens, resp.usage.output_tokens)
+        _log_usage(model, resp.usage.input_tokens, resp.usage.output_tokens, duration_ms,
+                   feature=feature, ticker=ticker, period=period)
+        if _active_budget_guard is not None:
+            _active_budget_guard.track(resp.usage.input_tokens, resp.usage.output_tokens, model)
+        logger.debug(
+            "Native async LLM response: %d chars, tokens_in=%d, tokens_out=%d, feature=%s",
+            len(text), resp.usage.input_tokens, resp.usage.output_tokens,
+            feature or _get_ctx("feature", "?"),
         )
-    except asyncio.TimeoutError:
-        logger.warning("LLM call timed out after %ds", timeout_seconds)
-        raise TimeoutError(f"LLM request timed out after {timeout_seconds}s")
+        return text
 
 
 async def call_llm_json_async(prompt: str, **kwargs) -> Any:
@@ -305,7 +404,9 @@ async def call_llm_json_async(prompt: str, **kwargs) -> Any:
         _restore_context(ctx)
         return call_llm_json(prompt, **kwargs)
 
-    return await loop.run_in_executor(_executor, _run)
+    sem = _get_semaphore()
+    async with sem:
+        return await loop.run_in_executor(_executor, _run)
 
 
 async def call_llm_json_parallel(prompts: list[str], max_concurrency: int = 3, timeout_seconds: int = 120, **kwargs) -> list[Any]:

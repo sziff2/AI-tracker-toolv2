@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0
 
+    # ── Agent / Pipeline ─────────────────────────────────────────
+    agent_default_model: str = "claude-sonnet-4-20250514"
+    agent_fast_model: str = "claude-haiku-4-5-20251001"
+    agent_max_parallel: int = 8
+    agent_pipeline_budget_usd: float = 2.0
+    agent_pipeline_timeout_seconds: int = 300
+
     # ── Budget ────────────────────────────────────────────────────
     autorun_budget_usd: float = 10.0
     # Override via env: AUTORUN_BUDGET_USD=20

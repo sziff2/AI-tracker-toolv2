@@ -123,6 +123,93 @@ async def lifespan(app: FastAPI):
                 await conn.execute(sa_text(f"ALTER TABLE llm_usage_log ADD COLUMN IF NOT EXISTS {col}"))
         except Exception:
             pass  # table may not exist yet on fresh deploy
+
+        # ── Agent architecture tables ─────────────────────────────
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS agent_outputs (
+                id UUID PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                company_id UUID REFERENCES companies(id),
+                period_label TEXT,
+                document_id UUID REFERENCES documents(id),
+                portfolio_id UUID,
+                status TEXT DEFAULT 'completed',
+                output_json TEXT,
+                confidence FLOAT,
+                qc_score FLOAT,
+                duration_ms INTEGER,
+                prompt_variant_id UUID,
+                inputs_used TEXT,
+                pipeline_run_id UUID,
+                predictions_json TEXT,
+                predictions_resolved BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                expires_at TIMESTAMPTZ
+            )
+        """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS agent_calibration (
+                id UUID PRIMARY KEY,
+                agent_id TEXT UNIQUE NOT NULL,
+                total_runs INTEGER DEFAULT 0,
+                avg_confidence FLOAT,
+                avg_qc_score FLOAT,
+                prediction_accuracy FLOAT,
+                last_calibrated_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS context_contracts (
+                id UUID PRIMARY KEY,
+                version INTEGER NOT NULL,
+                macro_assumptions TEXT,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS sector_theses (
+                id UUID PRIMARY KEY,
+                sector TEXT NOT NULL,
+                contract_id UUID REFERENCES context_contracts(id),
+                thesis_json TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id),
+                period_label TEXT,
+                trigger TEXT,
+                status TEXT DEFAULT 'running',
+                started_at TIMESTAMPTZ,
+                completed_at TIMESTAMPTZ,
+                duration_ms INTEGER,
+                total_cost_usd FLOAT,
+                total_input_tokens INTEGER,
+                total_output_tokens INTEGER,
+                total_llm_calls INTEGER,
+                agents_planned INTEGER,
+                agents_completed INTEGER,
+                agents_failed INTEGER,
+                agents_skipped INTEGER,
+                overall_qc_score FLOAT,
+                error_message TEXT,
+                agent_execution_log TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+
+        # ── Agent columns on thesis_versions ──────────────────────
+        for col in ["pillars", "macro_dependencies", "sector_dependencies", "generated_by"]:
+            await conn.execute(sa_text(f"ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS {col} TEXT"))
+        await conn.execute(sa_text("ALTER TABLE thesis_versions ADD COLUMN IF NOT EXISTS contract_version INTEGER"))
+
+        # ── Agent columns on processing_jobs ──────────────────────
+        for col in ["agent_results", "agents_completed", "agents_failed"]:
+            await conn.execute(sa_text(f"ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS {col} TEXT"))
     yield
     await async_engine.dispose()
 
