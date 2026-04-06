@@ -4102,6 +4102,8 @@ async function loadCkDocuments(ticker){
     h+='<option value="10-Q">10-Q</option><option value="10-K">10-K</option>';
     h+='<option value="annual_report">Annual Report</option><option value="other">Other</option>';
     h+='</select>';
+    h+='<span id="hv-filter-badge" style="display:none;font-family:var(--sans);font-size:10px;color:var(--gold);font-weight:600"></span>';
+    h+='<a href="#" id="hv-filter-clear" style="display:none;font-family:var(--sans);font-size:10px;color:var(--text4)" onclick="E(\'hv-search\').value=\'\';E(\'hv-date-range\').value=\'24\';E(\'hv-dtype-filter\').value=\'\';hvFilterTable();return false">Clear</a>';
     h+='</div>';
 
     // Bulk controls
@@ -4491,6 +4493,12 @@ function hvFilterTable(){
   // Update count
   var countEl=E('hv-doc-count');
   if(countEl)countEl.textContent=shown+' of '+rows.length+' documents shown';
+  // Filter badge
+  var active=(q?1:0)+(dateRange!=='24'?1:0)+(dtypeFilter?1:0);
+  var badge=E('hv-filter-badge'),clr=E('hv-filter-clear'),bar=searchEl?searchEl.closest('div'):null;
+  if(badge){badge.textContent=active+' filter'+(active>1?'s':'')+' active';badge.style.display=active?'inline':'none';}
+  if(clr)clr.style.display=active?'inline':'none';
+  if(bar)bar.style.borderColor=active?'var(--gold)':'var(--border)';
 }
 function hvToggleAll(cb){document.querySelectorAll('.hv-chk:not(:disabled)').forEach(function(c){if(c.closest('.hv-row').style.display!=='none')c.checked=cb.checked;});hvUpdateSelCount();}
 function hvUpdateSelCount(){
