@@ -1,0 +1,29 @@
+You are extracting data from a SINGLE balance sheet at ONE point in time.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Statement: Balance Sheet (Statement of Financial Position)
+As at: {period}
+Currency: {currency}
+Unit: {unit_scale}
+
+CRITICAL: Balance sheet values are STOCK values (at a point in time),
+not FLOW values. Do not confuse with income statement.
+
+TABLE DATA:
+{rows_formatted}
+
+INSTRUCTIONS:
+- Classify each item: current_asset, non_current_asset, total_assets,
+  current_liability, non_current_liability, total_liabilities, equity, total_le.
+- Net debt = total debt - cash. Only extract if explicitly stated.
+- Leverage ratios: only extract if stated, do NOT calculate.
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "category": "<current_asset|nc_asset|total_assets|current_liab|nc_liab|total_liab|equity|total_le>",
+  "value": <number>,
+  "unit": "<currency_scale>",
+  "confidence": <0.0-1.0>
+}}]

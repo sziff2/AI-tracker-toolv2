@@ -133,10 +133,14 @@ class BaseAgent(ABC):
         """Return False to skip this agent for the given inputs."""
         return True
 
-    @abstractmethod
     def build_prompt(self, inputs: dict) -> str:
-        """Build the LLM prompt from the inputs dict."""
-        ...
+        """Build the LLM prompt from the inputs dict.
+
+        Default: loads from prompts/agents/{agent_id}.txt via the prompt loader.
+        Override in subclass for custom prompt assembly.
+        """
+        from prompts.loader import load_prompt
+        return load_prompt(self.agent_id, inputs=inputs)
 
     @abstractmethod
     def validate_output(self, raw: str) -> Any:

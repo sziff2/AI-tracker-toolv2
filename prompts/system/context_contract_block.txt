@@ -1,0 +1,11 @@
+SHARED CONTEXT (all agents must respect these assumptions):
+
+Macro Regime: {regime} ({cycle_phase} cycle)
+Rate Direction: {rate_direction} (risk-free: {risk_free_rate}%, terminal: {terminal_rate_estimate}%)
+Credit Conditions: {credit_conditions} (spreads: {spread_direction})
+Global Growth: {global_growth_view}
+USD View: {usd_view}
+Inflation: {inflation_view}
+Active Geopolitical Risks: {active_risks}
+
+Do NOT contradict these assumptions in your analysis. If your findings conflict with the macro view, flag the conflict explicitly rather than ignoring the assumption.

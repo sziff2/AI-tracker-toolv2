@@ -1,0 +1,28 @@
+You are extracting data from a SINGLE cash flow statement for ONE period.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Statement: Cash Flow Statement
+Period: {period} ({period_type})
+Currency: {currency}
+Unit: {unit_scale}
+
+CRITICAL: Parenthetical values (1,234) = OUTFLOWS (negative).
+Free cash flow = operating cash flow - capex. Only extract if stated.
+
+TABLE DATA:
+{rows_formatted}
+
+INSTRUCTIONS:
+- Classify: operating, investing, financing, net_change, fcf, other.
+- Capex is usually listed as negative or in parentheses.
+- Working capital changes: extract separately if shown.
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "category": "<operating|investing|financing|net_change|fcf|other>",
+  "value": <number>,
+  "unit": "<currency_scale>",
+  "confidence": <0.0-1.0>
+}}]

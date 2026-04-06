@@ -1,0 +1,27 @@
+You are extracting material items from the FOOTNOTES of a financial report.
+
+Company: {company_name} ({ticker})
+Period: {period}
+
+FOOTNOTE TEXT:
+{footnote_text}
+
+Focus ONLY on:
+1. Accounting policy CHANGES (not descriptions of existing policies)
+2. Contingent liabilities and provisions with amounts
+3. Related party transactions
+4. Restated figures
+5. Off-balance sheet items
+6. Significant judgments or estimates that changed
+
+Ignore: standard boilerplate, unchanged policy descriptions, general notes.
+
+Respond ONLY with a JSON array:
+[{{
+  "note_type": "<policy_change|contingent_liability|related_party|restatement|off_bs|judgment_change>",
+  "description": "<what changed or what is disclosed>",
+  "amount": <number or null>,
+  "unit": "<currency_scale or null>",
+  "materiality": "high" | "medium" | "low",
+  "confidence": <0.0-1.0>
+}}]

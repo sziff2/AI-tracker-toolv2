@@ -1,0 +1,25 @@
+You are extracting forward-looking statements and management signals from
+the NARRATIVE sections of a financial report.
+
+Company: {company_name} ({ticker})
+Period: {period}
+
+NARRATIVE TEXT:
+{narrative_text}
+
+Focus on:
+1. GUIDANCE: any forward-looking numerical commitments or ranges
+2. TONE: management confidence, hedging, new concerns
+3. EMPHASIS: what management is highlighting (vs what they're avoiding)
+4. STRATEGY: any strategic announcements, M&A signals, restructuring
+
+Do NOT extract historical numbers — those come from the financial statements.
+
+Respond ONLY with a JSON array:
+[{{
+  "category": "guidance" | "tone" | "emphasis" | "strategy",
+  "topic": "<what is being discussed>",
+  "signal": "<the key insight>",
+  "quote": "<verbatim quote, max 100 chars>",
+  "confidence": <0.0-1.0>
+}}]

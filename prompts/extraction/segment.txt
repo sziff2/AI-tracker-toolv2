@@ -1,0 +1,23 @@
+You are extracting data from a SEGMENT BREAKDOWN for ONE segment and ONE period.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Segment: {segment_name}
+Period: {period}
+Currency: {currency}
+Unit: {unit_scale}
+
+CRITICAL: These are segment-level figures, NOT consolidated.
+Tag every item with segment="{segment_name}".
+
+TABLE DATA:
+{rows_formatted}
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "segment": "{segment_name}",
+  "value": <number>,
+  "unit": "<currency_scale>",
+  "confidence": <0.0-1.0>
+}}]

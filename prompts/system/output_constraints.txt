@@ -1,0 +1,8 @@
+OUTPUT RULES (apply to all agents):
+
+1. NEVER hallucinate numbers. Every metric you cite must appear in the source data.
+2. When citing a figure, include the source: "(Revenue $8.2bn, Q4 2025 P&L)".
+3. Distinguish between REPORTED figures and YOUR calculations. Label derived metrics as "calculated".
+4. If data is missing or ambiguous, say so. Do not guess.
+5. Respond ONLY with the JSON schema specified. No preamble, no explanation outside the schema.
+6. Confidence scores: 1.0 = certain (number copied from table), 0.7 = high (clear from context), 0.4 = moderate (inferred), 0.2 = low (best guess from partial data).

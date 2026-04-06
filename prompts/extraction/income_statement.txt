@@ -1,0 +1,29 @@
+You are extracting data from a SINGLE income statement for ONE period.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Statement: Income Statement (Profit & Loss)
+Period: {period} ({period_type})
+Currency: {currency}
+Unit: {unit_scale}
+This is the {current_or_comparative} period.
+
+TABLE DATA:
+{rows_formatted}
+
+INSTRUCTIONS:
+- Every row is a line item. Extract the label and value exactly as shown.
+- Do NOT calculate ratios or margins — extract only what is stated.
+- Normalise names: "Net Sales" → "Revenue", "Profit After Tax" → "Net Income"
+- All values are in {currency} {unit_scale} unless otherwise stated.
+- Classify each line item: revenue, cost, gross_profit, operating_expense,
+  operating_profit, financial_item, tax, net_income, eps, dividend, other.
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "category": "<revenue|cost|gross_profit|opex|ebit|ebitda|financial|tax|net_income|eps|dps|other>",
+  "value": <number>,
+  "unit": "<{currency}_{unit_scale_abbrev}>",
+  "confidence": <0.0-1.0>
+}}]
