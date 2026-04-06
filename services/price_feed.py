@@ -52,8 +52,16 @@ _EXCHANGE_MAP = {
 }
 
 
+# Tickers where Bloomberg symbol doesn't match Yahoo directly
+_TICKER_OVERRIDES = {
+    "SHBA SS": "SHB-A.ST",    # Svenska Handelsbanken A shares
+}
+
+
 def bloomberg_to_yahoo(ticker: str) -> str:
     """Convert Bloomberg ticker (e.g. 'BNZL LN') to Yahoo format ('BNZL.L')."""
+    if ticker in _TICKER_OVERRIDES:
+        return _TICKER_OVERRIDES[ticker]
     parts = ticker.strip().split()
     if len(parts) != 2:
         return ticker  # can't parse, return as-is
