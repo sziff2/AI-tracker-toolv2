@@ -4017,12 +4017,25 @@ async function loadCkDocuments(ticker){
       return null;
     }
 
+    // Relevance filter — only show results-relevant docs by default
+    var _resultsKeywords=/\b(result|earning|annual report|half.?year|interim|quarter|q[1-4]|10-[kq]|20-f|6-k|8-k|trading update|trading statement|presentation|transcript|press release|full year|fy |h[12] )\b/i;
+    function _isResultsRelevant(doc){
+      var dtype=(doc.document_type||'').toLowerCase();
+      if(['earnings_release','annual_report','10-K','10-Q','transcript','presentation'].indexOf(dtype)>=0)return true;
+      var src=(doc.source||'');
+      if(src==='sec_edgar'||src==='investegate')return true; // EDGAR and RNS are always relevant
+      var text=(doc.headline||'')+' '+(doc.source_url||'');
+      return _resultsKeywords.test(text);
+    }
+
     // Split into ingested and new
-    var ingestedDocs=[];var newDocs=[];
+    var ingestedDocs=[];var newDocs=[];var hiddenCount=0;
     docs.forEach(function(doc,i){
       doc._idx=i;
       var isIn=(doc.source_url&&ingestedUrls.has(doc.source_url))||doc.ingested;
-      if(isIn)ingestedDocs.push(doc);else newDocs.push(doc);
+      if(isIn){ingestedDocs.push(doc);}
+      else if(window._ckShowAllDocs||_isResultsRelevant(doc)){newDocs.push(doc);}
+      else{hiddenCount++;}
     });
 
     // ── In database section (collapsed) ──
@@ -4049,7 +4062,9 @@ async function loadCkDocuments(ticker){
       return;
     }
 
-    h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:8px;font-weight:500">'+newDocs.length+' new document'+(newDocs.length>1?'s':'')+'</div>';
+    h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text2);margin-bottom:8px;font-weight:500">'+newDocs.length+' new document'+(newDocs.length>1?'s':'');
+    if(hiddenCount)h+=' <span style="color:var(--text4);font-weight:400;font-size:12px">('+hiddenCount+' non-results docs hidden — <a href="#" style="color:var(--gold)" onclick="window._ckShowAllDocs=true;loadCkDocuments(\''+esc(ticker)+'\');return false">show all</a>)</span>';
+    h+='</div>';
 
     // Reassign docs to newDocs for the existing table rendering
     docs=newDocs;
