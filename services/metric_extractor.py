@@ -46,6 +46,22 @@ ESG_DOC_TYPES = {"proxy_statement", "annual_report_esg", "sustainability_report"
 # Smart chunking — skip low-value content
 # ─────────────────────────────────────────────────────────────────
 
+_EARNINGS_KEYWORDS = [
+    "results of operations", "earnings", "financial statements",
+    "revenue", "net income", "operating income", "earnings per share",
+    "quarterly report", "annual report", "consolidated statements",
+    "income statement", "balance sheet", "cash flow", "total assets",
+    "net interest income", "provision for credit losses", "diluted eps",
+]
+
+def _is_financial_filing(text: str, doc_type: str, source: str = "") -> bool:
+    """Check if a filing contains financial data worth extracting."""
+    if doc_type not in ("other",):
+        return True  # earnings_release, 10-K, 10-Q etc are always financial
+    preview = text[:1500].lower()
+    return any(kw in preview for kw in _EARNINGS_KEYWORDS)
+
+
 SKIP_PATTERNS = [
     r'(?i)forward.looking\s+statements?\s+disclaimer',
     r'(?i)safe\s+harbor',
@@ -121,6 +137,11 @@ async def extract_by_document_type(
     from services.prompt_registry import get_active_prompt
 
     doc_type = document.document_type or "other"
+
+    # Pre-filter: skip non-financial filings (director changes, legal, etc.)
+    if not _is_financial_filing(text, doc_type, getattr(document, 'source', '')):
+        logger.info("[EXTRACT] Skipping non-financial filing: %s (%s)", document.title, doc_type)
+        return {"document_type": doc_type, "items_extracted": 0, "raw_items": [], "skipped": "non_financial"}
 
     # Map doc_type to AutoResearch prompt_type name, then look up active variant
     DOCTYPE_TO_PROMPT_TYPE = {
@@ -328,6 +349,13 @@ async def extract_by_document_type(
         logger.info("Post-processing: %d → %d items (normalised + deduped)", before, len(all_items))
     except Exception as e:
         logger.warning("Post-processing failed: %s", str(e)[:100])
+
+    # ── Source anchoring — verify values exist in source ────
+    try:
+        from services.source_anchoring import anchor_extractions
+        all_items = anchor_extractions(all_items, tables_data=tables_data, source_text=text)
+    except Exception as e:
+        logger.warning("Source anchoring failed: %s", str(e)[:100])
 
     # ── Validation pipeline ──────────────────────────────────
     try:
