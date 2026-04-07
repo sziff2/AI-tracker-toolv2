@@ -286,11 +286,11 @@ async def fetch_sec_edgar(ticker: str, max_filings: int = 20) -> list[dict]:
             candidates.append({
                 "ticker": ticker,
                 "source": "sec_edgar",
-                "source_url": filing_url,           # dedup key
+                "source_url": doc_url or filing_url,  # actual doc URL for dedup + storage
                 "headline": headline,
                 "description": f"{description} filed {filing_date_str}",
                 "published_at": published_at or datetime.now(timezone.utc),
-                "pdf_url": doc_url,                 # may be HTML — dispatcher handles both
+                "pdf_url": doc_url,                   # same as source_url when available
                 "period_label": period_label,
                 "document_type": _classify_document_type(form, items_list[i] if i < len(items_list) else ""),
                 "form_type": form,
