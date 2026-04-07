@@ -240,14 +240,34 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
 
     # Restore file if missing on disk (e.g. after Railway redeploy wipes ephemeral storage)
     if not Path(file_path).exists():
-        # Try re-downloading from source_url
         source_url = getattr(document, 'source_url', None)
         if source_url:
             try:
-                import httpx
-                logger.info("File missing, re-downloading from %s", source_url[:80])
+                import httpx, re as _re
+                download_url = source_url
                 headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
-                resp = httpx.get(source_url, headers=headers, timeout=60.0, follow_redirects=True)
+
+                # Detect EDGAR index pages and resolve to actual primary document
+                if '-index.htm' in source_url and 'sec.gov' in source_url:
+                    logger.info("Source URL is EDGAR index page, resolving primary document...")
+                    try:
+                        idx_resp = httpx.get(source_url, headers=headers, timeout=15.0)
+                        # Extract primary document link from index page
+                        # Pattern: accession folder URL + primary doc filename
+                        base_url = source_url.rsplit('/', 1)[0]
+                        doc_links = _re.findall(r'href="([^"]+\.htm)"', idx_resp.text)
+                        # Filter out the index page itself and find the primary document
+                        primary = [l for l in doc_links if '-index' not in l and l.endswith('.htm')]
+                        if primary:
+                            download_url = primary[0] if primary[0].startswith('http') else f"{base_url}/{primary[0]}"
+                            logger.info("Resolved primary doc: %s", download_url[-60:])
+                            # Update source_url on the document for future use
+                            document.source_url = download_url
+                    except Exception as idx_err:
+                        logger.warning("Index page resolution failed: %s", idx_err)
+
+                logger.info("File missing, re-downloading from %s", download_url[:80])
+                resp = httpx.get(download_url, headers=headers, timeout=60.0, follow_redirects=True)
                 resp.raise_for_status()
                 Path(file_path).parent.mkdir(parents=True, exist_ok=True)
                 Path(file_path).write_bytes(resp.content)
