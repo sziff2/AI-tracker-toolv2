@@ -155,16 +155,25 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     file_path = document.file_path
     ext = Path(file_path).suffix.lower()
 
-    # Restore file from DB if missing on disk (e.g. after Railway redeploy)
-    # Note: file_content column was removed from Document model to save DB space.
-    # Files are stored on disk only via file_path.
-    if not Path(file_path).exists() and hasattr(document, 'file_content') and document.file_content:
-        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(file_path).write_bytes(document.file_content)
-        logger.info("Restored file from DB: %s", file_path)
+    # Restore file if missing on disk (e.g. after Railway redeploy wipes ephemeral storage)
+    if not Path(file_path).exists():
+        # Try re-downloading from source_url
+        source_url = getattr(document, 'source_url', None)
+        if source_url:
+            try:
+                import httpx
+                logger.info("File missing, re-downloading from %s", source_url[:80])
+                headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+                resp = httpx.get(source_url, headers=headers, timeout=60.0, follow_redirects=True)
+                resp.raise_for_status()
+                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                Path(file_path).write_bytes(resp.content)
+                logger.info("Re-downloaded %d bytes to %s", len(resp.content), file_path)
+            except Exception as dl_err:
+                logger.warning("Re-download failed for %s: %s", source_url[:60], dl_err)
 
     if not Path(file_path).exists():
-        raise FileNotFoundError(f"File not found and no DB backup: {file_path}")
+        raise FileNotFoundError(f"File not found and re-download failed: {file_path}")
 
     # 1. Extract
     if ext == ".pdf":
