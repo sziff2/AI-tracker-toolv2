@@ -237,6 +237,20 @@ async def extract_by_document_type(
             logger.info("Pre-segmenter: %d tables classified, %d narratives, %d footnotes",
                         len(structure.tables), len(structure.narrative_sections), len(structure.footnotes))
 
+            # Filter to only financial statement tables (skip UNKNOWN, NARRATIVE, FOOTNOTE)
+            from services.financial_statement_segmenter import StatementType as ST
+            _EXTRACTABLE = {ST.INCOME_STATEMENT, ST.BALANCE_SHEET, ST.CASH_FLOW, ST.SEGMENT_BREAKDOWN, ST.KPI_TABLE}
+            financial_tables = [t for t in structure.tables if t.statement_type in _EXTRACTABLE and len(t.rows) >= 2]
+            logger.info("Pre-segmenter: %d financial tables (of %d total) with data to extract",
+                        len(financial_tables), len(structure.tables))
+
+            # Cap at 20 tables max to prevent runaway LLM costs
+            if len(financial_tables) > 20:
+                logger.warning("Capping extraction at 20 tables (had %d)", len(financial_tables))
+                financial_tables = financial_tables[:20]
+
+            structure.tables = financial_tables
+
             if structure.tables:
                 # Step 2: Targeted LLM extraction (parallel, one per statement×period)
                 extraction_results = await extract_all_statements(structure, company_name, ticker)
@@ -295,7 +309,7 @@ async def extract_by_document_type(
                 else:
                     logger.info("Segmenter found tables but LLM extraction returned 0 items — falling back")
         except Exception as e:
-            logger.warning("Pre-segmented extraction failed, falling back to chunked: %s", str(e)[:200])
+            logger.error("Pre-segmented extraction failed, falling back to chunked: %s", str(e)[:200], exc_info=True)
 
     # ── Fallback: chunked extraction (original approach) ─────
     chunks = _smart_chunk(text)
