@@ -181,22 +181,108 @@ async def extract_by_document_type(
         except Exception as e:
             logger.warning("Pre-filter failed, using raw text: %s", str(e)[:150])
 
+    # ── Pre-segmented extraction (0.8 architecture) ───────────
+    # For earnings/annual reports with tables: classify → split by period → parallel targeted prompts
+    SEGMENTER_DOC_TYPES = {"earnings_release", "10-Q", "10-K", "annual_report"}
+    if tables_data and doc_type in SEGMENTER_DOC_TYPES:
+        try:
+            from services.financial_statement_segmenter import segment_document
+            from services.statement_extractors import extract_all_statements
+            from services.extraction_reconciler import reconcile_extractions
+            from apps.api.models import Company
+            import sqlalchemy as sa
+
+            company_q = await db.execute(sa.select(Company).where(Company.id == document.company_id))
+            company = company_q.scalar_one_or_none()
+            company_name = company.name if company else ""
+            ticker = company.ticker if company else ""
+
+            # Build pages + tables_by_page from available data
+            has_parsed_pages = hasattr(document, '_parsed_pages') and document._parsed_pages
+            if has_parsed_pages:
+                pages = [{"page_num": p.get("page", i+1), "text": p.get("text", "")} for i, p in enumerate(document._parsed_pages)]
+            else:
+                page_size = 3000
+                raw_chunks = [text[i:i+page_size] for i in range(0, len(text), page_size)]
+                pages = [{"page_num": i+1, "text": c} for i, c in enumerate(raw_chunks)]
+
+            tables_by_page = {}
+            for td in tables_data:
+                pg = td.get("page", 1)
+                tables_by_page.setdefault(pg, []).extend(td.get("tables", []))
+
+            # Step 1: Structural segmentation (no LLM)
+            structure = segment_document(pages, tables_by_page)
+            logger.info("Pre-segmenter: %d tables classified, %d narratives, %d footnotes",
+                        len(structure.tables), len(structure.narrative_sections), len(structure.footnotes))
+
+            if structure.tables:
+                # Step 2: Targeted LLM extraction (parallel, one per statement×period)
+                extraction_results = await extract_all_statements(structure, company_name, ticker)
+
+                # Step 3: Reconciliation
+                recon = reconcile_extractions(extraction_results)
+                logger.info("Reconciliation: passed=%s, checks=%d, issues=%d",
+                            recon["passed"], recon["checks_run"], len(recon["issues"]))
+                for issue in recon["issues"]:
+                    logger.warning("Reconciliation issue: %s (severity=%s)", issue["check"], issue["severity"])
+
+                # Flatten all extracted items into the standard format
+                all_segmented_items = []
+                for stmt_type, entries in extraction_results.items():
+                    for entry in entries:
+                        for item in entry.get("items", []):
+                            all_segmented_items.append({
+                                "metric_name": item.get("line_item", ""),
+                                "metric_value": item.get("value"),
+                                "unit": item.get("unit", ""),
+                                "period": entry.get("period", document.period_label),
+                                "segment": item.get("segment", "consolidated"),
+                                "confidence": item.get("confidence", 0.8),
+                                "source": f"segmenter_{stmt_type}",
+                                "statement_type": stmt_type,
+                            })
+
+                if all_segmented_items:
+                    logger.info("Pre-segmented extraction: %d items from %d tables", len(all_segmented_items), len(structure.tables))
+
+                    # Post-processing
+                    try:
+                        from services.metric_normaliser import post_process_metrics
+                        all_segmented_items = post_process_metrics(all_segmented_items)
+                    except Exception as e:
+                        logger.warning("Post-processing failed: %s", str(e)[:100])
+
+                    return {
+                        "document_type": doc_type,
+                        "items_extracted": len(all_segmented_items),
+                        "raw_items": all_segmented_items,
+                        "extraction_method": "pre_segmented",
+                        "reconciliation": recon,
+                    }
+                else:
+                    logger.info("Segmenter found tables but LLM extraction returned 0 items — falling back")
+        except Exception as e:
+            logger.warning("Pre-segmented extraction failed, falling back to chunked: %s", str(e)[:200])
+
+    # ── Fallback: chunked extraction (original approach) ─────
     chunks = _smart_chunk(text)
     logger.info("Smart chunking: %d chunks from %d chars (type: %s)", len(chunks), len(text), doc_type)
 
     if not chunks:
         return {"document_type": doc_type, "items_extracted": 0, "raw_items": []}
 
-    # ── Table-first extraction (if tables available) ─────────
+    # ── Table-first extraction (legacy, if tables available) ──
     table_items = []
-    if tables_data and doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
+    if tables_data and doc_type in SEGMENTER_DOC_TYPES:
         try:
             from services.metric_normaliser import extract_from_tables
             from apps.api.models import Company
-            company_q = await db.execute(
-                __import__("sqlalchemy").select(Company).where(Company.id == document.company_id)
-            )
-            company = company_q.scalar_one_or_none()
+            if not company:
+                company_q = await db.execute(
+                    __import__("sqlalchemy").select(Company).where(Company.id == document.company_id)
+                )
+                company = company_q.scalar_one_or_none()
             table_items = await extract_from_tables(
                 tables_data,
                 company_name=company.name if company else "",
