@@ -186,7 +186,7 @@ def _classify_document_type(form_type: str, items: str = "") -> str:
     return "other"
 
 
-async def fetch_sec_edgar(ticker: str, max_filings: int = 20) -> list[dict]:
+async def fetch_sec_edgar(ticker: str, max_filings: int = 50) -> list[dict]:
     """
     Fetch recent SEC filings for a given ticker.
 
