@@ -5,6 +5,7 @@ Start with:
     uvicorn apps.api.main:app --reload
 """
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -37,6 +38,8 @@ from apps.api.routes import (
 )
 from apps.api.routes.feedback import router as feedback_router
 from configs.settings import settings
+
+logger = logging.getLogger(__name__)
 
 START_TIME = time.time()
 
@@ -210,6 +213,14 @@ async def lifespan(app: FastAPI):
         # ── Agent columns on processing_jobs ──────────────────────
         for col in ["agent_results", "agents_completed", "agents_failed"]:
             await conn.execute(sa_text(f"ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS {col} TEXT"))
+
+    # ── Agent registry autodiscovery ─────────────────────────────
+    from agents.registry import AgentRegistry
+    AgentRegistry.autodiscover()
+    warnings = AgentRegistry.validate_dependencies()
+    for w in warnings:
+        logger.warning("Agent wiring issue: %s", w)
+
     yield
     await async_engine.dispose()
 
