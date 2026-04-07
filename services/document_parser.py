@@ -282,8 +282,19 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     # real page boundaries for the pre-filter (avoids 3000-char fallback)
     document._parsed_pages = pages
 
-    # 2. Classify
-    classification = classify_document(full_text, ticker=ticker)
+    # 2. Classify — skip LLM if document_type already known (e.g. from EDGAR form type)
+    if document.document_type and document.document_type not in ('other', 'unknown'):
+        from schemas import ClassifiedDocument
+        classification = ClassifiedDocument(
+            document_type=document.document_type,
+            company_ticker=ticker,
+            period_label=document.period_label,
+            title=document.title,
+            confidence=1.0,
+        )
+        logger.info("Skipping LLM classification — type already known: %s", document.document_type)
+    else:
+        classification = classify_document(full_text, ticker=ticker)
 
     # 3. Persist sections (strip null bytes — PostgreSQL rejects \x00 in text)
     for p in pages:
