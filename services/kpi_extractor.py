@@ -115,7 +115,7 @@ async def extract_kpis_from_briefing(
         kpi_data = await call_llm_json_async(
             prompt,
             max_tokens=1024,
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5-20251001",
         )
     except Exception as e:
         logger.error("[KPI] LLM extraction failed for %s/%s: %s", company_id, period_label, e)

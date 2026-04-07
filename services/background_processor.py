@@ -289,8 +289,8 @@ async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: 
 
 
 MODEL_MAP = {
-    "fast": "claude-3-5-haiku-20241022",
-    "standard": "claude-sonnet-4-20250514",
+    "fast": "claude-haiku-4-5-20251001",
+    "standard": "claude-sonnet-4-6",
     "deep": "claude-opus-4-20250514",
 }
 
