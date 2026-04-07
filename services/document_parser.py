@@ -156,7 +156,9 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     ext = Path(file_path).suffix.lower()
 
     # Restore file from DB if missing on disk (e.g. after Railway redeploy)
-    if not Path(file_path).exists() and document.file_content:
+    # Note: file_content column was removed from Document model to save DB space.
+    # Files are stored on disk only via file_path.
+    if not Path(file_path).exists() and hasattr(document, 'file_content') and document.file_content:
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         Path(file_path).write_bytes(document.file_content)
         logger.info("Restored file from DB: %s", file_path)

@@ -96,7 +96,6 @@ async def ingest_document(
         source_url=source_url,
         published_at=published_at or datetime.now(timezone.utc),
         file_path=str(dest_path),
-        file_content=file_bytes,
         checksum=cs,
         parsing_status="pending",
     )
