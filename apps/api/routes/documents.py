@@ -434,6 +434,53 @@ async def update_document_metadata(document_id: uuid.UUID, body: _DocUpdate, db:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Fix EDGAR index page URLs — one-time migration
+# ─────────────────────────────────────────────────────────────────
+@router.post("/documents/fix-edgar-urls")
+async def fix_edgar_urls(db: AsyncSession = Depends(get_db)):
+    """One-time fix: resolve -index.htm URLs to actual primary document URLs."""
+    import re
+    import httpx
+    from sqlalchemy import text
+
+    result = await db.execute(
+        text("SELECT id, source_url FROM documents WHERE source_url LIKE '%-index.htm'")
+    )
+    rows = result.all()
+    if not rows:
+        return {"fixed": 0, "message": "No index-page URLs found"}
+
+    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    fixed = 0
+    failed = 0
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for doc_id, source_url in rows:
+            try:
+                resp = await client.get(source_url, headers=headers)
+                # Find primary doc link (not exhibit, not index)
+                links = re.findall(r'href="(/Archives/edgar/[^"]+\.htm)"', resp.text)
+                primary = [l for l in links if 'exhibit' not in l.lower() and '-index' not in l]
+                if not primary:
+                    ix = re.findall(r'/ix\?doc=(/Archives/edgar/[^"]+\.htm)', resp.text)
+                    primary = ix
+                if primary:
+                    new_url = f"https://www.sec.gov{primary[0]}"
+                    await db.execute(
+                        text("UPDATE documents SET source_url = :url WHERE id = :id"),
+                        {"url": new_url, "id": str(doc_id)},
+                    )
+                    fixed += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+
+    await db.commit()
+    return {"fixed": fixed, "failed": failed, "total": len(rows)}
+
+
+# ─────────────────────────────────────────────────────────────────
 # Delete a single document
 # ─────────────────────────────────────────────────────────────────
 @router.delete("/documents/{document_id}")
