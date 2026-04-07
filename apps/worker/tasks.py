@@ -37,11 +37,10 @@ celery_app.conf.update(
 # Scheduled tasks
 # ─────────────────────────────────────────────────────────────────
 celery_app.conf.beat_schedule = {
-    # Weekly harvest — Monday 00:00 UTC (1 AM BST), skips LLM scraper
-    # TEMP: also run Tuesday 00:00 UTC for testing, remove after confirmed
+    # Weekly harvest — TEMP: every 6 hours until confirmed working, then revert to Monday 1AM BST
     "weekly-harvest": {
         "task": "apps.worker.tasks.weekly_harvest_and_report",
-        "schedule": crontab(hour=0, minute=0, day_of_week='1,2'),
+        "schedule": crontab(hour='0,6,12,18', minute=0),
     },
     # Daily price refresh — 18:00 UTC (after US market close, 7pm BST)
     "daily-prices": {
