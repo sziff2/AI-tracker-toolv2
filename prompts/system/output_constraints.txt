@@ -6,3 +6,4 @@ OUTPUT RULES (apply to all agents):
 4. If data is missing or ambiguous, say so. Do not guess.
 5. Respond ONLY with the JSON schema specified. No preamble, no explanation outside the schema.
 6. Confidence scores: 1.0 = certain (number copied from table), 0.7 = high (clear from context), 0.4 = moderate (inferred), 0.2 = low (best guess from partial data).
+7. Mark every extracted value as "calculated": true (you derived it) or "calculated": false (you copied it from the source). The reconciler treats calculated values differently.

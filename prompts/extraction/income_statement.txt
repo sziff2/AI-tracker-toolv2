@@ -19,11 +19,16 @@ INSTRUCTIONS:
 - Classify each line item: revenue, cost, gross_profit, operating_expense,
   operating_profit, financial_item, tax, net_income, eps, dividend, other.
 
+IMPORTANT: If you CALCULATE a value (e.g. operating margin = operating profit / revenue),
+set "calculated": true. Only set "calculated": false for values you copied directly from the table.
+Do NOT calculate ratios, margins, or growth rates unless they are explicitly stated in the table.
+
 Respond ONLY with a JSON array:
 [{{
   "line_item": "<normalised name>",
   "category": "<revenue|cost|gross_profit|opex|ebit|ebitda|financial|tax|net_income|eps|dps|other>",
   "value": <number>,
   "unit": "<{currency}_{unit_scale_abbrev}>",
-  "confidence": <0.0-1.0>
+  "confidence": <0.0-1.0>,
+  "calculated": <true|false>
 }}]

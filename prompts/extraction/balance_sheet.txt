@@ -19,11 +19,16 @@ INSTRUCTIONS:
 - Net debt = total debt - cash. Only extract if explicitly stated.
 - Leverage ratios: only extract if stated, do NOT calculate.
 
+IMPORTANT: Only extract values explicitly stated in the table. Do NOT calculate ratios
+(e.g. debt/equity, current ratio) unless they appear as a row in the table.
+Set "calculated": true for any value you derived rather than copied.
+
 Respond ONLY with a JSON array:
 [{{
   "line_item": "<normalised name>",
   "category": "<current_asset|nc_asset|total_assets|current_liab|nc_liab|total_liab|equity|total_le>",
   "value": <number>,
   "unit": "<currency_scale>",
-  "confidence": <0.0-1.0>
+  "confidence": <0.0-1.0>,
+  "calculated": <true|false>
 }}]

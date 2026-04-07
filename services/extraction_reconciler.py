@@ -117,6 +117,34 @@ def get_all_segment_metrics(results: dict, metric_name: str) -> dict[str, float]
     return out
 
 
+def _is_calculated(entry: dict, metric_name: str) -> bool:
+    """Check if a metric within an entry was flagged as calculated by the LLM."""
+    items = entry.get("items", [])
+    metric_lower = _normalise_key(metric_name)
+    for item in items:
+        item_name = _normalise_key(item.get("line_item", "") or item.get("metric_name", ""))
+        if item_name == metric_lower or (
+            metric_lower in _REVENUE_ALIASES and item_name in _REVENUE_ALIASES
+        ) or (
+            metric_lower in _NET_INCOME_ALIASES and item_name in _NET_INCOME_ALIASES
+        ):
+            return bool(item.get("calculated", False))
+    return False
+
+
+def _downgrade_if_calculated(issue: dict, *entries_and_metrics: tuple) -> dict:
+    """
+    Downgrade issue severity if any of the involved metrics were calculated.
+    Calculated values are lower-confidence cross-checks, not hard failures.
+    """
+    for entry, metric_name in entries_and_metrics:
+        if entry and _is_calculated(entry, metric_name):
+            issue["severity"] = "info"
+            issue["detail"]["note"] = "involves calculated (non-stated) value — treat as advisory"
+            break
+    return issue
+
+
 def _pct_diff(a: float, b: float) -> float:
     """Absolute percentage difference between two values."""
     if b == 0:
@@ -148,7 +176,7 @@ def _check_quarterly_sum_vs_fy(
 
     diff = _pct_diff(q_sum, fy_val)
     if diff > tolerance:
-        return {
+        issue = {
             "check": f"quarterly_sum_vs_fy_{metric_name.lower().replace(' ', '_')}",
             "severity": "critical" if diff > 0.10 else "high",
             "detail": {
@@ -160,6 +188,11 @@ def _check_quarterly_sum_vs_fy(
                 "pct_diff": round(diff * 100, 2),
             },
         }
+        # Downgrade if any involved entries are calculated
+        for entry in results.get("income_statements", []):
+            if _is_calculated(entry, metric_name):
+                return _downgrade_if_calculated(issue, (entry, metric_name))
+        return issue
     return None
 
 
@@ -241,7 +274,7 @@ def _check_balance_sheet_equation(
             rhs = liabilities + equity
             diff = _pct_diff(assets, rhs)
             if diff > tolerance:
-                issues.append({
+                issue = {
                     "check": "balance_sheet_equation",
                     "severity": "critical",
                     "detail": {
@@ -252,7 +285,16 @@ def _check_balance_sheet_equation(
                         "liabilities_plus_equity": rhs,
                         "pct_diff": round(diff * 100, 2),
                     },
-                })
+                }
+                # Downgrade if any involved metric was calculated
+                has_calculated = (
+                    _is_calculated(entry, "total assets")
+                    or _is_calculated(entry, "total liabilities")
+                    or _is_calculated(entry, "equity")
+                )
+                if has_calculated:
+                    _downgrade_if_calculated(issue, (entry, "total assets"))
+                issues.append(issue)
 
     return issues
 
@@ -289,7 +331,7 @@ def _check_net_income_cross_statement(
 
         diff = _pct_diff(pl_ni, cf_ni)
         if diff > tolerance:
-            issues.append({
+            issue = {
                 "check": "net_income_pl_vs_cf",
                 "severity": "high",
                 "detail": {
@@ -298,7 +340,11 @@ def _check_net_income_cross_statement(
                     "cf_net_income": cf_ni,
                     "pct_diff": round(diff * 100, 2),
                 },
-            })
+            }
+            # Downgrade if either side is calculated
+            if _is_calculated(is_entry, "net income"):
+                _downgrade_if_calculated(issue, (is_entry, "net income"))
+            issues.append(issue)
 
     return issues
 

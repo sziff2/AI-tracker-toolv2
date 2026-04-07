@@ -75,6 +75,12 @@ def anchor_extractions(
     unverified_count = 0
 
     for item in items:
+        # Calculated values are expected to not match source tables
+        if item.get("calculated"):
+            item["verified"] = True
+            item["source_ref"] = "calculated"
+            continue
+
         value = item.get("metric_value") or item.get("value")
         if value is None or not isinstance(value, (int, float)):
             continue
