@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Ground truth dataset for financial extraction evals. Add one entry per earnings release / 10-K used in testing.",
+  "type": "object",
+  "required": ["documents"],
+  "properties": {
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["doc_id", "file", "metrics"],
+        "properties": {
+          "doc_id":   { "type": "string", "description": "Unique ID, e.g. ASML_Q4_2024" },
+          "file":     { "type": "string", "description": "PDF filename under evals/fixtures/pdfs/" },
+          "ticker":   { "type": "string" },
+          "company":  { "type": "string" },
+
+          "expected_reconciliation_pass": {
+            "type": "boolean",
+            "default": true,
+            "description": "False if this document has known internal inconsistencies (e.g. restatement)"
+          },
+          "has_quarterly_breakdown": {
+            "type": "boolean",
+            "default": true,
+            "description": "False for annual-only documents (no Q1/Q2/Q3 columns)"
+          },
+          "known_issues": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Human notes on known quirks, e.g. 'EBITDA defined non-GAAP'"
+          },
+
+          "metrics": {
+            "type": "array",
+            "description": "Manually verified ground-truth values",
+            "items": {
+              "type": "object",
+              "required": ["statement_type", "period", "label", "expected_value"],
+              "properties": {
+                "statement_type": {
+                  "type": "string",
+                  "enum": ["income_statement", "balance_sheet", "cash_flow", "segment", "kpi"]
+                },
+                "period":         { "type": "string", "examples": ["Q4 2024", "FY 2024", "Dec 2024"] },
+                "label":          { "type": "string", "examples": ["Revenue", "Net income", "Free cash flow"] },
+                "expected_value": { "type": "number", "description": "Value in the document's native unit (e.g. millions)" },
+                "currency":       { "type": "string", "default": "EUR" },
+                "unit_scale":     { "type": "string", "enum": ["units", "thousands", "millions", "billions"], "default": "millions" },
+                "segment":        { "type": ["string", "null"], "description": "Segment name, null for consolidated" },
+                "is_non_gaap":    { "type": "boolean", "default": false }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "examples": [
+    {
+      "documents": [
+        {
+          "doc_id": "ASML_Q4_2024",
+          "file": "ASML_Q4_2024_earnings_release.pdf",
+          "ticker": "ASML",
+          "company": "ASML Holding NV",
+          "expected_reconciliation_pass": true,
+          "has_quarterly_breakdown": false,
+          "known_issues": ["Order intake is a non-GAAP KPI", "Gross margin reported as % not absolute"],
+          "metrics": [
+            {
+              "statement_type": "income_statement",
+              "period": "Q4 2024",
+              "label": "Revenue",
+              "expected_value": 9257.0,
+              "currency": "EUR",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "income_statement",
+              "period": "FY 2024",
+              "label": "Revenue",
+              "expected_value": 28261.9,
+              "currency": "EUR",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "income_statement",
+              "period": "Q4 2024",
+              "label": "Net income",
+              "expected_value": 2693.6,
+              "currency": "EUR",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "balance_sheet",
+              "period": "Dec 2024",
+              "label": "Total assets",
+              "expected_value": 37208.5,
+              "currency": "EUR",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "cash_flow",
+              "period": "FY 2024",
+              "label": "Free cash flow",
+              "expected_value": 6253.4,
+              "currency": "EUR",
+              "unit_scale": "millions"
+            }
+          ]
+        },
+
+        {
+          "doc_id": "MSFT_Q2_FY2025",
+          "file": "MSFT_Q2_FY2025_earnings_release.pdf",
+          "ticker": "MSFT",
+          "company": "Microsoft Corporation",
+          "expected_reconciliation_pass": true,
+          "has_quarterly_breakdown": false,
+          "known_issues": [],
+          "metrics": [
+            {
+              "statement_type": "income_statement",
+              "period": "Q2 FY2025",
+              "label": "Revenue",
+              "expected_value": 69632.0,
+              "currency": "USD",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "income_statement",
+              "period": "Q2 FY2025",
+              "label": "Operating income",
+              "expected_value": 31651.0,
+              "currency": "USD",
+              "unit_scale": "millions"
+            },
+            {
+              "statement_type": "segment",
+              "period": "Q2 FY2025",
+              "label": "Revenue",
+              "expected_value": 31900.0,
+              "currency": "USD",
+              "unit_scale": "millions",
+              "segment": "Intelligent Cloud"
+            },
+            {
+              "statement_type": "segment",
+              "period": "Q2 FY2025",
+              "label": "Revenue",
+              "expected_value": 26800.0,
+              "currency": "USD",
+              "unit_scale": "millions",
+              "segment": "More Personal Computing"
+            }
+          ]
+        },
+
+        {
+          "doc_id": "RESTATEMENT_TEST",
+          "file": "synthetic_restatement_doc.pdf",
+          "ticker": "SYNTH",
+          "company": "Synthetic Corp (test only)",
+          "expected_reconciliation_pass": false,
+          "has_quarterly_breakdown": true,
+          "known_issues": ["Q4 + Q1-Q3 intentionally does not equal FY (restatement scenario)"],
+          "metrics": [
+            {
+              "statement_type": "income_statement",
+              "period": "FY 2024",
+              "label": "Revenue",
+              "expected_value": 10000.0,
+              "currency": "USD",
+              "unit_scale": "millions"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

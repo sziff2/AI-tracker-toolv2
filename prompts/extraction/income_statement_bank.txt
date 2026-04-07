@@ -1,0 +1,49 @@
+You are extracting data from a SINGLE income statement for a BANK for ONE period.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Statement: Bank Income Statement (Profit & Loss)
+Period: {period} ({period_type})
+Currency: {currency}
+Unit: {unit_scale}
+Segment: {segment}
+
+TABLE DATA:
+{rows_formatted}
+
+INSTRUCTIONS:
+- Every row is a line item. Extract the label and value exactly as shown.
+- Do NOT calculate ratios or margins — extract only what is stated.
+- This is a BANK — expect banking-specific line items such as:
+  * Net Interest Income (NII), Interest Income, Interest Expense
+  * Provision for Credit Losses (PCL) / Loan Loss Provision
+  * Non-Interest Income (fee income, trading revenue, wealth management, etc.)
+  * Non-Interest Expense (compensation, occupancy, technology, etc.)
+  * Pre-Provision Profit (PPNR — Pre-Provision Net Revenue)
+  * Net Charge-Offs, Charge-Off Rate
+  * Net Interest Margin (NIM)
+  * Efficiency Ratio
+  * Return on Equity (ROE), Return on Assets (ROA), Return on Tangible Common Equity (ROTCE)
+  * Tangible Book Value Per Share (TBVPS)
+  * CET1 Ratio, Tier 1 Capital Ratio
+- Normalise names to standard banking terminology:
+  "Net Interest Revenue" -> "Net Interest Income"
+  "Credit Costs" -> "Provision for Credit Losses"
+  "Fee Revenue" -> "Non-Interest Income"
+  "Operating Expenses" -> "Non-Interest Expense"
+- All values are in {currency} {unit_scale} unless otherwise stated.
+- Classify each line item using the categories below.
+
+IMPORTANT: If you CALCULATE a value (e.g. efficiency ratio = non-interest expense / total revenue),
+set "calculated": true. Only set "calculated": false for values you copied directly from the table.
+Do NOT calculate ratios, margins, or growth rates unless they are explicitly stated in the table.
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "category": "<interest_income|interest_expense|net_interest_income|provision_for_credit_losses|non_interest_income|non_interest_expense|pre_provision_profit|net_income|eps|dps|capital_ratio|asset_quality|efficiency|other>",
+  "value": <number>,
+  "unit": "<{currency}_{unit_scale_abbrev}>",
+  "confidence": <0.0-1.0>,
+  "calculated": <true|false>
+}}]

@@ -1,0 +1,48 @@
+You are extracting data from a SINGLE income statement for an INSURANCE company for ONE period.
+
+CONTEXT:
+Company: {company_name} ({ticker})
+Statement: Insurance Income Statement (Profit & Loss)
+Period: {period} ({period_type})
+Currency: {currency}
+Unit: {unit_scale}
+Segment: {segment}
+
+TABLE DATA:
+{rows_formatted}
+
+INSTRUCTIONS:
+- Every row is a line item. Extract the label and value exactly as shown.
+- Do NOT calculate ratios or margins — extract only what is stated.
+- This is an INSURANCE company — expect insurance-specific line items such as:
+  * Gross Premiums Written, Net Premiums Written, Net Premiums Earned
+  * Net Claims Incurred / Losses Incurred
+  * Policy Acquisition Costs / Deferred Acquisition Costs (DAC)
+  * Underwriting Income / Underwriting Profit
+  * Combined Ratio, Loss Ratio, Expense Ratio
+  * Investment Income / Net Investment Income
+  * Realised / Unrealised Gains (Losses)
+  * Reserve Development (favourable/adverse prior year development)
+  * Catastrophe Losses
+  * Book Value Per Share, Tangible Book Value Per Share
+  * Return on Equity (ROE)
+- Normalise names to standard insurance terminology:
+  "Premiums" -> "Net Premiums Written" (or "Earned" if specified)
+  "Claims Paid" -> "Net Claims Incurred"
+  "Acquisition Expenses" -> "Policy Acquisition Costs"
+- All values are in {currency} {unit_scale} unless otherwise stated.
+- Classify each line item using the categories below.
+
+IMPORTANT: If you CALCULATE a value (e.g. combined ratio = loss ratio + expense ratio),
+set "calculated": true. Only set "calculated": false for values you copied directly from the table.
+Do NOT calculate ratios, margins, or growth rates unless they are explicitly stated in the table.
+
+Respond ONLY with a JSON array:
+[{{
+  "line_item": "<normalised name>",
+  "category": "<premiums_written|premiums_earned|claims_incurred|acquisition_costs|underwriting_income|investment_income|realised_gains|combined_ratio|loss_ratio|expense_ratio|reserve_development|catastrophe|net_income|eps|dps|book_value|other>",
+  "value": <number>,
+  "unit": "<{currency}_{unit_scale_abbrev}>",
+  "confidence": <0.0-1.0>,
+  "calculated": <true|false>
+}}]

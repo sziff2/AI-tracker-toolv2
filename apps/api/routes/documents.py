@@ -579,24 +579,18 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     doc_ids = [d.id for d in docs]
     doc_types = [d.document_type or "other" for d in docs]
 
-    # Clear existing metrics, assessments, outputs, sections for this period
+    # Clear research outputs and synthesis data for this period,
+    # but PRESERVE per-document extraction data (sections, metrics).
+    # The batch pipeline will skip already-extracted documents automatically
+    # (checks sections_count + metrics_count), enabling incremental extraction.
     try:
-        metrics = await db.execute(select(ExtractedMetric.id).where(ExtractedMetric.document_id.in_(doc_ids)))
-        metric_ids = [m[0] for m in metrics.all()]
+        # Clear event assessments and their review queue items
         assessments = await db.execute(select(EventAssessment.id).where(EventAssessment.document_id.in_(doc_ids)))
         assessment_ids = [a[0] for a in assessments.all()]
-        all_entity_ids = metric_ids + assessment_ids
-        if all_entity_ids:
-            await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(all_entity_ids)))
+        if assessment_ids:
+            await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(assessment_ids)))
         await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
-        await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
-        # Clear document sections so parser can recreate them
-        await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
-        # Also clear unlinked metrics for this period
-        await db.execute(delete(ExtractedMetric).where(
-            ExtractedMetric.company_id == company.id, ExtractedMetric.period_label == period_label
-        ))
-        # Clear research outputs
+        # Clear research outputs and their review queue items
         outputs = await db.execute(
             select(ResearchOutput.id).where(
                 ResearchOutput.company_id == company.id, ResearchOutput.period_label == period_label
@@ -606,7 +600,7 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
         if output_ids:
             await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id.in_(output_ids)))
             await db.execute(delete(ResearchOutput).where(ResearchOutput.id.in_(output_ids)))
-        # Clear KPI scores
+        # Clear KPI scores (synthesis-level, not extraction)
         from apps.api.models import KPIScore
         await db.execute(delete(KPIScore).where(
             KPIScore.company_id == company.id, KPIScore.period_label == period_label

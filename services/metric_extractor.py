@@ -274,12 +274,23 @@ async def extract_by_document_type(
                     except Exception as e:
                         logger.warning("Post-processing failed: %s", str(e)[:100])
 
+                    # Deterministic extraction evals
+                    extraction_evals = {}
+                    try:
+                        from services.extraction_evals import run_extraction_evals
+                        from services.source_anchoring import _extract_numbers_from_tables
+                        source_numbers = _extract_numbers_from_tables(tables_data) if tables_data else set()
+                        extraction_evals = run_extraction_evals(all_segmented_items, source_numbers, document.period_label)
+                    except Exception as e:
+                        logger.warning("Extraction evals failed: %s", str(e)[:100])
+
                     return {
                         "document_type": doc_type,
                         "items_extracted": len(all_segmented_items),
                         "raw_items": all_segmented_items,
                         "extraction_method": "pre_segmented",
                         "reconciliation": recon,
+                        "extraction_evals": extraction_evals,
                     }
                 else:
                     logger.info("Segmenter found tables but LLM extraction returned 0 items — falling back")
@@ -372,6 +383,16 @@ async def extract_by_document_type(
     except Exception as e:
         logger.warning("Validation failed, using unvalidated: %s", str(e)[:100])
 
+    # Deterministic extraction evals
+    extraction_evals = {}
+    try:
+        from services.extraction_evals import run_extraction_evals
+        from services.source_anchoring import _extract_numbers_from_tables
+        source_numbers = _extract_numbers_from_tables(tables_data) if tables_data else set()
+        extraction_evals = run_extraction_evals(all_items, source_numbers, document.period_label)
+    except Exception as e:
+        logger.warning("Extraction evals failed: %s", str(e)[:100])
+
     # Persist based on type
     if doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
         await _persist_earnings_metrics(db, document, all_items)
@@ -382,6 +403,7 @@ async def extract_by_document_type(
         "document_type": doc_type,
         "items_extracted": len(all_items),
         "raw_items": all_items,
+        "extraction_evals": extraction_evals,
     }
 
 

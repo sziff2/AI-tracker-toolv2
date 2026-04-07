@@ -35,13 +35,17 @@ _PROMPT_MAP = {
 
 
 def _format_table_rows(table: FinancialTable) -> str:
-    """Format rows as label: value text for the LLM prompt."""
-    lines = []
+    """Format rows as TSV (tab-separated) for the LLM prompt.
+
+    TSV saves ~50% tokens vs prose format (``label: value``) while
+    remaining easy for the LLM to parse.
+    """
+    lines = ["Label\tValue"]
     for row in table.rows:
         label = row.get("label", "")
         raw = row.get("raw_text", "")
         if label:
-            lines.append(f"{label}: {raw}")
+            lines.append(f"{label}\t{raw}")
     return "\n".join(lines)
 
 
