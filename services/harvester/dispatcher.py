@@ -193,7 +193,7 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                     period_label=period_label,
                     title=headline or filename,
                     source=c["source"],
-                    source_url=source_url,
+                    source_url=download_url,  # actual document URL, not EDGAR index page
                     published_at=c.get("published_at"),
                 )
             except ValueError as exc:
