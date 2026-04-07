@@ -1,11 +1,24 @@
 """
 SQLAlchemy ORM models – mirrors §6 of the technical specification.
+
+Changes vs previous version:
+  - Removed Document.file_content (LargeBinary) — CLAUDE.md explicitly prohibits
+    storing raw PDFs in PostgreSQL (Railway storage quota risk).
+  - Added JSONB import for agent tables (Text retained on existing columns).
+  - Added 6 agent infrastructure tables: AgentOutput, AgentCalibration,
+    ContextContract, SectorThesis, ThesisMacroDependency, PipelineRun.
+  - Added HarvestReport (weekly harvest summary, referenced in CLAUDE.md).
+  - Added agent columns to ThesisVersion: pillars, macro_dependencies,
+    sector_dependencies, generated_by, contract_version.
+  - Added agent columns to ProcessingJob: agent_results, agents_completed,
+    agents_failed.
 """
 
 from sqlalchemy import (
-    Boolean, Column, Date, ForeignKey, Index, Integer, LargeBinary, Numeric, Text, DateTime,
+    Boolean, Column, Date, Float, ForeignKey, Index, Integer,
+    LargeBinary, Numeric, Text, DateTime,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from apps.api.database import Base, TimestampMixin, new_uuid
@@ -53,7 +66,9 @@ class Document(Base, TimestampMixin):
     source_url = Column(Text)
     published_at = Column(DateTime(timezone=True))
     file_path = Column(Text)
-    file_content = Column(LargeBinary)     # store raw file bytes in DB
+    # NOTE: file_content (LargeBinary) removed — CLAUDE.md prohibits storing raw
+    # PDFs in PostgreSQL. Parsed text lives in DocumentSection. Raw files on disk
+    # at file_path only.
     checksum = Column(Text)
     parsing_status = Column(Text, default="pending")  # pending | processing | completed | failed
 
@@ -136,6 +151,17 @@ class ThesisVersion(Base, TimestampMixin):
     disconfirming_evidence = Column(Text)
     positive_surprises = Column(Text)
     negative_surprises = Column(Text)
+    # Agent architecture fields (migration 0.6)
+    # Structured thesis as pillars — JSON array of {pillar, evidence, risk} objects
+    pillars = Column(JSONB, nullable=True)
+    # IDs of macro assumptions this thesis depends on (from context_contracts)
+    macro_dependencies = Column(JSONB, nullable=True)
+    # Sector-level views this thesis assumes (from sector_theses)
+    sector_dependencies = Column(JSONB, nullable=True)
+    # "agent" | "analyst" | "hybrid" — who/what produced this version
+    generated_by = Column(Text, nullable=True)
+    # FK to the context_contracts.version that was active when this was generated
+    contract_version = Column(Integer, nullable=True)
 
     company = relationship("Company", back_populates="thesis_versions")
 
@@ -197,15 +223,15 @@ class ReviewQueueItem(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Tracked KPIs — the metrics an analyst wants to monitor per company
+# Tracked KPIs
 # ─────────────────────────────────────────────────────────────────
 class TrackedKPI(Base, TimestampMixin):
     __tablename__ = "tracked_kpis"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    kpi_name = Column(Text, nullable=False)          # e.g. "Revenue organic growth"
-    unit = Column(Text)                               # e.g. "%" or "EUR_M"
+    kpi_name = Column(Text, nullable=False)
+    unit = Column(Text)
     display_order = Column(Integer, default=0)
 
     company = relationship("Company")
@@ -213,7 +239,7 @@ class TrackedKPI(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# KPI Scores — actual values and analyst scores per period
+# KPI Scores
 # ─────────────────────────────────────────────────────────────────
 class KPIScore(Base, TimestampMixin):
     __tablename__ = "kpi_scores"
@@ -221,18 +247,18 @@ class KPIScore(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     tracked_kpi_id = Column(UUID(as_uuid=True), ForeignKey("tracked_kpis.id"), nullable=False)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    period_label = Column(Text, nullable=False)       # e.g. "2025_Q2"
-    value = Column(Numeric)                            # extracted or manual value
-    value_text = Column(Text)                          # text representation
-    score = Column(Integer)                            # analyst score 1-5
-    comment = Column(Text)                             # analyst comment
+    period_label = Column(Text, nullable=False)
+    value = Column(Numeric)
+    value_text = Column(Text)
+    score = Column(Integer)
+    comment = Column(Text)
 
     tracked_kpi = relationship("TrackedKPI", back_populates="scores")
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Processing Jobs — track background pipeline status
+# Processing Jobs
 # ─────────────────────────────────────────────────────────────────
 class ProcessingJob(Base, TimestampMixin):
     __tablename__ = "processing_jobs"
@@ -242,44 +268,51 @@ class ProcessingJob(Base, TimestampMixin):
     period_label = Column(Text, nullable=False)
     job_type = Column(Text, default="single")       # single | batch
     status = Column(Text, default="queued")          # queued | processing | completed | failed
-    current_step = Column(Text)                      # upload | parse | extract | compare | surprises | briefing | ir_questions | synthesis
-    steps_completed = Column(Text, default="[]")     # JSON array of completed step names
+    current_step = Column(Text)
+    steps_completed = Column(Text, default="[]")     # JSON array
     progress_pct = Column(Integer, default=0)
-    log_entries = Column(Text, default="[]")         # JSON array of {ts, level, message} log entries
-    result_json = Column(Text)                       # full output JSON when done
+    log_entries = Column(Text, default="[]")         # JSON array of {ts, level, message}
+    result_json = Column(Text)
     error_message = Column(Text)
-    model = Column(Text, default="standard")         # fast | standard | deep — controls LLM model used
+    model = Column(Text, default="standard")         # fast | standard | deep
+    # Agent architecture fields (migration 0.6)
+    # Full JSON blob of per-agent results keyed by agent_id
+    agent_results = Column(Text, nullable=True)
+    # Comma-separated list of agent_ids that completed successfully
+    agents_completed = Column(Text, nullable=True)
+    # Comma-separated list of agent_ids that failed
+    agents_failed = Column(Text, nullable=True)
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Decision Log — immutable record of analyst actions
+# Decision Log
 # ─────────────────────────────────────────────────────────────────
 class DecisionLog(Base, TimestampMixin):
     __tablename__ = "decision_log"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    action = Column(Text, nullable=False)            # hold | add | trim | exit | initiate | watchlist
+    action = Column(Text, nullable=False)
     rationale = Column(Text, nullable=False)
     old_weight = Column(Numeric)
     new_weight = Column(Numeric)
-    conviction = Column(Integer)                     # 1-5
+    conviction = Column(Integer)
     author = Column(Text)
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Analyst Notes — freeform research notes
+# Analyst Notes
 # ─────────────────────────────────────────────────────────────────
 class AnalystNote(Base, TimestampMixin):
     __tablename__ = "analyst_notes"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    note_type = Column(Text, default="general")      # general | call_note | meeting | thesis_update
+    note_type = Column(Text, default="general")
     title = Column(Text)
     content = Column(Text, nullable=False)
     author = Column(Text)
@@ -288,28 +321,28 @@ class AnalystNote(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Prompt Variants — versioned prompts for A/B testing
+# Prompt Variants
 # ─────────────────────────────────────────────────────────────────
 class PromptVariant(Base, TimestampMixin):
     __tablename__ = "prompt_variants"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
-    prompt_type = Column(Text, nullable=False)        # extraction | synthesis | thesis_comparison | surprise | ir_questions | briefing
-    variant_name = Column(Text, nullable=False)       # e.g. "v1_default", "v2_concise", "v3_llm_refined"
+    prompt_type = Column(Text, nullable=False)
+    variant_name = Column(Text, nullable=False)
     prompt_text = Column(Text, nullable=False)
-    is_active = Column(Boolean, default=False)         # the current default for this type
-    is_candidate = Column(Boolean, default=True)       # eligible for A/B testing
+    is_active = Column(Boolean, default=False)
+    is_candidate = Column(Boolean, default=True)
     win_count = Column(Integer, default=0)
     loss_count = Column(Integer, default=0)
     total_runs = Column(Integer, default=0)
     avg_rating = Column(Numeric, default=0)
     parent_variant_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=True)
-    generation = Column(Integer, default=1)            # tracks refinement generations
-    notes = Column(Text)                               # why this variant was created
+    generation = Column(Integer, default=1)
+    notes = Column(Text)
 
 
 # ─────────────────────────────────────────────────────────────────
-# A/B Experiments — records of side-by-side comparisons
+# A/B Experiments
 # ─────────────────────────────────────────────────────────────────
 class ABExperiment(Base, TimestampMixin):
     __tablename__ = "ab_experiments"
@@ -320,13 +353,13 @@ class ABExperiment(Base, TimestampMixin):
     period_label = Column(Text)
     variant_a_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=False)
     variant_b_id = Column(UUID(as_uuid=True), ForeignKey("prompt_variants.id"), nullable=False)
-    output_a = Column(Text)                            # JSON output from variant A
-    output_b = Column(Text)                            # JSON output from variant B
-    winner = Column(Text)                              # "a" | "b" | "tie" | null (pending)
-    rating_a = Column(Integer)                         # 1-5 analyst rating
-    rating_b = Column(Integer)                         # 1-5 analyst rating
-    analyst_feedback = Column(Text)                    # freeform feedback on why
-    status = Column(Text, default="pending")           # pending | completed
+    output_a = Column(Text)
+    output_b = Column(Text)
+    winner = Column(Text)                              # "a" | "b" | "tie" | null
+    rating_a = Column(Integer)
+    rating_b = Column(Integer)
+    analyst_feedback = Column(Text)
+    status = Column(Text, default="pending")
 
     variant_a = relationship("PromptVariant", foreign_keys=[variant_a_id])
     variant_b = relationship("PromptVariant", foreign_keys=[variant_b_id])
@@ -334,14 +367,14 @@ class ABExperiment(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# ESG Data — one row per company, JSON blob for all PAI/ESG fields
+# ESG Data
 # ─────────────────────────────────────────────────────────────────
 class ESGData(Base, TimestampMixin):
     __tablename__ = "esg_data"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, unique=True)
-    data = Column(Text, default="{}")              # JSON blob of all ESG fields
+    data = Column(Text, default="{}")
     ai_summary = Column(Text, nullable=True)
     ai_summary_date = Column(DateTime(timezone=True), nullable=True)
 
@@ -349,15 +382,15 @@ class ESGData(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Portfolios — multi-portfolio support
+# Portfolios
 # ─────────────────────────────────────────────────────────────────
 class Portfolio(Base, TimestampMixin):
     __tablename__ = "portfolios"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
-    name = Column(Text, nullable=False)                # e.g. "OverGlob", "OverGac"
+    name = Column(Text, nullable=False)
     description = Column(Text)
-    benchmark = Column(Text)                           # e.g. "MSCI World"
+    benchmark = Column(Text)
     currency = Column(Text, default="USD")
     is_active = Column(Boolean, default=True)
 
@@ -365,7 +398,7 @@ class Portfolio(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Portfolio Holdings — links companies to portfolios with weights
+# Portfolio Holdings
 # ─────────────────────────────────────────────────────────────────
 class PortfolioHolding(Base, TimestampMixin):
     __tablename__ = "portfolio_holdings"
@@ -373,18 +406,18 @@ class PortfolioHolding(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     portfolio_id = Column(UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=False)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    weight = Column(Numeric, default=0)                # current weight %
-    cost_basis = Column(Numeric)                       # average cost
+    weight = Column(Numeric, default=0)
+    cost_basis = Column(Numeric)
     shares = Column(Numeric)
     date_added = Column(DateTime(timezone=True))
-    status = Column(Text, default="active")            # active | watchlist | exited
+    status = Column(Text, default="active")
 
     portfolio = relationship("Portfolio", back_populates="holdings")
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Scenario History — track bear/base/bull/buffett changes over time
+# Scenario Snapshots
 # ─────────────────────────────────────────────────────────────────
 class ScenarioSnapshot(Base, TimestampMixin):
     __tablename__ = "scenario_snapshots"
@@ -392,18 +425,18 @@ class ScenarioSnapshot(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     snapshot_date = Column(DateTime(timezone=True), nullable=False)
-    scenario_type = Column(Text, nullable=False)       # bear | base | bull | buffett
+    scenario_type = Column(Text, nullable=False)
     target_price = Column(Numeric)
     probability = Column(Numeric)
-    current_price = Column(Numeric)                    # price at time of snapshot
+    current_price = Column(Numeric)
     currency = Column(Text, default="USD")
-    source = Column(Text, default="manual")            # manual | csv_import
+    source = Column(Text, default="manual")
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Price History — track current and historical prices
+# Price Records
 # ─────────────────────────────────────────────────────────────────
 class PriceRecord(Base, TimestampMixin):
     __tablename__ = "price_records"
@@ -413,27 +446,27 @@ class PriceRecord(Base, TimestampMixin):
     price = Column(Numeric, nullable=False)
     currency = Column(Text, default="USD")
     price_date = Column(DateTime(timezone=True))
-    source = Column(Text, default="manual")            # manual | api | import
+    source = Column(Text, default="manual")
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Valuation Scenarios — bear / base / bull cases per company
+# Valuation Scenarios
 # ─────────────────────────────────────────────────────────────────
 class ValuationScenario(Base, TimestampMixin):
     __tablename__ = "valuation_scenarios"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    scenario_type = Column(Text, nullable=False)       # bear | base | bull
-    probability = Column(Numeric)                      # 0-100%
+    scenario_type = Column(Text, nullable=False)
+    probability = Column(Numeric)
     target_price = Column(Numeric)
     currency = Column(Text, default="USD")
-    methodology = Column(Text)                         # EV/EBITDA | P/E | DCF | SOTP | P/TBV | FCF yield
-    methodology_detail = Column(Text)                  # e.g. "7x 2026E EBITDA"
-    key_assumptions = Column(Text)                     # JSON or freetext
-    time_horizon = Column(Text, default="12m")         # 12m | 18m | 3y
+    methodology = Column(Text)
+    methodology_detail = Column(Text)
+    key_assumptions = Column(Text)
+    time_horizon = Column(Text, default="12m")
     last_reviewed = Column(DateTime(timezone=True))
     author = Column(Text)
 
@@ -441,7 +474,7 @@ class ValuationScenario(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
-# Management Statements — forward-looking claims extracted from documents
+# Management Statements
 # ─────────────────────────────────────────────────────────────────
 class ManagementStatement(Base, TimestampMixin):
     __tablename__ = "management_statements"
@@ -449,52 +482,52 @@ class ManagementStatement(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
-    statement_date = Column(Text)                      # e.g. "2023_Q1"
-    speaker = Column(Text)                             # CEO | CFO | COO | other
-    category = Column(Text, nullable=False)            # revenue | margins | capex | cost_reduction | strategy | market_share | balance_sheet | regulation
-    statement_text = Column(Text, nullable=False)      # the raw statement
-    target_metric = Column(Text)                       # e.g. "operating margin"
-    target_value = Column(Text)                        # e.g. "18%"
-    target_direction = Column(Text)                    # increase | decrease | maintain | achieve
-    target_timeframe = Column(Text)                    # e.g. "2 years", "next quarter", "medium term"
-    target_deadline = Column(Text)                     # e.g. "2025_Q4" or "2025_FY"
-    confidence_type = Column(Text)                     # explicit | directional | aspirational
-    source_snippet = Column(Text)                      # verbatim quote
-    status = Column(Text, default="open")              # open | delivered | mostly_delivered | missed | major_miss | superseded
-    score = Column(Integer)                            # +2 to -2
-    outcome_value = Column(Text)                       # actual result
-    outcome_date = Column(Text)                        # when assessed
-    outcome_evidence = Column(Text)                    # evidence for the score
-    assessed_by = Column(Text)                         # analyst | auto
+    statement_date = Column(Text)
+    speaker = Column(Text)
+    category = Column(Text, nullable=False)
+    statement_text = Column(Text, nullable=False)
+    target_metric = Column(Text)
+    target_value = Column(Text)
+    target_direction = Column(Text)
+    target_timeframe = Column(Text)
+    target_deadline = Column(Text)
+    confidence_type = Column(Text)
+    source_snippet = Column(Text)
+    status = Column(Text, default="open")
+    score = Column(Integer)
+    outcome_value = Column(Text)
+    outcome_date = Column(Text)
+    outcome_evidence = Column(Text)
+    assessed_by = Column(Text)
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Management Execution Scorecard — aggregated per company per period
+# Management Execution Scorecard
 # ─────────────────────────────────────────────────────────────────
 class ExecutionScorecard(Base, TimestampMixin):
     __tablename__ = "execution_scorecards"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    period = Column(Text)                              # e.g. "2024" or "all_time"
+    period = Column(Text)
     overall_score = Column(Numeric)
-    guidance_bias = Column(Text)                       # optimistic | conservative | balanced
-    execution_reliability = Column(Text)               # high | medium | low
-    strategic_consistency = Column(Text)               # high | medium | low
-    category_scores = Column(Text)                     # JSON: {"revenue": 1.2, "margins": -0.4, ...}
+    guidance_bias = Column(Text)
+    execution_reliability = Column(Text)
+    strategic_consistency = Column(Text)
+    category_scores = Column(Text)
     total_statements = Column(Integer, default=0)
     delivered_count = Column(Integer, default=0)
     missed_count = Column(Integer, default=0)
     open_count = Column(Integer, default=0)
-    ai_assessment = Column(Text)                       # LLM-generated narrative assessment
+    ai_assessment = Column(Text)
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# LLM Usage Log — track every API call for cost analysis
+# LLM Usage Log
 # ─────────────────────────────────────────────────────────────────
 class LLMUsageLog(Base):
     __tablename__ = "llm_usage_log"
@@ -502,17 +535,17 @@ class LLMUsageLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     timestamp = Column(DateTime(timezone=True), nullable=False)
     model = Column(Text, nullable=False)
-    feature = Column(Text, nullable=False)         # extraction | synthesis | thesis_comparison | surprise | ir_questions | llm_scan | chat | thesis_gen | moat | esg | experiment
+    feature = Column(Text, nullable=False)
     input_tokens = Column(Integer, nullable=False)
     output_tokens = Column(Integer, nullable=False)
-    cost_usd = Column(Numeric)                     # estimated cost
-    ticker = Column(Text)                          # company context if available
+    cost_usd = Column(Numeric)
+    ticker = Column(Text)
     period_label = Column(Text)
     duration_ms = Column(Integer)
 
 
 # ─────────────────────────────────────────────────────────────────
-# Extraction Feedback — inline analyst annotations on analysis output
+# Extraction Feedback
 # ─────────────────────────────────────────────────────────────────
 class ExtractionFeedback(Base, TimestampMixin):
     __tablename__ = "extraction_feedback"
@@ -520,22 +553,21 @@ class ExtractionFeedback(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     period_label = Column(Text)
-    # What was tagged — e.g. "metric:revenue", "briefing:bottom_line", "snippet:3", "surprise:1"
     section = Column(Text, nullable=False)
-    tag = Column(Text, nullable=False)       # correct | wrong | imprecise | missing | hallucinated
-    comment = Column(Text)                   # analyst free-text comment
-    source_snippet = Column(Text)            # the original text excerpt being flagged
+    tag = Column(Text, nullable=False)
+    comment = Column(Text)
+    source_snippet = Column(Text)
     metric_id = Column(UUID(as_uuid=True), ForeignKey("extracted_metrics.id"), nullable=True)
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
-    prompt_type = Column(Text)               # which prompt produced this output
+    prompt_type = Column(Text)
     author = Column(Text)
-    promoted = Column(Boolean, default=False)  # True once sent to Prompt Lab
+    promoted = Column(Boolean, default=False)
 
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Harvester Sources — per-company document harvesting configuration
+# Harvester Sources
 # ─────────────────────────────────────────────────────────────────
 class HarvesterSource(Base, TimestampMixin):
     __tablename__ = "harvester_sources"
@@ -550,11 +582,12 @@ class HarvesterSource(Base, TimestampMixin):
     last_checked_at  = Column(DateTime(timezone=True), nullable=True)
     override         = Column(Boolean, default=False)
     notes            = Column(Text, nullable=True)
+
     company = relationship("Company")
 
 
 # ─────────────────────────────────────────────────────────────────
-# Harvested Documents — documents discovered by the harvester
+# Harvested Documents
 # ─────────────────────────────────────────────────────────────────
 class HarvestedDocument(Base, TimestampMixin):
     __tablename__ = "harvested_documents"
@@ -569,5 +602,197 @@ class HarvestedDocument(Base, TimestampMixin):
     ingested      = Column(Boolean, default=False)
     document_id   = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
     error         = Column(Text, nullable=True)
+
     company  = relationship("Company")
     document = relationship("Document")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Harvest Reports — weekly harvest summary (CLAUDE.md §Weekly Auto-Harvest)
+# ─────────────────────────────────────────────────────────────────
+class HarvestReport(Base, TimestampMixin):
+    __tablename__ = "harvest_reports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    # "weekly_auto" | "manual" | "single_company"
+    trigger = Column(Text, nullable=False, default="weekly_auto")
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    companies_attempted = Column(Integer, default=0)
+    companies_succeeded = Column(Integer, default=0)
+    companies_failed = Column(Integer, default=0)
+    documents_found = Column(Integer, default=0)
+    documents_new = Column(Integer, default=0)
+    # Per-company breakdown — JSONB for queryability
+    per_company = Column(JSONB, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+
+# ═════════════════════════════════════════════════════════════════
+# AGENT INFRASTRUCTURE TABLES (migration 0.6)
+# ═════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────
+# Context Contracts — shared macro assumptions injected into all agents
+# ─────────────────────────────────────────────────────────────────
+class ContextContract(Base, TimestampMixin):
+    __tablename__ = "context_contracts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    # Monotonically increasing version — agents record which version they ran under
+    version = Column(Integer, nullable=False, unique=True)
+    is_active = Column(Boolean, default=False)   # only one row is_active=True at a time
+    # Macro assumptions blob — regime, rates, credit, growth, FX, commodities, geopolitical
+    # JSONB so individual keys are queryable: e.g. WHERE macro_assumptions->>'regime' = 'risk_off'
+    macro_assumptions = Column(JSONB, nullable=False, default=dict)
+    # Analyst overrides applied on top of agent-generated assumptions
+    analyst_overrides = Column(JSONB, nullable=True)
+    authored_by = Column(Text, nullable=True)    # "macro_regime_agent" | analyst name
+
+    sector_theses = relationship("SectorThesis", back_populates="contract", lazy="selectin")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Sector Theses — sector-level views linked to a context contract
+# ─────────────────────────────────────────────────────────────────
+class SectorThesis(Base, TimestampMixin):
+    __tablename__ = "sector_theses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    sector = Column(Text, nullable=False, index=True)
+    contract_id = Column(UUID(as_uuid=True), ForeignKey("context_contracts.id"), nullable=False)
+    # Full sector thesis — outlook, risks, key themes, relative value
+    thesis_json = Column(JSONB, nullable=False, default=dict)
+    generated_by = Column(Text, nullable=True)    # "sector_thesis_agent" | analyst name
+
+    contract = relationship("ContextContract", back_populates="sector_theses")
+    macro_dependencies = relationship(
+        "ThesisMacroDependency", back_populates="sector_thesis", lazy="selectin"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Thesis Macro Dependencies — links a thesis to specific macro assumptions
+# ─────────────────────────────────────────────────────────────────
+class ThesisMacroDependency(Base, TimestampMixin):
+    __tablename__ = "thesis_macro_dependencies"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    sector_thesis_id = Column(UUID(as_uuid=True), ForeignKey("sector_theses.id"), nullable=False)
+    # Which assumption key this thesis depends on (e.g. "rates", "regime", "usd_strength")
+    assumption_key = Column(Text, nullable=False)
+    # Direction sensitivity: "positive" | "negative" | "neutral"
+    sensitivity = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    sector_thesis = relationship("SectorThesis", back_populates="macro_dependencies")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Agent Outputs — one row per agent × pipeline run
+# ─────────────────────────────────────────────────────────────────
+class AgentOutput(Base, TimestampMixin):
+    __tablename__ = "agent_outputs"
+    __table_args__ = (
+        Index("ix_agent_outputs_company_period", "company_id", "period_label"),
+        Index("ix_agent_outputs_agent_company", "agent_id", "company_id"),
+        Index("ix_agent_outputs_pipeline_run", "pipeline_run_id"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    # Which agent produced this output
+    agent_id = Column(Text, nullable=False)
+    # Context
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    period_label = Column(Text, nullable=True)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    portfolio_id = Column(UUID(as_uuid=True), ForeignKey("portfolios.id"), nullable=True)
+    # Execution
+    pipeline_run_id = Column(UUID(as_uuid=True), ForeignKey("pipeline_runs.id"), nullable=True)
+    status = Column(Text, nullable=False, default="completed")  # completed | failed | skipped | degraded
+    # Results — JSONB for queryability (e.g. filter by output->>'thesis_direction')
+    output_json = Column(JSONB, nullable=True)
+    confidence = Column(Float, nullable=True)
+    qc_score = Column(Float, nullable=True)          # set post-hoc by QC agent
+    # Performance
+    duration_ms = Column(Integer, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cost_usd = Column(Float, nullable=True)
+    # Prompt lineage
+    prompt_variant_id = Column(Text, nullable=True)  # A/B variant used
+    # Predictions for calibration tracking
+    predictions_json = Column(JSONB, nullable=True)  # list of {metric, direction, horizon, value}
+    predictions_resolved = Column(Boolean, default=False)
+    # Error details when status = "failed"
+    error_message = Column(Text, nullable=True)
+    # Record of what inputs were passed to this agent
+    inputs_used = Column(JSONB, nullable=True)
+    # TTL — when this cached output expires (cache_ttl_hours from agent class)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    company = relationship("Company")
+    pipeline_run = relationship("PipelineRun", back_populates="agent_outputs")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Agent Calibration — per-agent accuracy tracking over time
+# ─────────────────────────────────────────────────────────────────
+class AgentCalibration(Base, TimestampMixin):
+    __tablename__ = "agent_calibration"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    # One row per agent_id — upserted on each resolution
+    agent_id = Column(Text, nullable=False, unique=True)
+    total_predictions = Column(Integer, default=0)
+    correct_predictions = Column(Integer, default=0)
+    accuracy = Column(Float, nullable=True)           # correct / total
+    # Per-direction breakdown — JSONB: {"up": {"total": 10, "correct": 7}, ...}
+    direction_accuracy = Column(JSONB, nullable=True)
+    # Confidence calibration — how well confidence scores correlate with accuracy
+    calibration_score = Column(Float, nullable=True)
+    last_resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Pipeline Runs — audit trail: one row per "Run Analysis" click
+# ─────────────────────────────────────────────────────────────────
+class PipelineRun(Base, TimestampMixin):
+    __tablename__ = "pipeline_runs"
+    __table_args__ = (
+        Index("ix_pipeline_runs_company_period", "company_id", "period_label"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    # Context
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    period_label = Column(Text, nullable=True)
+    # What triggered this run
+    trigger = Column(Text, nullable=False, default="manual")  # manual | auto | scheduled
+    # Execution state
+    status = Column(Text, nullable=False, default="running")  # running | completed | failed | cancelled
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    # Cost accounting — aggregated from all AgentOutput rows in this run
+    total_cost_usd = Column(Float, nullable=True)
+    total_input_tokens = Column(Integer, nullable=True)
+    total_output_tokens = Column(Integer, nullable=True)
+    total_llm_calls = Column(Integer, nullable=True)
+    # Agent progress
+    agents_planned = Column(Integer, nullable=True)
+    agents_completed = Column(Integer, nullable=True)
+    agents_failed = Column(Integer, nullable=True)
+    agents_skipped = Column(Integer, nullable=True)
+    # Quality
+    overall_qc_score = Column(Float, nullable=True)
+    # Error details if status = "failed"
+    error_message = Column(Text, nullable=True)
+    # Full per-agent execution log — JSONB array of
+    # {agent_id, status, duration_ms, cost_usd, error} for the UI timeline view
+    agent_execution_log = Column(JSONB, nullable=True)
+    # Which context contract version was active for this run
+    contract_version = Column(Integer, nullable=True)
+
+    company = relationship("Company")
+    agent_outputs = relationship("AgentOutput", back_populates="pipeline_run", lazy="selectin")
