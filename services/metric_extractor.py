@@ -244,7 +244,9 @@ async def extract_by_document_type(
             logger.info("Pre-segmenter: %d financial tables (of %d total) with data to extract",
                         len(financial_tables), len(structure.tables))
 
-            # Cap at 20 tables max to prevent runaway LLM costs
+            # Prioritise: P&L > BS > CF > Segment > KPI, then cap at 20
+            _PRIORITY = {ST.INCOME_STATEMENT: 0, ST.BALANCE_SHEET: 1, ST.CASH_FLOW: 2, ST.SEGMENT_BREAKDOWN: 3, ST.KPI_TABLE: 4}
+            financial_tables.sort(key=lambda t: (_PRIORITY.get(t.statement_type, 5), not t.is_current))
             if len(financial_tables) > 20:
                 logger.warning("Capping extraction at 20 tables (had %d)", len(financial_tables))
                 financial_tables = financial_tables[:20]
@@ -291,6 +293,28 @@ async def extract_by_document_type(
                         all_segmented_items = post_process_metrics(all_segmented_items)
                     except Exception as e:
                         logger.warning("Post-processing failed: %s", str(e)[:100])
+
+                    # Source anchoring
+                    try:
+                        from services.source_anchoring import anchor_extractions
+                        all_segmented_items = anchor_extractions(all_segmented_items, tables_data=tables_data, source_text=text)
+                    except Exception as e:
+                        logger.warning("Source anchoring failed: %s", str(e)[:100])
+
+                    # Validation
+                    try:
+                        from services.metric_validator import validate_extraction
+                        validation = await validate_extraction(
+                            items=all_segmented_items, source_text=text,
+                            run_cross_check=False, confidence_threshold=0.6,
+                        )
+                        all_segmented_items = validation["validated"]
+                    except Exception as e:
+                        logger.warning("Validation failed: %s", str(e)[:100])
+
+                    # Persist to DB
+                    if doc_type in ("earnings_release", "10-Q", "10-K", "annual_report"):
+                        await _persist_earnings_metrics(db, document, all_segmented_items)
 
                     # Deterministic extraction evals
                     extraction_evals = {}
