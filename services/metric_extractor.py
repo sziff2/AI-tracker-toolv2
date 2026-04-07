@@ -217,6 +217,7 @@ async def extract_by_document_type(
             company = company_q.scalar_one_or_none()
             company_name = company.name if company else ""
             ticker = company.ticker if company else ""
+            sector = company.sector if company else None
 
             # Build pages + tables_by_page from available data
             has_parsed_pages = hasattr(document, '_parsed_pages') and document._parsed_pages
@@ -232,8 +233,8 @@ async def extract_by_document_type(
                 pg = td.get("page", 1)
                 tables_by_page.setdefault(pg, []).extend(td.get("tables", []))
 
-            # Step 1: Structural segmentation (no LLM)
-            structure = segment_document(pages, tables_by_page)
+            # Step 1: Structural segmentation (no LLM) — sector-aware for banks/insurance
+            structure = segment_document(pages, tables_by_page, sector=sector)
             logger.info("Pre-segmenter: %d tables classified, %d narratives, %d footnotes",
                         len(structure.tables), len(structure.narrative_sections), len(structure.footnotes))
 

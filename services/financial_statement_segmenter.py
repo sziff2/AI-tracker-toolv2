@@ -55,13 +55,26 @@ class FinancialDocumentStructure:
 # ── Keyword sets ─────────────────────────────────────────────────
 
 _INCOME_KEYWORDS = {
+    # Standard industrial P&L
     "revenue", "net sales", "total revenue", "operating profit", "operating income",
     "ebit", "ebitda", "net income", "net profit", "net loss", "eps",
     "earnings per share", "gross profit", "gross margin", "cost of sales",
     "cost of goods sold", "cost of revenue", "sg&a",
     "selling general and administrative", "operating expenses",
     "income from operations", "profit before tax", "income before tax",
-    "diluted eps", "basic eps", "interest expense",
+    "diluted eps", "basic eps",
+    # Banking P&L
+    "net interest income", "net financing revenue", "total net revenue",
+    "provision for credit losses", "noninterest income", "noninterest expense",
+    "non-interest income", "non-interest expense", "total interest expense",
+    "total interest income", "net interest margin",
+    "financing revenue", "total financing revenue",
+    "insurance premiums", "compensation and benefits",
+    "pre-provision profit", "pre-tax income",
+    # Insurance P&L
+    "net premiums written", "net premiums earned", "combined ratio",
+    "loss ratio", "expense ratio", "underwriting income",
+    "claims incurred", "investment income",
 }
 
 _BALANCE_SHEET_KEYWORDS = {
@@ -73,6 +86,23 @@ _BALANCE_SHEET_KEYWORDS = {
     "intangible assets", "property plant and equipment",
     "accounts receivable", "accounts payable", "inventories",
     "retained earnings", "total equity",
+}
+
+# Keywords that are P&L for banks but look like BS to generic classifier
+_BANK_PL_OVERRIDE_KEYWORDS = {
+    "net interest income", "net financing revenue", "total net revenue",
+    "provision for credit losses", "noninterest expense", "noninterest income",
+    "total interest expense", "total interest income",
+    "financing revenue", "total financing revenue",
+    "compensation and benefits", "insurance premiums",
+    "income from continuing operations", "net depreciation expense",
+}
+
+# Keywords that are P&L for insurance
+_INSURANCE_PL_OVERRIDE_KEYWORDS = {
+    "net premiums written", "net premiums earned", "claims incurred",
+    "underwriting income", "combined ratio", "loss ratio", "expense ratio",
+    "acquisition costs", "investment income", "realised gains",
 }
 
 _CASH_FLOW_KEYWORDS = {
@@ -178,10 +208,11 @@ def _flatten_table_text(table: list[list]) -> str:
     return " ".join(parts)
 
 
-def classify_table(table: list[list], page_text: str, page_num: int) -> StatementType:
+def classify_table(table: list[list], page_text: str, page_num: int, sector: str = None) -> StatementType:
     """
     Classify a table as income statement, balance sheet, cash flow, etc.
     Uses keyword matching against row labels and surrounding page text.
+    Sector-aware: banks and insurers get boosted P&L detection.
     """
     if not table or len(table) < 2:
         return StatementType.UNKNOWN
@@ -207,6 +238,21 @@ def classify_table(table: list[list], page_text: str, page_num: int) -> Statemen
     for kw in _CASH_FLOW_KEYWORDS:
         if kw in context:
             scores[StatementType.CASH_FLOW] += 1
+
+    # Sector-specific P&L boost: banks and insurers have P&L keywords
+    # that the generic classifier mistakes for BS
+    sector_lower = (sector or "").lower()
+    is_bank = any(k in sector_lower for k in ["financ", "bank", "lending", "credit"])
+    is_insurance = any(k in sector_lower for k in ["insur", "underwrit"])
+
+    if is_bank:
+        for kw in _BANK_PL_OVERRIDE_KEYWORDS:
+            if kw in context:
+                scores[StatementType.INCOME_STATEMENT] += 2  # strong boost
+    if is_insurance:
+        for kw in _INSURANCE_PL_OVERRIDE_KEYWORDS:
+            if kw in context:
+                scores[StatementType.INCOME_STATEMENT] += 2
 
     # Check special types first (before falling through to the big 3)
     if _SEGMENT_PATTERNS.search(context):
@@ -556,9 +602,11 @@ def split_by_period(
 def segment_document(
     pages: list[dict],
     tables_by_page: dict,
+    sector: str = None,
 ) -> FinancialDocumentStructure:
     """
     Main entry point. Takes parsed document pages and pdfplumber tables.
+    Pass sector (e.g. "Financials") for bank/insurance-aware classification.
 
     Args:
         pages: list of {"page_num": int, "text": str}
@@ -593,7 +641,7 @@ def segment_document(
                 continue
 
             # Classify the table
-            stmt_type = classify_table(raw_table, page_text, page_num)
+            stmt_type = classify_table(raw_table, page_text, page_num, sector=sector)
 
             # Extract periods from headers
             periods = extract_periods_from_headers(raw_table)
