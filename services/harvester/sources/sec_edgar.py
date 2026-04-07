@@ -232,7 +232,7 @@ async def fetch_sec_edgar(ticker: str, max_filings: int = 20) -> list[dict]:
         descriptions = filings.get("primaryDocDescription", [])
         items_list = filings.get("items", [])
 
-        cutoff_year = datetime.now(timezone.utc).year - 2
+        cutoff_year = datetime.now(timezone.utc).year - 5
 
         count = 0
         for i, form in enumerate(forms):
