@@ -86,7 +86,7 @@ async def _record(
         id=uuid.uuid4(),
         company_id=company_id,
         source=candidate["source"],
-        source_url=candidate["source_url"],
+        source_url=candidate.get("pdf_url") or candidate["source_url"],
         headline=candidate.get("headline", "")[:500],
         period_label=candidate.get("period_label"),   # required by Documents tab
         discovered_at=datetime.now(timezone.utc),
@@ -135,15 +135,17 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                 summary["failed"] += 1
                 continue
 
-            # Deduplicate
-            if await _seen(db, source_url):
+            # Resolve actual document URL (pdf_url) vs index page (source_url)
+            download_url  = c.get("pdf_url") or source_url
+
+            # Deduplicate — check both index URL and actual doc URL
+            if await _seen(db, source_url) or (download_url != source_url and await _seen(db, download_url)):
                 summary["skipped"] += 1
                 continue
 
             period_label  = c.get("period_label") or _fallback_period(c.get("published_at"))
             c["period_label"] = period_label  # Ensure period is stored in harvested_documents
             document_type = c.get("document_type", "earnings_release")
-            download_url  = c.get("pdf_url") or source_url
 
             # Skip if manual document already exists for this company + period
             # Manual uploads should never be overwritten by harvester
