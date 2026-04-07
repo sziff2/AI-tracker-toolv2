@@ -38,12 +38,12 @@ class TestUsageTracker:
         assert tracker.total_requests == 0
         assert tracker.total_input_tokens == 0
 
-        tracker.record(1000, 500)
+        tracker.record(1000, 500, "claude-sonnet-4-6")
         assert tracker.total_requests == 1
         assert tracker.total_input_tokens == 1000
         assert tracker.total_output_tokens == 500
 
-        tracker.record(2000, 1000)
+        tracker.record(2000, 1000, "claude-sonnet-4-6")
         assert tracker.total_requests == 2
         assert tracker.total_input_tokens == 3000
         assert tracker.total_output_tokens == 1500
@@ -52,7 +52,7 @@ class TestUsageTracker:
         from services.llm_client import _UsageTracker
         tracker = _UsageTracker()
         # Record 1M input tokens and 0 output tokens
-        tracker.record(1_000_000, 0)
+        tracker.record(1_000_000, 0, "claude-sonnet-4-6")
         # At default sonnet pricing ($3/1M input), total should be ~3.0
         assert tracker.total > 0
 
@@ -67,7 +67,7 @@ class TestUsageTracker:
     def test_summary(self):
         from services.llm_client import _UsageTracker
         tracker = _UsageTracker()
-        tracker.record(100, 50)
+        tracker.record(100, 50, "claude-sonnet-4-6")
         tracker.record_failure()
         s = tracker.summary
         assert s["total_requests"] == 1

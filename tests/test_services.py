@@ -332,8 +332,8 @@ class TestLLMJsonParsing:
     def test_usage_tracker(self):
         from services.llm_client import _UsageTracker
         tracker = _UsageTracker()
-        tracker.record(100, 50)
-        tracker.record(200, 100)
+        tracker.record(100, 50, "claude-sonnet-4-6")
+        tracker.record(200, 100, "claude-sonnet-4-6")
         tracker.record_failure()
         summary = tracker.summary
         assert summary["total_requests"] == 2
