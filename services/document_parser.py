@@ -157,12 +157,23 @@ def extract_text_html(file_path: str) -> tuple[list[dict], list[dict]]:
         if rows and len(rows) > 1:
             tables.append({"page": i + 1, "tables": [rows]})
 
-    # Step 4: Extract text via BeautifulSoup (on the reduced HTML)
-    soup = BeautifulSoup(working_html, "lxml")
-    for tag in soup.find_all(["script", "style", "meta", "link", "head"]):
-        tag.decompose()
+    # Step 4: Extract text — try BeautifulSoup, fall back to regex strip
+    try:
+        soup = BeautifulSoup(working_html, "html.parser")  # html.parser handles partial HTML better than lxml
+        for tag in soup.find_all(["script", "style", "meta", "link", "head"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n")
+    except Exception as e:
+        logger.warning("BeautifulSoup failed, using regex text extraction: %s", str(e)[:100])
+        text = ""
 
-    text = soup.get_text(separator="\n")
+    # Fallback: if BeautifulSoup produced nothing, strip HTML tags via regex
+    if len(text.strip()) < 100:
+        logger.info("BeautifulSoup produced %d chars, falling back to regex strip", len(text.strip()))
+        text = re.sub(r'<[^>]+>', ' ', working_html)
+        text = re.sub(r'&nbsp;|&amp;|&lt;|&gt;|&#\d+;|&#x[0-9a-fA-F]+;', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+
     lines = [line.strip() for line in text.splitlines()]
     cleaned = []
     prev_empty = False
