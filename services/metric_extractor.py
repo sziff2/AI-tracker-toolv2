@@ -247,9 +247,9 @@ async def extract_by_document_type(
             # Prioritise: P&L > BS > CF > Segment > KPI, then cap at 20
             _PRIORITY = {ST.INCOME_STATEMENT: 0, ST.BALANCE_SHEET: 1, ST.CASH_FLOW: 2, ST.SEGMENT_BREAKDOWN: 3, ST.KPI_TABLE: 4}
             financial_tables.sort(key=lambda t: (_PRIORITY.get(t.statement_type, 5), not t.is_current))
-            if len(financial_tables) > 20:
-                logger.warning("Capping extraction at 20 tables (had %d)", len(financial_tables))
-                financial_tables = financial_tables[:20]
+            if len(financial_tables) > 50:
+                logger.warning("Capping extraction at 50 tables (had %d)", len(financial_tables))
+                financial_tables = financial_tables[:50]
 
             structure.tables = financial_tables
 
