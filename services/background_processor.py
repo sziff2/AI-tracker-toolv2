@@ -407,6 +407,7 @@ async def run_batch_pipeline(
                                 logger.warning("Document %s has very short text (%d chars) - may be parsing issue",
                                                did, len(full_text))
                         except Exception as e:
+                            logger.error("[BATCH] Parse FAILED for doc %s (%s): %s", did, doc.title, str(e)[:200], exc_info=True)
                             doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
                             return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
 
