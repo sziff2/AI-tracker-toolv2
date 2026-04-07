@@ -266,7 +266,11 @@ async def extract_by_document_type(
                 all_segmented_items = []
                 for stmt_type, entries in extraction_results.items():
                     for entry in entries:
-                        for item in entry.get("items", []):
+                        # LLM result is in "data" key (list of dicts) or "items" key
+                        items_list = entry.get("items") or entry.get("data") or []
+                        if isinstance(items_list, dict):
+                            items_list = [items_list]
+                        for item in items_list:
                             all_segmented_items.append({
                                 "metric_name": item.get("line_item", ""),
                                 "metric_value": item.get("value"),

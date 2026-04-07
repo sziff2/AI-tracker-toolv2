@@ -56,9 +56,10 @@ def _build_prompt_for_table(
 ) -> str:
     """Build a focused extraction prompt for a single FinancialTable."""
     prompt_name = _PROMPT_MAP.get(table.statement_type, "income_statement")
+    rows_text = _format_table_rows(table)
 
     try:
-        template = load_prompt(
+        prompt = load_prompt(
             prompt_name,
             inputs={
                 "company_name": company_name,
@@ -67,34 +68,26 @@ def _build_prompt_for_table(
                 "period_type": table.period_type,
                 "currency": table.currency,
                 "unit_scale": table.unit_scale,
+                "segment_name": table.segment or "consolidated",
                 "segment": table.segment or "consolidated",
+                "rows_formatted": rows_text,
+                "current_or_comparative": "current" if table.is_current else "comparative",
+                "currency_scale_abbrev": f"{table.currency}_{table.unit_scale[:1].upper()}",
+                "currency_scale": f"{table.currency} {table.unit_scale}",
             },
             include_context_contract=False,
             include_output_constraints=True,
         )
     except FileNotFoundError:
         logger.warning("No prompt template for %s, using inline prompt", prompt_name)
-        template = (
+        prompt = (
             f"Extract financial metrics from this {table.statement_type.value} "
             f"for {company_name} ({ticker}).\n"
             f"Period: {table.period} ({table.period_type})\n"
             f"Currency: {table.currency}, Scale: {table.unit_scale}\n"
-            "Return JSON with metric names as keys and numeric values."
+            f"Return ONLY a JSON array of extracted items.\n\n"
+            f"TABLE DATA:\n{rows_text}"
         )
-
-    rows_text = _format_table_rows(table)
-
-    prompt = (
-        f"{template}\n\n"
-        f"--- Data ---\n"
-        f"Company: {company_name} ({ticker})\n"
-        f"Statement: {table.statement_type.value}\n"
-        f"Period: {table.period} ({table.period_type})\n"
-        f"Currency: {table.currency}\n"
-        f"Scale: {table.unit_scale}\n"
-        f"Segment: {table.segment or 'consolidated'}\n\n"
-        f"{rows_text}"
-    )
 
     return prompt
 
