@@ -157,6 +157,14 @@ async def _extract_with_sections(
         ", ".join(s.section_type for s in sections),
     )
 
+    # Capture MD&A narrative for synthesis (raw text, not just extracted metrics)
+    mda_narrative = ""
+    for s in sections:
+        if s.section_type in ("mda", "guidance", "preamble"):
+            mda_narrative += s.text[:15000] + "\n\n"  # cap at 15K per section
+    if mda_narrative:
+        logger.info("Captured %d chars of MD&A narrative for synthesis", len(mda_narrative))
+
     # ── Step 2: Build extraction tasks per section ───────────
     extraction_tasks = []
 
@@ -364,6 +372,7 @@ async def _extract_with_sections(
         "section_types": [s.section_type for s in sections],
         "items_extracted": len(all_items),
         "raw_items": all_items,
+        "mda_narrative": mda_narrative[:20000] if mda_narrative else "",
         "segment_data": segment_result if isinstance(segment_result, dict) else None,
         "detected_period": detected_period,
         # Reflex pattern outputs

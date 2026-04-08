@@ -329,7 +329,7 @@ async def run_batch_pipeline(
             output["documents_processed"] = []
             output["per_document_extractions"] = {}
 
-            earnings_data, transcript_data, broker_data, presentation_data = [], [], [], []
+            earnings_data, transcript_data, broker_data, presentation_data, narrative_data = [], [], [], [], []
             last_doc_id = None
             total_docs = len(doc_ids)
 
@@ -441,10 +441,11 @@ async def run_batch_pipeline(
                             doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
                             logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
 
-                        return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title}
+                        mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
+                        return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title, "mda_narrative": mda}
                 except Exception as e:
                     doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})
-                    return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
+                    return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None, "mda_narrative": ""}
 
             # Run documents with limited concurrency to avoid OOM on small Railway plans
             # 2 docs × 3 LLM calls = 6 max simultaneous requests — safe without crashing
@@ -490,8 +491,13 @@ async def run_batch_pipeline(
                 if res.get("esg"):
                     output["esg_extraction"] = res["esg"]
 
+                # Capture MD&A narrative for synthesis
+                if res.get("mda_narrative"):
+                    narrative_data.append(res["mda_narrative"][:10000])
+                    logger.info("  -> Captured %d chars of MD&A narrative", len(res["mda_narrative"]))
+
                 if items:
-                    items_summary = json.dumps(items[:30], indent=2, default=str)
+                    items_summary = json.dumps(items[:200], indent=2, default=str)
                     if dtype in ("earnings_release", "10-Q", "10-K", "annual_report"):
                         earnings_data.append(items_summary)
                         logger.info("  -> Added %d items to earnings_data", len(items))
@@ -507,6 +513,12 @@ async def run_batch_pipeline(
                     elif dtype not in ("sustainability_report", "proxy_statement"):
                         earnings_data.append(items_summary)
                         logger.info("  -> Added %d items to earnings_data (fallback dtype=%s)", len(items), dtype)
+
+                    # Capture qualitative/narrative items (drivers, guidance, management commentary)
+                    narrative_items = [i for i in items if i.get("type") in ("driver", "guidance") or i.get("management_explanation")]
+                    if narrative_items:
+                        narrative_data.append(json.dumps(narrative_items[:50], indent=2, default=str))
+                        logger.info("  -> Added %d narrative items", len(narrative_items))
                     else:
                         logger.info("  -> Skipped aggregation for dtype=%s", dtype)
 
@@ -671,6 +683,7 @@ async def run_batch_pipeline(
                         "presentation_data": _compress_items(presentation_data, "presentation"),
                         "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:2500] if output.get("thesis_comparison") else "Not available.",
                         "surprises": json.dumps(output.get("surprises"), default=str)[:2000] if output.get("surprises") else "None detected.",
+                        "narrative_context": _compress_items(narrative_data, "narrative/MD&A") if narrative_data else "No narrative context extracted.",
                         "text": _compress_items(earnings_data + transcript_data, "all"),
                     }
                     try:
@@ -830,7 +843,7 @@ async def run_resynthesise_pipeline(
             db_metrics = metrics_q.scalars().all()
 
             # Build extraction data from existing metrics
-            earnings_data, transcript_data, broker_data, presentation_data = [], [], [], []
+            earnings_data, transcript_data, broker_data, presentation_data, narrative_data = [], [], [], [], []
             if db_metrics:
                 await _add_log(job_id, f"Loaded {len(db_metrics)} existing metrics from database")
                 lines = []
@@ -943,6 +956,7 @@ async def run_resynthesise_pipeline(
                         "presentation_data": _compress_items(presentation_data, "presentation"),
                         "thesis_comparison": json.dumps(output.get("thesis_comparison"), default=str)[:2500] if output.get("thesis_comparison") else "Not available.",
                         "surprises": json.dumps(output.get("surprises"), default=str)[:2000] if output.get("surprises") else "None detected.",
+                        "narrative_context": _compress_items(narrative_data, "narrative/MD&A") if narrative_data else "No narrative context extracted.",
                         "text": _compress_items(earnings_data + transcript_data, "all"),
                     }
                     try:
