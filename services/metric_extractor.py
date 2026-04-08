@@ -261,13 +261,19 @@ async def _extract_with_sections(
         logger.warning("Post-processing failed: %s", str(e)[:100])
 
     # ── Step 7: Validation ───────────────────────────────────
+    # Lower threshold for banks/insurance — their KPIs (NIM, credit costs)
+    # often score lower confidence due to non-standard table layouts
+    sector_lower = (sector or "").lower()
+    is_financial = any(k in sector_lower for k in ["financ", "bank", "insur", "lending"])
+    conf_threshold = 0.40 if is_financial else 0.60
+
     try:
         from services.metric_validator import validate_extraction
         validation = await validate_extraction(
             items=all_items,
             source_text=text,
             run_cross_check=True,
-            confidence_threshold=0.6,
+            confidence_threshold=conf_threshold,
         )
         all_items = validation["validated"]
         logger.info(
