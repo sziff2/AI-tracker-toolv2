@@ -669,10 +669,16 @@ async def run_batch_pipeline(
                         "text": _compress_items(earnings_data + transcript_data, "all"),
                     }
                     try:
-                        synthesis_prompt = synthesis_template.format(**format_args)
-                    except KeyError as ke:
-                        logger.warning("Synthesis prompt format failed (bad placeholder %s), falling back to default", ke)
-                        synthesis_prompt = SYNTHESIS_BRIEFING.format(**format_args)
+                        # Use replace() instead of format() to avoid issues with
+                        # JSON curly braces in the prompt template
+                        synthesis_prompt = synthesis_template
+                        for key, val in format_args.items():
+                            synthesis_prompt = synthesis_prompt.replace("{" + key + "}", str(val))
+                    except Exception as ke:
+                        logger.warning("Synthesis prompt format failed (%s), falling back to default", ke)
+                        synthesis_prompt = SYNTHESIS_BRIEFING
+                        for key, val in format_args.items():
+                            synthesis_prompt = synthesis_prompt.replace("{" + key + "}", str(val))
                     synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192, model=model_id)
                     return ("synthesis", synthesis)
                 except Exception as e:
@@ -930,10 +936,16 @@ async def run_resynthesise_pipeline(
                         "text": _compress_items(earnings_data + transcript_data, "all"),
                     }
                     try:
-                        synthesis_prompt = synthesis_template.format(**format_args)
-                    except KeyError as ke:
-                        logger.warning("Synthesis prompt format failed (bad placeholder %s), falling back to default", ke)
-                        synthesis_prompt = SYNTHESIS_BRIEFING.format(**format_args)
+                        # Use replace() instead of format() to avoid issues with
+                        # JSON curly braces in the prompt template
+                        synthesis_prompt = synthesis_template
+                        for key, val in format_args.items():
+                            synthesis_prompt = synthesis_prompt.replace("{" + key + "}", str(val))
+                    except Exception as ke:
+                        logger.warning("Synthesis prompt format failed (%s), falling back to default", ke)
+                        synthesis_prompt = SYNTHESIS_BRIEFING
+                        for key, val in format_args.items():
+                            synthesis_prompt = synthesis_prompt.replace("{" + key + "}", str(val))
                     synthesis = await call_llm_json_async(synthesis_prompt, max_tokens=8192, model=model_id)
                     return ("synthesis", synthesis)
                 except Exception as e:
