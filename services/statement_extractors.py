@@ -233,6 +233,7 @@ async def extract_all_statements(
         table_prompts,
         max_concurrency=6,
         timeout_seconds=90,
+        tier="fast",  # Haiku — mechanical table extraction
     )
 
     # ── Collect results ──

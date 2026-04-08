@@ -410,7 +410,7 @@ async def extract_from_tables(
             prompt = TABLE_TO_SCHEMA_PROMPT.replace("{company}", company_name).replace("{ticker}", ticker).replace("{document_title}", document_title).replace("{page_number}", str(page)).replace("{table_data}", table_text)
 
             try:
-                items = await call_llm_json_async(prompt, max_tokens=4096, feature="table_extraction", ticker=ticker)
+                items = await call_llm_json_async(prompt, max_tokens=4096, feature="table_extraction", ticker=ticker, tier="fast")
                 if isinstance(items, list):
                     for item in items:
                         if isinstance(item, dict):

@@ -216,7 +216,7 @@ async def cross_verify_metrics(items: list[dict], source_text: str, max_items: i
     prompt = check_template.replace("{metrics_to_check}", metrics_text).replace("{source_text}", truncated_source)
 
     try:
-        verification_results = await call_llm_json_async(prompt, max_tokens=4096, feature="metric_validation")
+        verification_results = await call_llm_json_async(prompt, max_tokens=4096, feature="metric_validation", tier="fast")
         if not isinstance(verification_results, list):
             verification_results = [verification_results] if isinstance(verification_results, dict) else []
     except Exception as e:
