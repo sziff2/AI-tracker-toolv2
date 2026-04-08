@@ -151,8 +151,19 @@ def _period_from_form(form_type: str, filing_date: str, period_of_report: Option
             return f"{year}_Q4"
 
     if form_type == "8-K":
-        # Material event — label with filing date
-        return f"{year}_Q{((month - 1) // 3) + 1}"
+        # For 8-K, reportDate is the event date. Map to the quarter it reports ON.
+        # Earnings 8-Ks filed in month M typically report on the quarter ending
+        # in the prior month range: Jan→Q4 prev, Apr→Q1, Jul→Q2, Oct→Q3
+        if month in (1, 2):
+            return f"{year - 1}_Q4"
+        elif month in (3, 4, 5):
+            return f"{year}_Q1"
+        elif month in (6, 7, 8):
+            return f"{year}_Q2"
+        elif month in (9, 10, 11):
+            return f"{year}_Q3"
+        else:  # December
+            return f"{year}_Q4"
 
     return None
 
@@ -227,7 +238,7 @@ async def fetch_sec_edgar(ticker: str, max_filings: int = 50) -> list[dict]:
         forms = filings.get("form", [])
         dates = filings.get("filingDate", [])
         accessions = filings.get("accessionNumber", [])
-        periods = filings.get("periodOfReport", [])
+        periods = filings.get("reportDate", [])
         primary_docs = filings.get("primaryDocument", [])
         descriptions = filings.get("primaryDocDescription", [])
         items_list = filings.get("items", [])
