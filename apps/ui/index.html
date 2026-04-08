@@ -817,16 +817,31 @@ function renderCockpit(ticker,d){
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
   h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
-  h+='<div class="tabs"><button class="tab on" onclick="ckTab(\'thesis\',this)">Thesis</button><button class="tab" onclick="ckTab(\'results\',this)">Results</button><button class="tab" onclick="ckTab(\'kpis\',this)">KPIs</button><button class="tab" onclick="ckTab(\'guidance\',this)">Guidance</button><button class="tab" onclick="ckTab(\'moat\',this)">Competitive Analysis</button><button class="tab" onclick="ckTab(\'execution\',this)">Mgmt Execution</button><button class="tab" onclick="ckTab(\'decisions\',this)">Valuation</button><button class="tab" onclick="ckTab(\'esg\',this)">ESG</button><button class="tab" onclick="ckTab(\'documents\',this)">Documents</button></div>';
-  h+='<div id="ck-thesis">'+renderCkThesis(d,co.name,ticker)+'</div>';
-  h+='<div id="ck-results" style="display:none">'+renderCkResults(ticker,d)+'</div>';
-  h+='<div id="ck-kpis" style="display:none">'+renderCkKPIs(ticker,d)+'</div>';
-  h+='<div id="ck-guidance" style="display:none"><div class="ld">Loading guidance…</div></div>';
-  h+='<div id="ck-moat" style="display:none"><div class="ld">Loading…</div></div>';
-  h+='<div id="ck-execution" style="display:none"><div class="ld">Loading…</div></div>';
-  h+='<div id="ck-esg" style="display:none"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
-  h+='<div id="ck-decisions" style="display:none">'+renderCkDecisions(ticker,d)+'</div>';
-  h+='<div id="ck-documents" style="display:none"><div class="ld" style="margin:24px 0">Loading…</div></div>';
+  // Tab bar — primary tabs visible, overflow in dropdown
+  var activeTab=window._ckActiveTab||'thesis';
+  var primaryTabs=[['thesis','Thesis'],['results','Results'],['kpis','KPIs'],['decisions','Valuation'],['documents','Documents']];
+  var overflowTabs=[['guidance','Guidance'],['moat','Competitive Analysis'],['execution','Mgmt Execution'],['esg','ESG']];
+  h+='<div class="tabs" style="display:flex;align-items:center;flex-wrap:nowrap;gap:0">';
+  primaryTabs.forEach(function(t){h+='<button class="tab'+(activeTab===t[0]?' on':'')+'" onclick="ckTab(\''+t[0]+'\',this)">'+t[1]+'</button>';});
+  // Overflow dropdown
+  var overflowActive=overflowTabs.some(function(t){return activeTab===t[0];});
+  var overflowLabel=overflowActive?overflowTabs.find(function(t){return activeTab===t[0];})[1]:'More';
+  h+='<div style="position:relative;display:inline-block">';
+  h+='<button class="tab'+(overflowActive?' on':'')+'" onclick="var m=this.nextElementSibling;m.style.display=m.style.display===\'block\'?\'none\':\'block\'" style="min-width:auto">'+esc(overflowLabel)+' ▾</button>';
+  h+='<div style="display:none;position:absolute;top:100%;left:0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px 0;z-index:100;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.3)">';
+  overflowTabs.forEach(function(t){h+='<div style="padding:8px 16px;cursor:pointer;font-family:var(--sans);font-size:13px;color:'+(activeTab===t[0]?'var(--gold)':'var(--text2)')+'" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'transparent\'" onclick="this.parentElement.style.display=\'none\';ckTab(\''+t[0]+'\',document.querySelector(\'.tab.on\'))">'+t[1]+'</div>';});
+  h+='</div></div>';
+  h+='</div>';
+  // Tab content — show active tab immediately, no flash
+  h+='<div id="ck-thesis" style="'+(activeTab!=='thesis'?'display:none':'')+'">'+(activeTab==='thesis'?renderCkThesis(d,co.name,ticker):'')+'</div>';
+  h+='<div id="ck-results" style="'+(activeTab!=='results'?'display:none':'')+'">'+(activeTab==='results'?renderCkResults(ticker,d):'')+'</div>';
+  h+='<div id="ck-kpis" style="'+(activeTab!=='kpis'?'display:none':'')+'">'+(activeTab==='kpis'?renderCkKPIs(ticker,d):'')+'</div>';
+  h+='<div id="ck-guidance" style="'+(activeTab!=='guidance'?'display:none':'')+'"><div class="ld">Loading guidance…</div></div>';
+  h+='<div id="ck-moat" style="'+(activeTab!=='moat'?'display:none':'')+'"><div class="ld">Loading…</div></div>';
+  h+='<div id="ck-execution" style="'+(activeTab!=='execution'?'display:none':'')+'"><div class="ld">Loading…</div></div>';
+  h+='<div id="ck-esg" style="'+(activeTab!=='esg'?'display:none':'')+'"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
+  h+='<div id="ck-decisions" style="'+(activeTab!=='decisions'?'display:none':'')+'">'+(activeTab==='decisions'?renderCkDecisions(ticker,d):'')+'</div>';
+  h+='<div id="ck-documents" style="'+(activeTab!=='documents'?'display:none':'')+'"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
 function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');try{var u=new URL(location.href);u.searchParams.set('tab',t);history.replaceState({},'',u.toString());}catch(e){}if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
