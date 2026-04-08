@@ -365,16 +365,19 @@ PERIOD: {period}
 INVESTMENT THESIS:
 {thesis}
 
-=== SOURCE 1: REPORTED NUMBERS (from earnings release) ===
+=== SOURCE 1: REPORTED NUMBERS (from earnings release / 10-Q / 10-K) ===
 {earnings_data}
 
-=== SOURCE 2: MANAGEMENT COMMENTARY (from transcript) ===
+=== SOURCE 2: MD&A NARRATIVE CONTEXT (management's discussion of results) ===
+{narrative_context}
+
+=== SOURCE 3: MANAGEMENT COMMENTARY (from earnings call transcript) ===
 {transcript_data}
 
-=== SOURCE 3: SELL-SIDE VIEWS (from broker notes) ===
+=== SOURCE 4: SELL-SIDE VIEWS (from broker notes) ===
 {broker_data}
 
-=== SOURCE 4: STRATEGIC SIGNALS (from presentations) ===
+=== SOURCE 5: STRATEGIC SIGNALS (from presentations) ===
 {presentation_data}
 
 === THESIS COMPARISON ===
