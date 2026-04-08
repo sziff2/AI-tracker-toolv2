@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # and base.py._MODEL_PRICING. Legacy "claude-sonnet-4-20250514" is
     # kept as an alias in llm_client but should not be the default.
     llm_model: str = "claude-sonnet-4-6"
+    llm_model_advanced: str = "claude-sonnet-4-6"   # Tier 3: synthesis, thesis comparison
     llm_max_tokens: int = 4096
     llm_temperature: float = 0.0
 

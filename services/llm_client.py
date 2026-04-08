@@ -38,6 +38,21 @@ from services.budget_guard import BudgetGuard, BudgetExceeded  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
+# ── Model tier constants ────────────────────────────────────────
+TIER_FAST = "fast"          # Haiku — tables, classification, mechanical extraction
+TIER_DEFAULT = "default"    # Sonnet — section extraction, KPIs, guidance
+TIER_ADVANCED = "advanced"  # Sonnet/Opus — synthesis, thesis comparison, judgement
+
+
+def _model_for_tier(tier: str) -> str:
+    """Resolve a tier name to a concrete model string."""
+    if tier == TIER_FAST:
+        return settings.agent_fast_model
+    elif tier == TIER_ADVANCED:
+        return getattr(settings, 'llm_model_advanced', settings.llm_model)
+    else:
+        return settings.llm_model
+
 # ── Cost per 1M tokens ───────────────────────────────────────────
 # Keep model name aliases in sync with base.py's _MODEL_PRICING and
 # configs/settings.py agent_default_model / agent_fast_model values.
@@ -280,12 +295,13 @@ def call_llm(
     max_tokens: int | None = None,
     temperature: float | None = None,
     model: str | None = None,
+    tier: str | None = None,
     feature: str | None = None,
     ticker: str | None = None,
     period: str | None = None,
 ) -> str:
     client = get_client()
-    model = model or settings.llm_model
+    model = model or (tier and _model_for_tier(tier)) or settings.llm_model
     if feature:
         _call_context.feature = feature
     if ticker:
