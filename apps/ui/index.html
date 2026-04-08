@@ -817,20 +817,11 @@ function renderCockpit(ticker,d){
   h+='<div style="font-family:var(--sans);font-size:13px;color:var(--text3);margin-bottom:4px">'+[co.sector,co.country,co.coverage_status].filter(Boolean).join(' · ')+'</div><div class="gl"></div>';
   const dir=d.thesis_assessment?.thesis_direction||'—';const dirCls=dir==='strengthened'?'up':dir==='weakened'?'down':'neutral';
   h+='<div class="ck-strip"><div class="ck-stat"><div class="ck-stat-label">Thesis</div><div class="ck-stat-val '+dirCls+'">'+esc(dir)+'</div></div><div class="ck-stat"><div class="ck-stat-label">Periods</div><div class="ck-stat-val">'+d.stats.periods_covered+'</div></div><div class="ck-stat"><div class="ck-stat-label">Documents</div><div class="ck-stat-val">'+d.stats.total_documents+'</div></div><div class="ck-stat"><div class="ck-stat-label">Decisions</div><div class="ck-stat-val">'+d.stats.total_decisions+'</div></div></div>';
-  // Tab bar — primary tabs visible, overflow in dropdown
+  // Tab bar — all tabs visible, active tab set correctly on render
   var activeTab=window._ckActiveTab||'thesis';
-  var primaryTabs=[['thesis','Thesis'],['results','Results'],['kpis','KPIs'],['decisions','Valuation'],['documents','Documents']];
-  var overflowTabs=[['guidance','Guidance'],['moat','Competitive Analysis'],['execution','Mgmt Execution'],['esg','ESG']];
-  h+='<div class="tabs" style="display:flex;align-items:center;flex-wrap:nowrap;gap:0">';
-  primaryTabs.forEach(function(t){h+='<button class="tab'+(activeTab===t[0]?' on':'')+'" onclick="ckTab(\''+t[0]+'\',this)">'+t[1]+'</button>';});
-  // Overflow dropdown
-  var overflowActive=overflowTabs.some(function(t){return activeTab===t[0];});
-  var overflowLabel=overflowActive?overflowTabs.find(function(t){return activeTab===t[0];})[1]:'More';
-  h+='<div style="position:relative;display:inline-block">';
-  h+='<button class="tab'+(overflowActive?' on':'')+'" onclick="var m=this.nextElementSibling;m.style.display=m.style.display===\'block\'?\'none\':\'block\'" style="min-width:auto">'+esc(overflowLabel)+' ▾</button>';
-  h+='<div style="display:none;position:absolute;top:100%;left:0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px 0;z-index:100;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,0.3)">';
-  overflowTabs.forEach(function(t){h+='<div style="padding:8px 16px;cursor:pointer;font-family:var(--sans);font-size:13px;color:'+(activeTab===t[0]?'var(--gold)':'var(--text2)')+'" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'transparent\'" onclick="this.parentElement.style.display=\'none\';ckTab(\''+t[0]+'\',document.querySelector(\'.tab.on\'))">'+t[1]+'</div>';});
-  h+='</div></div>';
+  var allTabs=[['thesis','Thesis'],['results','Results'],['kpis','KPIs'],['guidance','Guidance'],['moat','Competitive Analysis'],['execution','Mgmt Execution'],['decisions','Valuation'],['esg','ESG'],['documents','Documents']];
+  h+='<div class="tabs">';
+  allTabs.forEach(function(t){h+='<button class="tab'+(activeTab===t[0]?' on':'')+'" onclick="ckTab(\''+t[0]+'\',this)">'+t[1]+'</button>';});
   h+='</div>';
   // Tab content — show active tab immediately, no flash
   h+='<div id="ck-thesis" style="'+(activeTab!=='thesis'?'display:none':'')+'">'+(activeTab==='thesis'?renderCkThesis(d,co.name,ticker):'')+'</div>';
@@ -1136,11 +1127,16 @@ function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
   window._npDocsbyPeriod=dbp;
   const allPeriods=sortPeriods(Object.keys({...abp,...dbp}));
-  let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:0">';
-  h+='<div class="ptabs" id="res-ptabs" style="margin-bottom:0;flex:1">';
-  if(allPeriods.length){allPeriods.forEach((p,i)=>{h+='<button class="ptab'+(i===0?' on':'')+'" onclick="showResPeriod(\''+esc(p)+'\',this)">'+esc(normalisePeriodLabel(p)||p)+'</button>';});}
-  else{h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';}
-  h+='</div><button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
+  let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">';
+  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3)">Period:</div>';
+  if(allPeriods.length){
+    h+='<select class="fi" id="res-period-select" onchange="showResPeriod(this.value)" style="width:auto;font-size:13px;padding:7px 14px;font-weight:600">';
+    allPeriods.forEach((p,i)=>{h+='<option value="'+esc(p)+'"'+(i===0?' selected':'')+'>'+esc(normalisePeriodLabel(p)||p)+'</option>';});
+    h+='</select>';
+  } else {
+    h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';
+  }
+  h+='<button class="btn2" style="white-space:nowrap;padding:6px 14px;font-size:12px" onclick="ckShowNewPeriod(\''+ticker+'\')">+ New Period</button></div>';
   h+='<div id="ck-new-period-panel" style="display:none;margin-top:12px;padding:20px;background:var(--bg2);border:1px solid var(--border);border-radius:12px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">Add / Analyse Period</span><button class="btn2" onclick="ckHideNewPeriod()" style="padding:4px 10px;font-size:11px">&times; Cancel</button></div>';
   h+='<div class="g2" style="margin-top:0"><div><div class="fl">Period Type</div><select class="fi" id="np-type" onchange="npCheckExistingDocs(\''+ticker+'\')"><option value="Q1">Q1</option><option value="Q2">Q2</option><option value="Q3">Q3</option><option value="Q4" selected>Q4</option></select></div><div><div class="fl">Year</div><select class="fi" id="np-year" onchange="npCheckExistingDocs(\''+ticker+'\')"></select></div></div>';
@@ -1195,9 +1191,10 @@ function renderCkResults(ticker,d){
   return h;
 }
 function showResPeriod(p,btn){
-  document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-ptabs')el.style.display='none';});
+  document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-period-select')el.style.display='none';});
   const target=E('res-'+p);if(target)target.style.display='block';
-  E('res-ptabs').querySelectorAll('.ptab').forEach(b=>b.classList.remove('on'));
+  // Sync dropdown if called programmatically
+  var sel=E('res-period-select');if(sel)sel.value=p;
   ckHideNewPeriod();
 }
 async function deletePeriod(ticker,period){
