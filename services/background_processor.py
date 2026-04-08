@@ -586,7 +586,7 @@ async def run_batch_pipeline(
             await _add_log(job_id, "Starting synthesis — generating analysis output...")
 
             # Compress extraction data — preserve key details and source context
-            def _compress_items(items_list, label, max_items=40):
+            def _compress_items(items_list, label, max_items=150):
                 if not items_list:
                     return f"No {label} data."
                 try:
@@ -595,6 +595,11 @@ async def run_batch_pipeline(
                         parsed = json.loads(block) if isinstance(block, str) else block
                         if isinstance(parsed, list):
                             all_items.extend(parsed)
+                    # Prioritise items with numeric values over text-only items
+                    all_items.sort(key=lambda x: (
+                        0 if x.get("metric_value") is not None else 1,
+                        -(x.get("confidence") or 0),
+                    ))
                     lines = []
                     for item in all_items[:max_items]:
                         name = item.get("metric_name") or item.get("topic") or item.get("category", "")
@@ -885,7 +890,7 @@ async def run_resynthesise_pipeline(
             await _update_step(job_id, "synthesising", 60, completed)
             await _add_log(job_id, "Generating synthesis with updated thesis context...")
 
-            def _compress_items(items_list, label, max_items=40):
+            def _compress_items(items_list, label, max_items=150):
                 if not items_list:
                     return f"No {label} data."
                 try:
@@ -894,6 +899,11 @@ async def run_resynthesise_pipeline(
                         parsed = json.loads(block) if isinstance(block, str) else block
                         if isinstance(parsed, list):
                             all_items.extend(parsed)
+                    # Prioritise items with numeric values over text-only items
+                    all_items.sort(key=lambda x: (
+                        0 if x.get("metric_value") is not None else 1,
+                        -(x.get("confidence") or 0),
+                    ))
                     lines = []
                     for item in all_items[:max_items]:
                         name = item.get("metric_name") or item.get("topic") or item.get("category", "")
