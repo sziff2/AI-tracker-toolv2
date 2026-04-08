@@ -434,6 +434,70 @@ async def update_document_metadata(document_id: uuid.UUID, body: _DocUpdate, db:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Fix EDGAR period labels — use reportDate from EDGAR API
+# ─────────────────────────────────────────────────────────────────
+@router.post("/documents/fix-edgar-periods")
+async def fix_edgar_periods(db: AsyncSession = Depends(get_db)):
+    """One-time fix: correct period labels for all EDGAR documents using reportDate."""
+    import httpx
+    from sqlalchemy import text
+
+    # Get all EDGAR source companies
+    from services.harvester.sources.sec_edgar import EDGAR_SOURCES, _period_from_form
+
+    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    fixed = 0
+    total = 0
+
+    for ticker, config in EDGAR_SOURCES.items():
+        cik = config["cik"].lstrip("0").zfill(10)
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"https://data.sec.gov/submissions/CIK{cik}.json",
+                    headers=headers,
+                )
+                data = resp.json()
+
+            filings = data.get("filings", {}).get("recent", {})
+            forms = filings.get("form", [])
+            dates = filings.get("filingDate", [])
+            reports = filings.get("reportDate", [])
+            form_types = set(config["form_types"])
+
+            # Build mapping: filing_date + form → correct period
+            for i, form in enumerate(forms):
+                if form not in form_types:
+                    continue
+                filing_date = dates[i] if i < len(dates) else ""
+                report_date = reports[i] if i < len(reports) else ""
+                if not report_date:
+                    continue
+
+                correct_period = _period_from_form(form, filing_date, report_date)
+                if not correct_period:
+                    continue
+
+                # Update any documents for this company with this filing date
+                result = await db.execute(text("""
+                    UPDATE documents SET period_label = :period
+                    WHERE source = 'sec_edgar'
+                    AND published_at::date = :filed::date
+                    AND period_label != :period
+                    AND company_id IN (SELECT id FROM companies WHERE ticker = :ticker)
+                """), {"period": correct_period, "filed": filing_date, "ticker": ticker})
+                if result.rowcount > 0:
+                    fixed += result.rowcount
+                total += 1
+
+        except Exception as e:
+            logger.warning("Fix periods failed for %s: %s", ticker, str(e)[:100])
+
+    await db.commit()
+    return {"fixed": fixed, "checked": total}
+
+
+# ─────────────────────────────────────────────────────────────────
 # Fix EDGAR index page URLs — one-time migration
 # ─────────────────────────────────────────────────────────────────
 @router.post("/documents/fix-edgar-urls")
