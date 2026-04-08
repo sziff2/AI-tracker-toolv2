@@ -449,7 +449,17 @@ async def fix_edgar_periods(db: AsyncSession = Depends(get_db)):
     fixed = 0
     total = 0
 
-    for ticker, config in EDGAR_SOURCES.items():
+    # For ALL EDGAR documents, derive correct period from the filing's
+    # actual report date (fetched from EDGAR API per company)
+    all_docs = await db.execute(text("""
+        SELECT d.id, d.period_label, d.published_at, d.document_type, c.ticker
+        FROM documents d JOIN companies c ON d.company_id = c.id
+        WHERE d.source = 'sec_edgar'
+    """))
+    docs = all_docs.all()
+    total = len(docs)
+
+    for ticker_key, config in EDGAR_SOURCES.items():
         cik = config["cik"].lstrip("0").zfill(10)
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
@@ -463,38 +473,36 @@ async def fix_edgar_periods(db: AsyncSession = Depends(get_db)):
             forms = filings.get("form", [])
             dates = filings.get("filingDate", [])
             reports = filings.get("reportDate", [])
-            form_types = set(config["form_types"])
 
-            # Build mapping: filing_date + form → correct period
+            # Build mapping: filing_date → correct period
+            date_to_period = {}
             for i, form in enumerate(forms):
-                if form not in form_types:
-                    continue
                 filing_date = dates[i] if i < len(dates) else ""
                 report_date = reports[i] if i < len(reports) else ""
-                if not report_date:
+                if not report_date or not filing_date:
                     continue
-
                 correct_period = _period_from_form(form, filing_date, report_date)
-                if not correct_period:
-                    continue
+                if correct_period:
+                    date_to_period[filing_date] = correct_period
 
-                # Update any documents for this company with this filing date
-                result = await db.execute(text("""
-                    UPDATE documents SET period_label = :period
-                    WHERE source = 'sec_edgar'
-                    AND published_at::date = :filed::date
-                    AND period_label != :period
-                    AND company_id IN (SELECT id FROM companies WHERE ticker = :ticker)
-                """), {"period": correct_period, "filed": filing_date, "ticker": ticker})
-                if result.rowcount > 0:
-                    fixed += result.rowcount
-                total += 1
+            # Update documents for this ticker
+            for doc in docs:
+                if doc.ticker != ticker_key:
+                    continue
+                pub_date = str(doc.published_at)[:10] if doc.published_at else ""
+                if pub_date in date_to_period:
+                    new_period = date_to_period[pub_date]
+                    if new_period != doc.period_label:
+                        await db.execute(text(
+                            "UPDATE documents SET period_label = :p WHERE id = :id"
+                        ), {"p": new_period, "id": str(doc.id)})
+                        fixed += 1
 
         except Exception as e:
-            logger.warning("Fix periods failed for %s: %s", ticker, str(e)[:100])
+            logger.warning("Fix periods failed for %s: %s", ticker_key, str(e)[:100])
 
     await db.commit()
-    return {"fixed": fixed, "checked": total}
+    return {"fixed": fixed, "total_docs": total}
 
 
 # ─────────────────────────────────────────────────────────────────
