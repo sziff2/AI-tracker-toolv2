@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.database import AsyncSessionLocal
 from apps.api.models import (
     Company, Document, ProcessingJob, ResearchOutput, ThesisVersion,
+    ExtractionProfile,
 )
 from configs.settings import settings
 
@@ -63,6 +64,33 @@ async def _add_log(job_id: uuid.UUID, message: str, level: str = "info"):
         # Keep only last 100 entries to avoid bloating
         job.log_entries = json.dumps(existing[-100:])
         await db.commit()
+
+
+async def _persist_extraction_profile(db: AsyncSession, doc, extraction: dict):
+    """Persist enriched extraction metadata to extraction_profiles table."""
+    if not isinstance(extraction, dict):
+        return
+    profile = ExtractionProfile(
+        id=uuid.uuid4(),
+        company_id=doc.company_id,
+        document_id=doc.id,
+        period_label=doc.period_label,
+        extraction_method=extraction.get("extraction_method"),
+        sections_found=extraction.get("sections_found"),
+        section_types=extraction.get("section_types"),
+        items_extracted=extraction.get("items_extracted"),
+        confidence_profile=extraction.get("confidence_profile"),
+        segment_data=extraction.get("segment_data"),
+        disappearance_flags=extraction.get("disappearance_flags"),
+        non_gaap_bridges=extraction.get("non_gaap_bridge"),
+        non_gaap_comparison=extraction.get("non_gaap_comparison"),
+        mda_narrative=(extraction.get("mda_narrative") or "")[:20000],
+        detected_period=extraction.get("detected_period"),
+    )
+    db.add(profile)
+    await db.commit()
+    logger.info("Persisted extraction profile for doc %s (method=%s, items=%s)",
+                doc.id, extraction.get("extraction_method"), extraction.get("items_extracted"))
 
 
 async def _run_generation_steps(
@@ -432,6 +460,12 @@ async def run_batch_pipeline(
                                 items = extraction.get("raw_items", [])
                                 doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
                                 logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
+
+                                # Persist extraction profile (enriched metadata)
+                                try:
+                                    await _persist_extraction_profile(doc_db, doc, extraction)
+                                except Exception as ep:
+                                    logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
 
                             # Warn if extraction returned no items
                             if not items:

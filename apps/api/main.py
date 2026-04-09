@@ -214,6 +214,33 @@ async def lifespan(app: FastAPI):
         for col in ["agent_results", "agents_completed", "agents_failed"]:
             await conn.execute(sa_text(f"ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS {col} TEXT"))
 
+        # ── Enriched extraction storage ──────────────────────────
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS extraction_profiles (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id),
+                document_id UUID REFERENCES documents(id),
+                period_label TEXT,
+                extraction_method TEXT,
+                sections_found INTEGER,
+                section_types TEXT,
+                items_extracted INTEGER,
+                confidence_profile TEXT,
+                segment_data TEXT,
+                disappearance_flags TEXT,
+                non_gaap_bridges TEXT,
+                non_gaap_comparison TEXT,
+                mda_narrative TEXT,
+                detected_period TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        # Per-metric qualifier columns
+        for col in ["is_one_off BOOLEAN DEFAULT FALSE", "qualifier_json TEXT"]:
+            col_name = col.split()[0]
+            await conn.execute(sa_text(f"ALTER TABLE extracted_metrics ADD COLUMN IF NOT EXISTS {col}"))
+
     # ── Agent registry autodiscovery ─────────────────────────────
     from agents.registry import AgentRegistry
     AgentRegistry.autodiscover()

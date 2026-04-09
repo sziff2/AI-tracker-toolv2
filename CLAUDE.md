@@ -192,31 +192,83 @@ Thesis is generated as a structured document with pillars (not free text). Each 
 - `agent_pipeline_timeout_seconds` — wall-clock timeout per pipeline run (default 300s)
 - `agent_model_overrides` — dict of `{agent_id: model_name}` for per-agent model routing at pipeline config time (set via env as JSON: `AGENT_MODEL_OVERRIDES='{"financial_analyst": "claude-opus-4-6"}'`)
 
-## Financial Extraction Architecture (Planned — 0.8)
-The extraction pipeline is being redesigned to pre-segment documents before LLM calls.
+## Extraction Pipeline v2 (Section-Aware)
+The extraction pipeline splits documents into semantic sections before LLM calls, routing each section to the appropriate model tier.
 
-### Current Approach (one big prompt)
-- Sends full document text to LLM, asks "extract all metrics"
-- ~15-25% period misattribution, ~5-10% BS/P&L confusion, ~10% segment errors
-
-### New Approach (pre-segment → parallel targeted extraction → reconciliation)
+### Pipeline Flow
 ```
-Document → structural parser (no LLM) → FinancialDocumentStructure
-  → classify tables (P&L / BS / CF / Segment / KPI / Guidance)
-  → parse column headers into periods
-  → split multi-period tables into single-period
-  → detect currency + unit scale
-Then → parallel LLM calls (one per statement × period, focused short prompts)
-Then → reconciliation (Q sum vs FY, segment sum vs consolidated, BS equation)
+Document → parse (PDF/HTML/DOCX)
+  → section_splitter.py: split into FilingSection objects
+    (financial_statements | mda | notes | risk_factors | guidance | boilerplate)
+  → parallel extraction per section (financial → Haiku, narrative → Sonnet)
+  → segment decomposition (parallel)
+  → period validation
+  → qualifier enrichment (hedge terms, one-off detection)
+  → post-processing (normalise, dedup)
+  → source anchoring verification
+  → persist: ExtractedMetric rows + ExtractionProfile row
 ```
 
-### New Files (when built)
-- `services/financial_statement_segmenter.py` — structural parsing (no LLM)
-- `services/statement_extractors.py` — per-statement type LLM prompts
-- `services/extraction_reconciler.py` — cross-checks
+### Section Splitter (`services/section_splitter.py`)
+- `FilingSection` dataclass (alias: `DocumentSection` for backwards compatibility — NOT the SQLAlchemy model)
+- Pattern-based heading detection with priority ordering:
+  - **SEC Item numbers** (most reliable): `Item 1. Financial Statements`, `Item 2. MD&A`, etc.
+  - **Financial statements**: handles `condensed/consolidated/unaudited` prefix combinations
+  - **Banking/insurance**: NIM, credit losses, CET1, combined ratio, underwriting results
+  - **MD&A variants**: business review, credit quality review, segment results
+  - **Notes**: handles condensed/consolidated/unaudited prefix chain
+- When coverage < 30%, extracts only uncovered text ranges (not the full document again)
+- Convenience filters: `get_financial_sections()`, `get_narrative_sections()`, etc.
+
+### Enriched Extraction Storage
+Two persistence targets capture data beyond raw metrics:
+
+**Per-metric qualifiers** (columns on `extracted_metrics`):
+- `is_one_off` (Boolean) — non-recurring item flag
+- `qualifier_json` (JSONB) — hedge terms, attribution, temporal signals
+
+**Per-document profiles** (`extraction_profiles` table):
+- `confidence_profile` — management language analysis: overall_signal, hedge_rate, one_off_rate
+- `segment_data` — segment decomposition results
+- `disappearance_flags` — metrics that vanished from prior period
+- `non_gaap_bridges` — GAAP-to-adjusted reconciliation data
+- `mda_narrative` — raw MD&A text (capped at 20K chars) for synthesis context
+- `detected_period` — period inferred from document content
+
+### Key Files
+- `services/section_splitter.py` — section detection, `FilingSection` dataclass
+- `services/metric_extractor.py` — v2 extraction orchestrator (`_extract_with_sections`)
+- `services/qualifier_extractor.py` — hedge/one-off language detection
+- `services/segment_extractor.py` — segment decomposition
+- `services/period_validator.py` — period disambiguation
+- `services/extraction_reconciler.py` — Q vs FY, segment vs consolidated cross-checks
+- `services/source_anchoring.py` — verify extracted values exist in source tables
+- `services/financial_statement_segmenter.py` — structural table parser (no LLM)
+- `services/statement_extractors.py` — per-statement type LLM prompts (routed to Haiku)
 
 ### Key Principle
 Agents should never see raw financial statements. By the time analysis agents run, data is classified by statement type, tagged with correct period/currency/scale, and reconciled.
+
+## Context Builder (`services/context_builder.py`)
+Sits between the database and LLM prompts, building focused compressed context for each reasoning step. Implements context fatigue reduction — never pass information the model does not need right now.
+
+### Available Context Functions
+| Function | What it provides | Used by |
+|----------|-----------------|---------|
+| `build_thesis_context()` | Core thesis, key risks, valuation framework | Briefing, comparison |
+| `build_kpi_summary()` | Top metrics deduped by name, sorted by confidence | Briefing, comparison, surprise |
+| `build_guidance_summary()` | Guidance items from prior period | Surprise detection |
+| `build_prior_period_context()` | Prior period bottom line + key metrics | Briefing, comparison |
+| `build_tracked_kpi_context()` | Analyst-defined KPIs with recent scores | Briefing |
+| `build_confidence_context()` | Management language signals (hedge rate, one-off rate) | Briefing, comparison |
+| `build_segment_context()` | Segment decomposition (revenue, margin per segment) | Briefing |
+| `build_one_off_context()` | Non-recurring items flagged during extraction | Briefing, comparison |
+| `build_mda_narrative_context()` | Raw MD&A text from extraction profile | Synthesis |
+
+### Composite Builders
+- `build_briefing_context()` — thesis + kpis + guidance + prior + tracked + confidence + segments + one-offs
+- `build_comparison_context()` — thesis + current kpis + prior + confidence + one-offs
+- `build_surprise_context()` — prior guidance + current actuals
 
 ## Analysis Pipeline (Current)
 `Document → parse (PDF/HTML/DOCX) → extract metrics → compare thesis → detect surprises → synthesise`

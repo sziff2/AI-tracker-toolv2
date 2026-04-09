@@ -119,6 +119,9 @@ class ExtractedMetric(Base, TimestampMixin):
     page_number = Column(Integer)
     confidence = Column(Numeric, default=1.0)
     needs_review = Column(Boolean, default=False)
+    # Qualifier enrichment from v2 extraction pipeline
+    is_one_off = Column(Boolean, default=False)     # one-off / non-recurring item
+    qualifier_json = Column(JSONB, nullable=True)   # {hedge_terms, attribution, temporal, ...}
 
     company = relationship("Company", back_populates="extracted_metrics")
     document = relationship("Document", back_populates="extracted_metrics")
@@ -796,3 +799,44 @@ class PipelineRun(Base, TimestampMixin):
 
     company = relationship("Company")
     agent_outputs = relationship("AgentOutput", back_populates="pipeline_run", lazy="selectin")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Extraction Profiles — per-document enrichment data from v2 pipeline
+# ─────────────────────────────────────────────────────────────────
+class ExtractionProfile(Base, TimestampMixin):
+    """Stores enriched extraction metadata produced by the v2 pipeline.
+
+    One row per document extraction. Contains confidence profiles, segment
+    decomposition, disappearance flags, non-GAAP bridges, and reconciliation
+    data. Agents read this via context_builder to understand extraction quality.
+    """
+    __tablename__ = "extraction_profiles"
+    __table_args__ = (
+        Index("ix_extraction_profiles_company_period", "company_id", "period_label"),
+        Index("ix_extraction_profiles_document", "document_id"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False)
+    period_label = Column(Text)
+    extraction_method = Column(Text)            # section_aware_v2 | legacy
+    sections_found = Column(Integer)
+    section_types = Column(JSONB)               # ["financial_statements", "mda", ...]
+    items_extracted = Column(Integer)
+    # Document-level confidence profile from qualifier analysis
+    confidence_profile = Column(JSONB)          # {overall_signal, hedge_rate, one_off_rate, ...}
+    # Segment decomposition summary
+    segment_data = Column(JSONB)                # {segments: [{name, revenue, ...}], sum_check}
+    # Disappeared metrics from prior period
+    disappearance_flags = Column(JSONB)         # {disappeared: [...], new: [...]}
+    # Non-GAAP bridge data
+    non_gaap_bridges = Column(JSONB)            # [{gaap_metric, adjusted_metric, adjustments}]
+    non_gaap_comparison = Column(JSONB)         # {total_flags, gap_trend}
+    # MD&A narrative text (capped, for synthesis context)
+    mda_narrative = Column(Text)
+    detected_period = Column(Text)
+
+    company = relationship("Company")
+    document = relationship("Document")

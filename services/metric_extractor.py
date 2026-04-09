@@ -595,6 +595,10 @@ async def _persist_earnings_metrics(db, document, raw_items):
                 except (ValueError, TypeError):
                     val = None
 
+            # Qualifier enrichment (from qualifier_extractor)
+            qualifiers = item.get("_qualifiers")
+            is_one_off = bool(item.get("_is_one_off", False))
+
             metric = ExtractedMetric(
                 id=uuid.uuid4(),
                 company_id=document.company_id,
@@ -608,6 +612,8 @@ async def _persist_earnings_metrics(db, document, raw_items):
                 source_snippet=str(item.get("source_snippet", ""))[:500],
                 confidence=item.get("confidence", 0.8),
                 needs_review=item.get("confidence", 0.8) < REVIEW_THRESHOLD,
+                is_one_off=is_one_off,
+                qualifier_json=qualifiers if qualifiers else None,
             )
             db.add(metric)
 

@@ -19,7 +19,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import (
-    Company, Document, ExtractedMetric, ThesisVersion,
+    Company, Document, ExtractedMetric, ExtractionProfile, ThesisVersion,
     EventAssessment, ResearchOutput, TrackedKPI, KPIScore,
 )
 
@@ -173,6 +173,113 @@ async def build_tracked_kpi_context(
     return "Tracked KPIs:\n" + "\n".join(lines)
 
 
+async def build_confidence_context(
+    db: AsyncSession, company_id, period: str
+) -> str:
+    """Build context from extraction confidence profiles — management language signals."""
+    q = await db.execute(
+        select(ExtractionProfile).where(
+            ExtractionProfile.company_id == company_id,
+            ExtractionProfile.period_label == period,
+        ).order_by(ExtractionProfile.created_at.desc()).limit(3)
+    )
+    profiles = q.scalars().all()
+    if not profiles:
+        return ""
+
+    lines = []
+    for p in profiles:
+        cp = p.confidence_profile
+        if not cp or not isinstance(cp, dict):
+            continue
+        signal = cp.get("overall_signal", "unknown")
+        hedge = cp.get("hedge_rate", 0)
+        one_off = cp.get("one_off_rate", 0)
+        lines.append(
+            f"Signal: {signal} | hedge_rate: {hedge:.0%} | one_off_rate: {one_off:.0%}"
+        )
+        if cp.get("hedge_terms_used"):
+            lines.append(f"  Hedging language: {', '.join(cp['hedge_terms_used'][:5])}")
+    return "Management language analysis:\n" + "\n".join(lines) if lines else ""
+
+
+async def build_segment_context(
+    db: AsyncSession, company_id, period: str
+) -> str:
+    """Build context from segment decomposition data."""
+    q = await db.execute(
+        select(ExtractionProfile).where(
+            ExtractionProfile.company_id == company_id,
+            ExtractionProfile.period_label == period,
+            ExtractionProfile.segment_data.isnot(None),
+        ).order_by(ExtractionProfile.created_at.desc()).limit(1)
+    )
+    profile = q.scalar_one_or_none()
+    if not profile or not profile.segment_data:
+        return ""
+
+    sd = profile.segment_data
+    if not isinstance(sd, dict):
+        return ""
+
+    segments = sd.get("segments", [])
+    if not segments:
+        return ""
+
+    lines = []
+    for seg in segments[:10]:
+        if isinstance(seg, dict):
+            name = seg.get("name", "Unknown")
+            rev = seg.get("revenue", "")
+            margin = seg.get("margin", "")
+            parts = [name]
+            if rev:
+                parts.append(f"rev={rev}")
+            if margin:
+                parts.append(f"margin={margin}")
+            lines.append(" | ".join(parts))
+    return "Segment breakdown:\n" + "\n".join(lines) if lines else ""
+
+
+async def build_one_off_context(
+    db: AsyncSession, company_id, period: str
+) -> str:
+    """Summarise one-off / non-recurring items for this period."""
+    q = await db.execute(
+        select(ExtractedMetric).where(
+            ExtractedMetric.company_id == company_id,
+            ExtractedMetric.period_label == period,
+            ExtractedMetric.is_one_off == True,
+        ).order_by(ExtractedMetric.confidence.desc()).limit(15)
+    )
+    items = q.scalars().all()
+    if not items:
+        return ""
+
+    lines = []
+    for m in items:
+        val = f"{m.metric_value} {m.unit}" if m.metric_value else m.metric_text
+        lines.append(f"[ONE-OFF] {m.metric_name}: {val}")
+    return "Non-recurring items:\n" + "\n".join(lines)
+
+
+async def build_mda_narrative_context(
+    db: AsyncSession, company_id, period: str, *, max_chars: int = 8000
+) -> str:
+    """Return the stored MD&A narrative text (already captured during extraction)."""
+    q = await db.execute(
+        select(ExtractionProfile.mda_narrative).where(
+            ExtractionProfile.company_id == company_id,
+            ExtractionProfile.period_label == period,
+            ExtractionProfile.mda_narrative.isnot(None),
+        ).order_by(ExtractionProfile.created_at.desc()).limit(1)
+    )
+    row = q.scalar_one_or_none()
+    if not row:
+        return ""
+    return row[:max_chars]
+
+
 async def build_briefing_context(
     db: AsyncSession, company_id, period: str
 ) -> dict:
@@ -186,6 +293,9 @@ async def build_briefing_context(
         "guidance": await build_guidance_summary(db, company_id, period),
         "prior_period": await build_prior_period_context(db, company_id, period),
         "tracked_kpis": await build_tracked_kpi_context(db, company_id),
+        "confidence": await build_confidence_context(db, company_id, period),
+        "segments": await build_segment_context(db, company_id, period),
+        "one_offs": await build_one_off_context(db, company_id, period),
     }
 
 
@@ -197,6 +307,8 @@ async def build_comparison_context(
         "thesis": await build_thesis_context(db, company_id),
         "current_kpis": await build_kpi_summary(db, company_id, period),
         "prior_period": await build_prior_period_context(db, company_id, period),
+        "confidence": await build_confidence_context(db, company_id, period),
+        "one_offs": await build_one_off_context(db, company_id, period),
     }
 
 
