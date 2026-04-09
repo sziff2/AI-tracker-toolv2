@@ -1469,12 +1469,19 @@ function renderCkDecisions(ticker,d){
         const x=xScale(i);
         svg+='<text x="'+x+'" y="'+(H-pad.b+20)+'" fill="var(--text4)" font-size="9" text-anchor="middle">'+d.slice(5)+'</text>';
       });
-      // Current price line
+      // Current price as time-series line (one price per date)
       if(cpPrices.length){
-        const lastCp=data.filter(d=>d.current_price).slice(-1)[0].current_price;
-        const cy=yScale(lastCp);
-        svg+='<line x1="'+pad.l+'" y1="'+cy+'" x2="'+(W-pad.r)+'" y2="'+cy+'" stroke="var(--text4)" stroke-width="1" stroke-dasharray="4,4"/>';
-        svg+='<text x="'+(W-pad.r+2)+'" y="'+(cy+4)+'" fill="var(--text4)" font-size="9">Price</text>';
+        const pricePts=dates.map((d,i)=>{
+          const match=data.find(s=>s.date.startsWith(d)&&s.current_price!=null);
+          return match?{x:xScale(i),y:yScale(match.current_price),v:match.current_price}:null;
+        }).filter(Boolean);
+        if(pricePts.length){
+          const pricePath=pricePts.map((p,i)=>(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+          svg+='<path d="'+pricePath+'" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="6,3" opacity="0.85"/>';
+          pricePts.forEach(p=>{svg+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="#fff"/>';});
+          const lastPt=pricePts[pricePts.length-1];
+          svg+='<text x="'+(lastPt.x+6)+'" y="'+(lastPt.y+4)+'" fill="#fff" font-size="10" font-weight="600">Price '+Math.round(lastPt.v)+'</text>';
+        }
       }
       // Lines per scenario type
       types.forEach(type=>{
@@ -1493,6 +1500,7 @@ function renderCkDecisions(ticker,d){
       svg+='</svg>';
       // Legend
       let legend='<div style="display:flex;gap:16px;justify-content:center;margin-top:8px">';
+      if(cpPrices.length)legend+='<span style="font-family:var(--sans);font-size:11px;color:#fff">● Price</span>';
       types.forEach(t=>{if(data.some(d=>d.scenario_type===t))legend+='<span style="font-family:var(--sans);font-size:11px;color:'+colors[t]+'">● '+labels[t]+'</span>';});
       legend+='</div>';
       el.innerHTML='<div class="cd" style="padding:20px"><div class="cd-t">Scenario History</div>'+svg+legend+'</div>';
@@ -1548,10 +1556,17 @@ async function reloadScenarioChart(ticker){
       svg+='<text x="'+x+'" y="'+(H-pad.b+20)+'" fill="var(--text4)" font-size="9" text-anchor="middle">'+d.slice(5)+'</text>';
     });
     if(cpPrices.length){
-      var lastCp=data.filter(function(d){return d.current_price}).slice(-1)[0].current_price;
-      var cy=yScale(lastCp);
-      svg+='<line x1="'+pad.l+'" y1="'+cy+'" x2="'+(W-pad.r)+'" y2="'+cy+'" stroke="var(--text4)" stroke-width="1" stroke-dasharray="4,4"/>';
-      svg+='<text x="'+(W-pad.r+2)+'" y="'+(cy+4)+'" fill="var(--text4)" font-size="9">Price</text>';
+      var pricePts=dateKeys.map(function(dk,i){
+        var match=data.find(function(s){return s.date===dk&&s.current_price!=null});
+        return match?{x:xScale(i),y:yScale(match.current_price),v:match.current_price}:null;
+      }).filter(Boolean);
+      if(pricePts.length){
+        var pricePath=pricePts.map(function(p,i){return(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)}).join(' ');
+        svg+='<path d="'+pricePath+'" fill="none" stroke="#fff" stroke-width="2.5" stroke-dasharray="6,3" opacity="0.85"/>';
+        pricePts.forEach(function(p){svg+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="3" fill="#fff"/>';});
+        var lastPt=pricePts[pricePts.length-1];
+        svg+='<text x="'+(lastPt.x+6)+'" y="'+(lastPt.y+4)+'" fill="#fff" font-size="10" font-weight="600">Price '+Math.round(lastPt.v)+'</text>';
+      }
     }
     types.forEach(function(type){
       var pts=dateKeys.map(function(dk,i){
@@ -1567,6 +1582,7 @@ async function reloadScenarioChart(ticker){
     });
     svg+='</svg>';
     var legend='<div style="display:flex;gap:16px;justify-content:center;margin-top:8px">';
+    if(cpPrices.length)legend+='<span style="font-family:var(--sans);font-size:11px;color:#fff">● Price</span>';
     types.forEach(function(t){if(data.some(function(d){return d.scenario_type===t}))legend+='<span style="font-family:var(--sans);font-size:11px;color:'+colors[t]+'">● '+labels[t]+'</span>';});
     legend+='</div>';
     el.innerHTML='<div class="cd" style="padding:20px"><div class="cd-t">Scenario History</div>'+svg+legend+'</div>';
