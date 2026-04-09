@@ -131,7 +131,40 @@ async def harvester_status(db: AsyncSession = Depends(get_db)):
             "last_error": last_error,
         })
 
+    # Append per-company coverage gap info
+    try:
+        from services.harvester.coverage import check_coverage
+        coverage = await check_coverage(db)
+        cov_map = {c["ticker"]: c for c in coverage}
+        for item in result:
+            cov = cov_map.get(item["ticker"], {})
+            item["expected_period"] = cov.get("expected_period")
+            item["latest_period"] = cov.get("latest_period")
+            item["quarters_behind"] = cov.get("quarters_behind", 0)
+            item["coverage_gap"] = cov.get("gap", "unknown")
+    except Exception as exc:
+        logger.warning("Coverage check failed in status endpoint: %s", exc)
+
     return result
+
+
+# ── GET /harvester/coverage ───────────────────────────────────────
+
+@router.get("/harvester/coverage")
+async def harvester_coverage(db: AsyncSession = Depends(get_db)):
+    """Per-company document coverage check.
+
+    For each active company, reports whether expected documents for the
+    current reporting period exist in the database.  Gaps mean the
+    analyst should investigate — the harvester may have missed something
+    or the company hasn't published yet.
+    """
+    from services.harvester.coverage import check_coverage, format_coverage_summary
+    coverage = await check_coverage(db)
+    return {
+        "summary": format_coverage_summary(coverage),
+        "companies": coverage,
+    }
 
 
 # ── GET /harvester/sources ────────────────────────────────────────

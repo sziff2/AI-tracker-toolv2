@@ -122,6 +122,12 @@ def format_teams_message(harvest_result: dict) -> dict:
         lines.append(f"**No new documents ({len(gap_companies)} companies):** "
                       + ", ".join(d["ticker"] for d in sorted(gap_companies, key=lambda x: x["ticker"])))
 
+    # Coverage gaps — which companies are missing expected-period documents?
+    coverage_text = harvest_result.get("coverage_text")
+    if coverage_text:
+        lines.append("")
+        lines.append(coverage_text)
+
     body_text = "\n".join(lines)
 
     # Power Automate Workflows webhook format — Adaptive Card as top-level body
@@ -185,10 +191,23 @@ async def post_teams_report(harvest_result: dict, report_id: str | None = None) 
 
 
 async def run_and_report(trigger: str = "auto_weekly") -> dict:
-    """Full weekly flow: harvest → save report → post to Teams."""
+    """Full weekly flow: harvest → save report → run coverage check → post to Teams."""
     result = await run_weekly_harvest()
     logger.info("[REPORT] Harvest complete — new=%d skipped=%d failed=%d, saving report...",
                 result.get("new", 0), result.get("skipped", 0), result.get("failed", 0))
+
+    # Append coverage gap summary so it lands in the Teams message
+    try:
+        from apps.api.database import AsyncSessionLocal
+        from services.harvester.coverage import (
+            check_coverage, format_coverage_for_teams, format_coverage_summary,
+        )
+        async with AsyncSessionLocal() as db:
+            coverage = await check_coverage(db)
+        result["coverage_text"] = format_coverage_for_teams(coverage)
+        logger.info("[REPORT] Coverage: %s", format_coverage_summary(coverage))
+    except Exception as exc:
+        logger.warning("[REPORT] Coverage check failed: %s", exc)
 
     report_id = None
     try:

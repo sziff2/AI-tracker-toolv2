@@ -340,3 +340,58 @@ class TestLLMJsonParsing:
         assert summary["failed_requests"] == 1
         assert summary["total_input_tokens"] == 300
         assert summary["total_output_tokens"] == 150
+
+
+# ─────────────────────────────────────────────────────────────────
+# Coverage Monitor (pure logic — no DB)
+# ─────────────────────────────────────────────────────────────────
+
+from datetime import date
+from services.harvester.coverage import expected_period, period_behind, _period_to_tuple
+
+
+class TestExpectedPeriod:
+    def test_mid_april(self):
+        # Apr 9: Q4 ends Dec 31 + 75 = Mar 16 → Q4 results expected
+        assert expected_period(date(2026, 4, 9)) == "2025_Q4"
+
+    def test_late_june(self):
+        # Jun 20: Q1 ends Mar 31 + 75 = Jun 14 → Q1 results expected
+        assert expected_period(date(2026, 6, 20)) == "2026_Q1"
+
+    def test_early_june(self):
+        # Jun 10: Q1 ends Mar 31 + 75 = Jun 14 → still only Q4 expected
+        assert expected_period(date(2026, 6, 10)) == "2025_Q4"
+
+    def test_mid_september(self):
+        # Sep 20: Q2 ends Jun 30 + 75 = Sep 13 → Q2 results expected
+        assert expected_period(date(2026, 9, 20)) == "2026_Q2"
+
+    def test_late_december(self):
+        # Dec 20: Q3 ends Sep 30 + 75 = Dec 14 → Q3 results expected
+        assert expected_period(date(2026, 12, 20)) == "2026_Q3"
+
+    def test_january(self):
+        # Jan 15: Q3 ends Sep 30 + 75 = Dec 14 → Q3 results expected
+        assert expected_period(date(2026, 1, 15)) == "2025_Q3"
+
+
+class TestPeriodBehind:
+    def test_same_period(self):
+        assert period_behind("2025_Q4", "2025_Q4") == 0
+
+    def test_one_quarter(self):
+        assert period_behind("2025_Q3", "2025_Q4") == 1
+
+    def test_two_quarters(self):
+        assert period_behind("2025_Q2", "2025_Q4") == 2
+
+    def test_cross_year(self):
+        assert period_behind("2024_Q4", "2025_Q2") == 2
+
+    def test_ahead_is_zero(self):
+        assert period_behind("2026_Q1", "2025_Q4") == 0
+
+    def test_bad_format(self):
+        # (0,0) vs (2025,4) = 2025*4 + 4 = 8104
+        assert period_behind("bad", "2025_Q4") > 0
