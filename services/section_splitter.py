@@ -27,8 +27,12 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 
 @dataclass
-class DocumentSection:
-    """A semantically identified section of a filing."""
+class FilingSection:
+    """A semantically identified section of a filing.
+
+    Named FilingSection to distinguish from the SQLAlchemy DocumentSection
+    model in apps/api/models.py (which represents DB rows in document_sections).
+    """
     section_type: str           # financial_statements | mda | notes | risk_factors | guidance | cover | boilerplate
     title: str                  # Detected or inferred section title
     text: str                   # The section content
@@ -38,25 +42,65 @@ class DocumentSection:
     model_tier: str = "default" # fast | default | advanced
     max_tokens: int = 4096      # Token budget for this section's extraction
 
+# Backwards-compatible alias
+DocumentSection = FilingSection
+
 
 # Section heading patterns — ordered by priority
 SECTION_PATTERNS: list[tuple[str, str, str, int]] = [
     # (regex_pattern, section_type, model_tier, max_tokens)
 
+    # ── SEC Item numbers (most reliable signal for 10-K/10-Q) ─
+    (r"(?i)item\s+1[\.\s].*financial\s+statements",
+     "financial_statements", "fast", 4096),
+    (r"(?i)item\s+2[\.\s].*management.{0,5}s?\s+discussion",
+     "mda", "default", 8192),
+    (r"(?i)item\s+1a[\.\s].*risk\s+factors",
+     "risk_factors", "default", 4096),
+    (r"(?i)item\s+7[\.\s].*management.{0,5}s?\s+discussion",
+     "mda", "default", 8192),
+    (r"(?i)item\s+8[\.\s].*financial\s+statements",
+     "financial_statements", "fast", 4096),
+
     # ── Financial Statements (tables → Haiku) ─────────────────
-    (r"(?i)consolidated\s+(statements?\s+of\s+)?(income|operations|earnings|comprehensive)",
+    # Standard + condensed + unaudited variants
+    (r"(?i)(condensed\s+)?(consolidated\s+)?(unaudited\s+)?statements?\s+of\s+(income|operations|earnings|net\s+income)",
      "financial_statements", "fast", 4096),
-    (r"(?i)consolidated\s+(statements?\s+of\s+)?(financial\s+position|balance\s+sheet)",
+    (r"(?i)(condensed\s+)?(consolidated\s+)?(unaudited\s+)?statements?\s+of\s+comprehensive\s+(income|loss)",
      "financial_statements", "fast", 4096),
-    (r"(?i)consolidated\s+(statements?\s+of\s+)?cash\s+flow",
+    (r"(?i)(condensed\s+)?(consolidated\s+)?(unaudited\s+)?(statements?\s+of\s+)?(financial\s+position|balance\s+sheets?)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(condensed\s+)?(consolidated\s+)?(unaudited\s+)?statements?\s+of\s+cash\s+flow",
      "financial_statements", "fast", 4096),
     (r"(?i)(income\s+statement|profit\s+(and|&)\s+loss|p\s*&\s*l)",
      "financial_statements", "fast", 4096),
-    (r"(?i)statement\s+of\s+changes\s+in\s+equity",
+    (r"(?i)(condensed\s+)?(consolidated\s+)?statement\s+of\s+changes\s+in\s+(equity|stockholders)",
      "financial_statements", "fast", 2048),
+
+    # ── Banking / Insurance specific financial headings ────────
+    (r"(?i)(condensed\s+)?(consolidated\s+)?statements?\s+of\s+(financing\s+receivables|loans?\s+and\s+leases?)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(net\s+interest\s+(income|margin)|interest\s+income\s+and\s+interest\s+expense)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(provision|allowance)\s+(for\s+)?(credit|loan)\s+losses",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(investment\s+portfolio|securities\s+(available|held))",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(insurance\s+)?underwriting\s+(results|summary|income)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(claims?\s+reserves?|loss\s+reserves?|combined\s+ratio)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(capital\s+adequacy|regulatory\s+capital|tier\s+1\s+capital|cet\s*1)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(deposit\s+composition|funding\s+sources|liquidity\s+position)",
+     "financial_statements", "fast", 4096),
+
+    # ── Summary / highlights ──────────────────────────────────
     (r"(?i)(financial\s+highlights|key\s+figures|results?\s+at\s+a\s+glance|summary\s+financials)",
      "financial_statements", "fast", 4096),
     (r"(?i)(headline\s+results|group\s+results|financial\s+results\s+summary)",
+     "financial_statements", "fast", 4096),
+    (r"(?i)(selected\s+financial\s+data|five.year\s+summary)",
      "financial_statements", "fast", 4096),
 
     # ── MD&A (narrative → Sonnet with sector context) ─────────
@@ -70,9 +114,14 @@ SECTION_PATTERNS: list[tuple[str, str, str, int]] = [
      "mda", "default", 6144),
     (r"(?i)(strategic\s+report|performance\s+review|segment\s+review)",
      "mda", "default", 8192),
+    # Banking MD&A sections
+    (r"(?i)(credit\s+quality\s+review|asset\s+quality\s+review|loan\s+portfolio\s+review)",
+     "mda", "default", 8192),
+    (r"(?i)(segment\s+results|business\s+segment\s+discussion|reportable\s+segments?)",
+     "mda", "default", 8192),
 
     # ── Notes to Financial Statements ─────────────────────────
-    (r"(?i)notes\s+to\s+(the\s+)?(consolidated\s+)?financial\s+statements",
+    (r"(?i)notes\s+to\s+(the\s+)?(condensed\s+)?(consolidated\s+)?(unaudited\s+)?financial\s+statements",
      "notes", "default", 6144),
     (r"(?i)(significant\s+accounting\s+policies|basis\s+of\s+preparation)",
      "notes", "default", 4096),
@@ -152,7 +201,7 @@ def split_into_sections(
     text: str,
     doc_type: str = "10-K",
     page_texts: list[dict] | None = None,
-) -> list[DocumentSection]:
+) -> list[FilingSection]:
     """
     Split a filing into semantic sections.
 
@@ -162,7 +211,7 @@ def split_into_sections(
         page_texts: Optional list of {page, text} for page tracking
 
     Returns:
-        List of DocumentSection objects, each tagged with section_type,
+        List of FilingSection objects, each tagged with section_type,
         model_tier, and max_tokens for downstream routing.
     """
     boundaries = _find_section_boundaries(text)
@@ -170,7 +219,7 @@ def split_into_sections(
     if not boundaries:
         # No sections detected — fall back to smart chunking
         logger.info("Section splitter: no sections detected, returning full text")
-        return [DocumentSection(
+        return [FilingSection(
             section_type="full_document",
             title=doc_type,
             text=text,
@@ -186,7 +235,7 @@ def split_into_sections(
     if first_pos > 200:
         preamble = text[:first_pos].strip()
         if preamble and not _is_boilerplate(preamble):
-            sections.append(DocumentSection(
+            sections.append(FilingSection(
                 section_type="preamble",
                 title="Document Header / Summary",
                 text=preamble,
@@ -194,6 +243,9 @@ def split_into_sections(
                 model_tier="fast",
                 max_tokens=2048,
             ))
+
+    # Track covered character ranges for uncovered text detection
+    covered_ranges = []
 
     # Process each section boundary
     for i, (pos, heading, section_type) in enumerate(boundaries):
@@ -208,6 +260,8 @@ def split_into_sections(
         if not section_text or len(section_text) < 50:
             continue
 
+        covered_ranges.append((pos, end_pos))
+
         # Skip boilerplate
         if section_type in ("boilerplate", "cover"):
             logger.debug("Section splitter: skipping %s section '%s'", section_type, heading[:60])
@@ -221,7 +275,7 @@ def split_into_sections(
         if has_tables and section_type == "financial_statements":
             tier = "fast"
 
-        sections.append(DocumentSection(
+        sections.append(FilingSection(
             section_type=section_type,
             title=heading[:120],
             text=section_text,
@@ -231,29 +285,23 @@ def split_into_sections(
         ))
 
     # If we found sections but they don't cover much of the document,
-    # add the remaining text as "other"
-    covered_chars = sum(len(s.text) for s in sections)
+    # extract only the uncovered ranges (not the full document again)
+    covered_chars = sum(end - start for start, end in covered_ranges)
     if covered_chars < len(text) * 0.3:
         logger.info(
-            "Section splitter: only %.0f%% covered, adding uncovered text",
+            "Section splitter: only %.0f%% covered, extracting uncovered ranges",
             covered_chars / len(text) * 100,
         )
-        # Find uncovered ranges and add them
-        covered_ranges = set()
-        for s in sections:
-            start = text.find(s.text[:100])
-            if start >= 0:
-                covered_ranges.add((start, start + len(s.text)))
-
-        # Simple approach: just return the full document alongside sections
-        sections.append(DocumentSection(
-            section_type="uncovered",
-            title="Remaining Content",
-            text=text,
-            has_tables=_has_table_content(text),
-            model_tier="default",
-            max_tokens=8192,
-        ))
+        uncovered_text = _extract_uncovered_text(text, covered_ranges)
+        if uncovered_text and len(uncovered_text.strip()) > 200:
+            sections.append(FilingSection(
+                section_type="uncovered",
+                title="Remaining Content",
+                text=uncovered_text,
+                has_tables=_has_table_content(uncovered_text),
+                model_tier="default",
+                max_tokens=8192,
+            ))
 
     logger.info(
         "Section splitter: %d sections from %s (types: %s)",
@@ -279,25 +327,57 @@ def _is_boilerplate(text: str) -> bool:
     return any(signal in lower for signal in boilerplate_signals)
 
 
+def _extract_uncovered_text(text: str, covered_ranges: list[tuple[int, int]]) -> str:
+    """Extract text not covered by any detected section, skipping boilerplate."""
+    if not covered_ranges:
+        return text
+
+    # Sort and merge overlapping ranges
+    sorted_ranges = sorted(covered_ranges)
+    merged = [sorted_ranges[0]]
+    for start, end in sorted_ranges[1:]:
+        if start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+
+    # Collect gaps
+    uncovered_parts = []
+    prev_end = 0
+    for start, end in merged:
+        if start > prev_end:
+            gap = text[prev_end:start].strip()
+            if gap and len(gap) > 100 and not _is_boilerplate(gap):
+                uncovered_parts.append(gap)
+        prev_end = end
+    # Trailing text
+    if prev_end < len(text):
+        gap = text[prev_end:].strip()
+        if gap and len(gap) > 100 and not _is_boilerplate(gap):
+            uncovered_parts.append(gap)
+
+    return "\n\n".join(uncovered_parts)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Convenience: get sections suitable for specific extraction types
 # ═══════════════════════════════════════════════════════════════════
 
-def get_financial_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
+def get_financial_sections(sections: list[FilingSection]) -> list[FilingSection]:
     """Return only sections containing financial statements / tables."""
     return [s for s in sections if s.section_type == "financial_statements"]
 
 
-def get_narrative_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
+def get_narrative_sections(sections: list[FilingSection]) -> list[FilingSection]:
     """Return MD&A, guidance, and other narrative sections."""
     return [s for s in sections if s.section_type in ("mda", "guidance", "preamble")]
 
 
-def get_notes_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
+def get_notes_sections(sections: list[FilingSection]) -> list[FilingSection]:
     """Return notes to financial statements."""
     return [s for s in sections if s.section_type == "notes"]
 
 
-def get_risk_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
+def get_risk_sections(sections: list[FilingSection]) -> list[FilingSection]:
     """Return risk factor sections."""
     return [s for s in sections if s.section_type == "risk_factors"]

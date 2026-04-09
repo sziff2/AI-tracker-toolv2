@@ -34,8 +34,11 @@ from prompts.section_prompts import SECTION_PROMPT_MAP
 from schemas import ExtractedKPI, GuidanceItem
 from services.llm_client import (
     call_llm_json, call_llm_json_async, call_llm_json_parallel,
+    call_llm_native_async,
     TIER_FAST, TIER_DEFAULT, TIER_ADVANCED,
 )
+# Import JSON parser from llm_client for parsing native async responses
+from services.llm_client import _parse_json as _llm_parse_json
 
 logger = logging.getLogger(__name__)
 
@@ -189,14 +192,17 @@ async def _extract_with_sections(
         })
 
     # ── Step 3: Run all section extractions in parallel ──────
+    # Uses call_llm_native_async (true async + retry) instead of
+    # call_llm_json_async (ThreadPoolExecutor, no retry) to avoid
+    # silent failures on rate limits / transient errors.
     async def run_section_extraction(task):
         try:
-            result = await call_llm_json_async(
+            result = await call_llm_native_async(
                 task["prompt"],
                 max_tokens=task["max_tokens"],
-                tier=task["tier"],
+                feature="section_extraction",
             )
-            return result
+            return _llm_parse_json(result["text"])
         except Exception as e:
             logger.warning(
                 "Section extraction failed (%s): %s",
