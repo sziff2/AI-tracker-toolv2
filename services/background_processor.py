@@ -67,7 +67,9 @@ async def _add_log(job_id: uuid.UUID, message: str, level: str = "info"):
 
 
 async def _persist_extraction_profile(db: AsyncSession, doc, extraction: dict):
-    """Persist enriched extraction metadata to extraction_profiles table."""
+    """Persist enriched extraction metadata to extraction_profiles table
+    AND to research_outputs (as extraction_context) so build_agent_context()
+    can find it."""
     if not isinstance(extraction, dict):
         return
     profile = ExtractionProfile(
@@ -88,8 +90,29 @@ async def _persist_extraction_profile(db: AsyncSession, doc, extraction: dict):
         detected_period=extraction.get("detected_period"),
     )
     db.add(profile)
+
+    # Also persist as ResearchOutput so build_extraction_context() can
+    # serve it to Phase 1 agents via build_agent_context().
+    import json as _json
+    ctx_row = ResearchOutput(
+        id=uuid.uuid4(),
+        company_id=doc.company_id,
+        period_label=doc.period_label,
+        output_type="extraction_context",
+        content_json=_json.dumps({
+            "mda_narrative":       (extraction.get("mda_narrative") or "")[:20000],
+            "confidence_profile":  extraction.get("confidence_profile"),
+            "disappearance_flags": extraction.get("disappearance_flags"),
+            "non_gaap_bridge":     extraction.get("non_gaap_bridge", []),
+            "segment_data":        extraction.get("segment_data"),
+            "detected_period":     extraction.get("detected_period", ""),
+            "extraction_method":   extraction.get("extraction_method", "unknown"),
+        }, default=str),
+    )
+    db.add(ctx_row)
+
     await db.commit()
-    logger.info("Persisted extraction profile for doc %s (method=%s, items=%s)",
+    logger.info("Persisted extraction profile + context for doc %s (method=%s, items=%s)",
                 doc.id, extraction.get("extraction_method"), extraction.get("items_extracted"))
 
 
