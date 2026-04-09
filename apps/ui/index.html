@@ -1486,7 +1486,8 @@ function renderCkDecisions(ticker,d){
       // Lines per scenario type
       types.forEach(type=>{
         const pts=dates.map((d,i)=>{
-          const match=data.find(s=>s.date.startsWith(d)&&s.scenario_type===type);
+          const matches=data.filter(s=>s.date.startsWith(d)&&s.scenario_type===type);
+          const match=matches.length?matches[matches.length-1]:null;
           return match?{x:xScale(i),y:yScale(match.target_price),v:match.target_price}:null;
         }).filter(Boolean);
         if(!pts.length)return;
@@ -1570,7 +1571,8 @@ async function reloadScenarioChart(ticker){
     }
     types.forEach(function(type){
       var pts=dateKeys.map(function(dk,i){
-        var match=data.find(function(s){return s.date===dk&&s.scenario_type===type});
+        var matches=data.filter(function(s){return s.date===dk&&s.scenario_type===type});
+        var match=matches.length?matches[matches.length-1]:null;
         return match?{x:xScale(i),y:yScale(match.target_price),v:match.target_price}:null;
       }).filter(Boolean);
       if(!pts.length)return;
