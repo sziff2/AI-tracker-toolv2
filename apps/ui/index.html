@@ -823,15 +823,15 @@ function renderCockpit(ticker,d){
   h+='<div class="tabs">';
   allTabs.forEach(function(t){h+='<button class="tab'+(activeTab===t[0]?' on':'')+'" onclick="ckTab(\''+t[0]+'\',this)">'+t[1]+'</button>';});
   h+='</div>';
-  // Tab content — show active tab immediately, no flash
-  h+='<div id="ck-thesis" style="'+(activeTab!=='thesis'?'display:none':'')+'">'+(activeTab==='thesis'?renderCkThesis(d,co.name,ticker):'')+'</div>';
-  h+='<div id="ck-results" style="'+(activeTab!=='results'?'display:none':'')+'">'+(activeTab==='results'?renderCkResults(ticker,d):'')+'</div>';
-  h+='<div id="ck-kpis" style="'+(activeTab!=='kpis'?'display:none':'')+'">'+(activeTab==='kpis'?renderCkKPIs(ticker,d):'')+'</div>';
+  // Tab content — all rendered, correct one visible immediately
+  h+='<div id="ck-thesis" style="'+(activeTab!=='thesis'?'display:none':'')+'">'+renderCkThesis(d,co.name,ticker)+'</div>';
+  h+='<div id="ck-results" style="'+(activeTab!=='results'?'display:none':'')+'">'+renderCkResults(ticker,d)+'</div>';
+  h+='<div id="ck-kpis" style="'+(activeTab!=='kpis'?'display:none':'')+'">'+renderCkKPIs(ticker,d)+'</div>';
   h+='<div id="ck-guidance" style="'+(activeTab!=='guidance'?'display:none':'')+'"><div class="ld">Loading guidance…</div></div>';
   h+='<div id="ck-moat" style="'+(activeTab!=='moat'?'display:none':'')+'"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-execution" style="'+(activeTab!=='execution'?'display:none':'')+'"><div class="ld">Loading…</div></div>';
   h+='<div id="ck-esg" style="'+(activeTab!=='esg'?'display:none':'')+'"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
-  h+='<div id="ck-decisions" style="'+(activeTab!=='decisions'?'display:none':'')+'">'+(activeTab==='decisions'?renderCkDecisions(ticker,d):'')+'</div>';
+  h+='<div id="ck-decisions" style="'+(activeTab!=='decisions'?'display:none':'')+'">'+renderCkDecisions(ticker,d)+'</div>';
   h+='<div id="ck-documents" style="'+(activeTab!=='documents'?'display:none':'')+'"><div class="ld" style="margin:24px 0">Loading…</div></div>';
   c.innerHTML=h;
 }
