@@ -76,6 +76,7 @@ class BulkPriceRow(BaseModel):
     ticker: str
     price: float
     currency: str = "USD"
+    price_date: Optional[str] = None  # ISO format, defaults to now
 
 class ScenarioInput(BaseModel):
     scenario_type: str          # bear | base | bull
@@ -396,9 +397,15 @@ async def bulk_price_update(body: list[BulkPriceRow], db: AsyncSession = Depends
     for row in body:
         try:
             company = await _get_company(db, row.ticker)
+            pd = datetime.now(timezone.utc)
+            if row.price_date:
+                try:
+                    pd = datetime.fromisoformat(row.price_date.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
             rec = PriceRecord(
                 id=uuid.uuid4(), company_id=company.id, price=row.price,
-                currency=row.currency, price_date=datetime.now(timezone.utc),
+                currency=row.currency, price_date=pd,
                 source="bulk_import",
             )
             db.add(rec)
@@ -416,6 +423,73 @@ async def trigger_price_refresh(ticker: str = None):
     tickers = [ticker.upper()] if ticker else None
     result = await refresh_prices(tickers=tickers)
     return result
+
+
+@router.post("/companies/{ticker}/backload-snapshots")
+async def backload_scenario_snapshots(
+    ticker: str,
+    days: int = 5,
+    db: AsyncSession = Depends(get_db),
+):
+    """Backload scenario snapshots using Yahoo Finance historical prices.
+    Creates one snapshot per scenario per day for the last N trading days."""
+    company = await _get_company(db, ticker)
+    from services.price_feed import bloomberg_to_yahoo
+    import httpx
+
+    yahoo_ticker = bloomberg_to_yahoo(ticker.upper())
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
+            params={"range": f"{days * 2}d", "interval": "1d"},
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(502, f"Yahoo returned {resp.status_code}")
+        chart = resp.json().get("chart", {}).get("result", [])
+        if not chart:
+            raise HTTPException(502, "No chart data from Yahoo")
+
+    timestamps = chart[0].get("timestamp", [])
+    closes = chart[0]["indicators"]["quote"][0].get("close", [])
+    currency = chart[0]["meta"].get("currency", "USD")
+
+    # Get current scenarios
+    scenarios_q = await db.execute(
+        select(ValuationScenario).where(ValuationScenario.company_id == company.id)
+    )
+    scenarios = [s for s in scenarios_q.scalars().all() if s.target_price is not None]
+    if not scenarios:
+        raise HTTPException(400, "No scenarios set for this company")
+
+    # Insert price records + scenario snapshots for each day
+    count = 0
+    for ts, close in zip(timestamps[-days:], closes[-days:]):
+        if close is None:
+            continue
+        snap_date = datetime.fromtimestamp(ts, tz=timezone.utc)
+
+        # Historical price record
+        db.add(PriceRecord(
+            id=uuid.uuid4(), company_id=company.id,
+            price=close, currency=currency, price_date=snap_date,
+            source="backload",
+        ))
+
+        # Scenario snapshot per scenario
+        for s in scenarios:
+            db.add(ScenarioSnapshot(
+                id=uuid.uuid4(), company_id=company.id,
+                snapshot_date=snap_date, scenario_type=s.scenario_type,
+                target_price=float(s.target_price),
+                probability=float(s.probability) if s.probability else None,
+                current_price=close, currency=currency,
+                source="backload",
+            ))
+            count += 1
+
+    await db.commit()
+    return {"ticker": ticker, "days": len(timestamps[-days:]), "snapshots_created": count}
 
 
 # ═══════════════════════════════════════════════════════════════
