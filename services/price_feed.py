@@ -49,12 +49,17 @@ _EXCHANGE_MAP = {
     "FP": ".PA",    # Paris
     "SM": ".MC",    # Madrid
     "BB": ".BR",    # Brussels
+    "GA": ".AT",    # Athens
+    "ID": ".IR",    # Ireland
 }
 
 
 # Tickers where Bloomberg symbol doesn't match Yahoo directly
 _TICKER_OVERRIDES = {
     "SHBA SS": "SHB-A.ST",    # Svenska Handelsbanken A shares
+    "BP/ LN": "BP.L",         # Slash in Bloomberg ticker
+    "BT/A LN": "BT-A.L",     # Slash in Bloomberg ticker
+    "RYA ID": "RYA.IR",        # Ryanair on Irish exchange
 }
 
 
