@@ -7,15 +7,17 @@ Principles:
   3. Compress context into structured key-value facts
   4. Each pipeline step gets minimum required context
 
-This service sits between the database and the LLM prompts,
-building focused, compressed context for each reasoning step.
+For Phase 1 agents, use build_agent_context() — the unified
+orchestrator-facing function that returns everything an agent
+pipeline needs in a single dict.
 """
 
 import json
 import logging
+import re
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models import (
@@ -25,6 +27,173 @@ from apps.api.models import (
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────────────────────
+# Period arithmetic — local to avoid importing from deprecated
+# thesis_comparator.py (being replaced by agents)
+# ─────────────────────────────────────────────────────────────────
+
+def _previous_period(period: str) -> str:
+    """
+    Return the immediately prior period label.
+    2025_Q1 → 2024_Q4,  2025_Q2 → 2025_Q1, etc.
+    FY is treated as Q4 throughout the codebase.
+    """
+    match = re.match(r"(\d{4})_Q(\d)", period)
+    if not match:
+        return period
+    year, quarter = int(match.group(1)), int(match.group(2))
+    if quarter == 1:
+        return f"{year - 1}_Q4"
+    return f"{year}_Q{quarter - 1}"
+
+
+# ─────────────────────────────────────────────────────────────────
+# Unified orchestrator entry point (Phase 1)
+# ─────────────────────────────────────────────────────────────────
+
+async def build_agent_context(
+    db: AsyncSession,
+    company_id,
+    period: str,
+) -> dict:
+    """
+    Build the full context dict passed to Phase 1 agents.
+
+    Call this once per pipeline run. Pass the result as the inputs
+    dict to each agent's run() method.
+
+    Returns company identity, thesis, metrics, guidance, tracked KPIs,
+    enriched extraction context, and the active context contract.
+    """
+    company_meta = await _build_company_meta(db, company_id)
+    thesis = await build_thesis_context(db, company_id)
+    kpis = await build_kpi_summary(db, company_id, period)
+    guidance = await build_guidance_summary(db, company_id, period)
+    prior_period = await build_prior_period_context(db, company_id, period)
+    tracked_kpis = await build_tracked_kpi_context(db, company_id)
+    extraction_ctx = await build_extraction_context(db, company_id, period)
+    context_contract = await build_context_contract(db)
+
+    return {
+        # Identity
+        "ticker":           company_meta.get("ticker", ""),
+        "company_name":     company_meta.get("name", ""),
+        "sector":           company_meta.get("sector", ""),
+        "industry":         company_meta.get("industry", ""),
+        "country":          company_meta.get("country", ""),
+        "period_label":     period,
+        # Thesis and metrics
+        "thesis":           thesis,
+        "extracted_metrics": kpis,
+        "guidance":          guidance,
+        "prior_period":      prior_period,
+        "tracked_kpis":      tracked_kpis,
+        # Enriched extraction outputs
+        "mda_narrative":       extraction_ctx.get("mda_narrative", ""),
+        "confidence_profile":  extraction_ctx.get("confidence_profile", {}),
+        "disappearance_flags": extraction_ctx.get("disappearance_flags", {}),
+        "non_gaap_bridge":     extraction_ctx.get("non_gaap_bridge", []),
+        "segment_data":        extraction_ctx.get("segment_data"),
+        "detected_period":     extraction_ctx.get("detected_period", ""),
+        # Shared macro assumptions — injected into every agent prompt
+        # No agent may contradict these assumptions (enforced by QC agent)
+        "context_contract":    context_contract,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Enriched extraction context
+# ─────────────────────────────────────────────────────────────────
+
+async def build_extraction_context(
+    db: AsyncSession,
+    company_id,
+    period: str,
+) -> dict:
+    """
+    Load enriched extraction context persisted by metric_extractor.py.
+    Queries research_outputs WHERE output_type='extraction_context'.
+    Returns empty dict if extraction has not run yet for this period.
+    """
+    try:
+        q = await db.execute(
+            select(ResearchOutput)
+            .where(ResearchOutput.company_id == company_id)
+            .where(ResearchOutput.period_label == period)
+            .where(ResearchOutput.output_type == "extraction_context")
+            .order_by(desc(ResearchOutput.created_at))
+            .limit(1)
+        )
+        row = q.scalar_one_or_none()
+        if row and row.content_json:
+            return json.loads(row.content_json)
+    except Exception as e:
+        logger.warning("Failed to load extraction context for %s %s: %s",
+                       company_id, period, str(e)[:100])
+    return {}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Context Contract — shared macro assumptions for all agents
+# ─────────────────────────────────────────────────────────────────
+
+async def build_context_contract(db: AsyncSession) -> dict:
+    """
+    Load the active ContextContract — the shared macro assumptions that
+    every agent must operate within and not contradict.
+
+    Returns a dict of macro assumptions if a contract is active.
+    Returns an empty dict if no contract has been set yet (safe default —
+    agents will still run, they just won't have macro constraints injected).
+    """
+    try:
+        from apps.api.models import ContextContract
+        q = await db.execute(
+            select(ContextContract)
+            .where(ContextContract.is_active == True)
+            .order_by(ContextContract.version.desc())
+            .limit(1)
+        )
+        contract = q.scalar_one_or_none()
+        if contract and contract.macro_assumptions:
+            return {
+                "version":          contract.version,
+                "macro_assumptions": contract.macro_assumptions,
+                "analyst_overrides": contract.analyst_overrides or {},
+                "authored_by":       contract.authored_by or "system",
+            }
+    except Exception as e:
+        logger.warning("Failed to load context contract: %s", str(e)[:100])
+    return {}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Company metadata
+# ─────────────────────────────────────────────────────────────────
+
+async def _build_company_meta(db: AsyncSession, company_id) -> dict:
+    """Query company identity fields."""
+    try:
+        q = await db.execute(select(Company).where(Company.id == company_id))
+        company = q.scalar_one_or_none()
+        if company:
+            return {
+                "ticker":   company.ticker or "",
+                "name":     company.name or "",
+                "sector":   company.sector or "",
+                "industry": company.industry or "",
+                "country":  company.country or "",
+            }
+    except Exception as e:
+        logger.warning("Failed to load company meta for %s: %s",
+                       company_id, str(e)[:100])
+    return {}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Individual context builders (also used by legacy pipeline)
+# ─────────────────────────────────────────────────────────────────
 
 async def build_thesis_context(db: AsyncSession, company_id) -> str:
     """Return only the core thesis — not the full version history."""
@@ -65,7 +234,6 @@ async def build_kpi_summary(
     if not metrics:
         return "No metrics extracted for this period."
 
-    # Deduplicate by name (keep highest confidence)
     seen = set()
     lines = []
     for m in metrics:
@@ -107,27 +275,23 @@ async def build_prior_period_context(
     db: AsyncSession, company_id, current_period: str
 ) -> str:
     """
-    Get a compressed summary of the prior period for comparison.
-    Uses the stored research output if available (layered summary),
-    otherwise falls back to raw metrics.
+    Compressed prior period summary.
+    Uses stored research output if available, otherwise falls back to metrics.
     """
-    from services.thesis_comparator import _previous_period
     prior = _previous_period(current_period)
 
-    # Try stored analysis first (already a summary)
     q = await db.execute(
         select(ResearchOutput).where(
             ResearchOutput.company_id == company_id,
             ResearchOutput.period_label == prior,
             ResearchOutput.output_type.in_(["full_analysis", "batch_synthesis"]),
-        ).order_by(ResearchOutput.created_at.desc()).limit(1)
+        ).order_by(desc(ResearchOutput.created_at)).limit(1)
     )
     output = q.scalar_one_or_none()
 
     if output and output.content_json:
         try:
             data = json.loads(output.content_json)
-            # Extract just the bottom line and key metrics — not the full analysis
             parts = []
             briefing = data.get("briefing") or data.get("synthesis")
             if briefing:
@@ -141,7 +305,6 @@ async def build_prior_period_context(
         except Exception:
             pass
 
-    # Fall back to compressed metrics
     return await build_kpi_summary(db, company_id, prior, max_metrics=15)
 
 
@@ -172,6 +335,10 @@ async def build_tracked_kpi_context(
 
     return "Tracked KPIs:\n" + "\n".join(lines)
 
+
+# ─────────────────────────────────────────────────────────────────
+# ExtractionProfile-based builders (used by legacy pipeline)
+# ─────────────────────────────────────────────────────────────────
 
 async def build_confidence_context(
     db: AsyncSession, company_id, period: str
@@ -280,13 +447,15 @@ async def build_mda_narrative_context(
     return row[:max_chars]
 
 
+# ─────────────────────────────────────────────────────────────────
+# Legacy step-specific builders (kept for backward compat —
+# use build_agent_context() for Phase 1 agents)
+# ─────────────────────────────────────────────────────────────────
+
 async def build_briefing_context(
     db: AsyncSession, company_id, period: str
 ) -> dict:
-    """
-    Build the minimum context needed for the briefing step.
-    Returns a dict with structured, compressed context.
-    """
+    """LEGACY — use build_agent_context() for Phase 1 agents."""
     return {
         "thesis": await build_thesis_context(db, company_id),
         "kpis": await build_kpi_summary(db, company_id, period),
@@ -302,7 +471,7 @@ async def build_briefing_context(
 async def build_comparison_context(
     db: AsyncSession, company_id, period: str
 ) -> dict:
-    """Minimum context for the thesis comparison step."""
+    """LEGACY — use build_agent_context() for Phase 1 agents."""
     return {
         "thesis": await build_thesis_context(db, company_id),
         "current_kpis": await build_kpi_summary(db, company_id, period),
@@ -315,8 +484,7 @@ async def build_comparison_context(
 async def build_surprise_context(
     db: AsyncSession, company_id, period: str
 ) -> dict:
-    """Minimum context for surprise detection."""
-    from services.thesis_comparator import _previous_period
+    """LEGACY — use build_agent_context() for Phase 1 agents."""
     prior = _previous_period(period)
     return {
         "guidance": await build_guidance_summary(db, company_id, prior),
