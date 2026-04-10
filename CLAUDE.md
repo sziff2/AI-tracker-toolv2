@@ -25,8 +25,15 @@ Priority: SEC EDGAR → Investegate RNS → IR regex scraper → LLM scraper
 - robots.txt compliance: `services/harvester/sources/robots_check.py` checks before scraping
 - Retry logic: `services/harvester/http_retry.py` with exponential backoff on 429/502/503/504
 
+## Harvester Coverage Monitor
+- `services/harvester/coverage.py` — checks each company's latest document period vs expected period
+- Expected period uses 75-day lag after quarter-end (covers 10-K 60-day deadline + buffer)
+- `GET /harvester/coverage` — per-company gap report (`ok`/`behind`/`missing`/`no_docs`)
+- `GET /harvester/status` — includes `expected_period`, `latest_period`, `quarters_behind`, `coverage_gap` per company
+- Coverage gaps appended to weekly Teams report automatically
+
 ## Weekly Auto-Harvest
-- Celery Beat: Monday + Tuesday 00:00 UTC (1 AM BST). Tuesday is temporary for testing.
+- Celery Beat: Monday 00:00 UTC (1 AM BST)
 - Skips LLM scraper to contain costs (only EDGAR + Investegate + IR regex)
 - 90-second per-company timeout prevents slow scrapers blocking the run
 - Saves a `HarvestReport` to DB with per-company breakdown
@@ -36,9 +43,12 @@ Priority: SEC EDGAR → Investegate RNS → IR regex scraper → LLM scraper
 
 ## Daily Price Feed
 - Celery Beat: daily at 18:00 UTC (7 PM BST, after US market close)
-- Yahoo Finance as primary source, EODHD as fallback
+- Yahoo Finance as primary source (direct httpx, not yfinance library), EODHD as fallback
 - Bloomberg→Yahoo ticker mapping in `services/price_feed.py`
 - After price update, auto-snapshots current price against valuation scenarios for chart tracking
+- Scenario history chart shows price as white dashed time-series line vs scenario target lines
+- `POST /companies/{ticker}/backload-snapshots?days=N` — backload historical prices + snapshots from Yahoo
+- `POST /prices/bulk` accepts optional `price_date` (ISO format) for historical imports
 - Manual trigger: `POST /prices/refresh`
 
 ## LLM Client — Two Async Paths
@@ -206,7 +216,7 @@ Document → parse (PDF/HTML/DOCX)
   → qualifier enrichment (hedge terms, one-off detection)
   → post-processing (normalise, dedup)
   → source anchoring verification
-  → persist: ExtractedMetric rows + ExtractionProfile row
+  → persist: ExtractedMetric rows + ExtractionProfile row + ResearchOutput (extraction_context)
 ```
 
 ### Section Splitter (`services/section_splitter.py`)
@@ -287,13 +297,26 @@ Sits between the database and LLM prompts, building focused compressed context f
 ```bash
 DATABASE_URL="postgresql+asyncpg://x:x@localhost/x" pytest tests/ -v
 ```
-146 tests across 5 test files. Tests don't need a real DB — the dummy URL satisfies import-time engine creation.
+200 tests across 6 test files. Tests don't need a real DB — the dummy URL satisfies import-time engine creation. The 13 `test_api.py` errors are expected (no local PostgreSQL).
 
 ## Deployment
 Push to main → Railway auto-deploys (web, worker, beat services). UI served with no-cache headers to prevent stale JS.
 Production URL: https://ai-tracker-tool-production.up.railway.app
 Redis deployed on Railway (Celery broker + backend).
 Three Railway services: web (uvicorn), worker (celery worker), beat (celery beat).
+
+### Railway Environment Variables
+All three services need:
+- `DATABASE_URL` — `${{shared.DATABASE_URL}}` (PostgreSQL connection)
+- `CELERY_BROKER_URL` — `${{Redis.REDIS_URL}}/1`
+- `CELERY_RESULT_BACKEND` — `${{Redis.REDIS_URL}}/2`
+- `PYTHONPATH` — `/app` (also set in Dockerfile, but env var is belt-and-braces)
+
+Web additionally needs: `REDIS_URL`, `ANTHROPIC_API_KEY`, `TEAMS_WEBHOOK_URL`
+Worker additionally needs: `TEAMS_WEBHOOK_URL` (for harvest report notifications)
+
+### Deploy Safety
+Deploys kill running Worker processes. Do NOT push while a harvest or price refresh is running — check `GET /harvester/reports/latest` first.
 
 ## Things to Watch
 - Railway PostgreSQL has limited storage — `Document.file_content` does NOT exist in the model. Do not add it.

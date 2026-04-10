@@ -63,3 +63,20 @@ class BudgetGuard:
             )
 
         return cost
+
+    def add_cost(self, cost_usd: float) -> None:
+        """Add a pre-calculated cost (used by orchestrator when agent reports cost)."""
+        self.total_spend += cost_usd
+        self.call_count += 1
+        if self.total_spend >= self.budget_usd:
+            raise BudgetExceeded(
+                f"Pipeline budget ${self.budget_usd:.2f} exceeded "
+                f"(spent ${self.total_spend:.2f})"
+            )
+
+    def is_exceeded(self) -> bool:
+        return self.total_spend >= self.budget_usd
+
+    @property
+    def spent_usd(self) -> float:
+        return self.total_spend

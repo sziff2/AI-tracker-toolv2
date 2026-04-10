@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # Wall-clock timeout for an entire pipeline run in seconds.
     agent_pipeline_timeout_seconds: int = 300
 
+    # Enable agent output caching (24h TTL per agent).
+    agent_cache_enabled: bool = False
+
     # Per-agent model overrides — applied by the orchestrator at pipeline
     # config time, before agents run. Takes precedence over tier defaults
     # but yields to agent.model_override set on the class itself.
