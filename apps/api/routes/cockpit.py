@@ -817,6 +817,46 @@ async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = De
     }
 
 
+@router.get("/companies/{ticker}/metric-names")
+async def get_metric_names(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Return distinct extracted metric names for this company, grouped by segment.
+    Used by the KPI tab dropdown so analysts can pick from actual data."""
+    from apps.api.models import ExtractedMetric
+    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    q = await db.execute(
+        select(
+            ExtractedMetric.metric_name,
+            ExtractedMetric.unit,
+            ExtractedMetric.segment,
+            func.count(ExtractedMetric.id).label("count"),
+            func.max(ExtractedMetric.confidence).label("max_confidence"),
+        )
+        .where(ExtractedMetric.company_id == company.id)
+        .group_by(ExtractedMetric.metric_name, ExtractedMetric.unit, ExtractedMetric.segment)
+        .order_by(func.count(ExtractedMetric.id).desc())
+    )
+    rows = q.all()
+
+    # Group by segment
+    by_segment = {}
+    for r in rows:
+        seg = r.segment or "general"
+        if seg not in by_segment:
+            by_segment[seg] = []
+        by_segment[seg].append({
+            "name": r.metric_name,
+            "unit": r.unit,
+            "count": r.count,
+            "confidence": float(r.max_confidence) if r.max_confidence else None,
+        })
+
+    return {"ticker": ticker, "total": len(rows), "by_segment": by_segment}
+
+
 # ─────────────────────────────────────────────────────────────────
 # Competitive Advantage / Moat Analysis
 # ─────────────────────────────────────────────────────────────────

@@ -1024,7 +1024,11 @@ function renderCkKPIs(ticker,d){
   const periods=sortPeriods(Object.keys({...abp,...dbp}));
   let h='';
   // Always show add form at top
-  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px"><input id="nkn" placeholder="Add KPI name (e.g. Revenue organic growth)"><input id="nku" placeholder="Unit (e.g. %)" style="max-width:120px"><button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button></div>';
+  h+='<div class="form-row" style="margin-top:0;margin-bottom:16px;flex-wrap:wrap;gap:8px">';
+  h+='<div style="position:relative;flex:1;min-width:200px"><input id="nkn" placeholder="Type or select from extracted metrics..." autocomplete="off" onfocus="showMetricDropdown(\''+ticker+'\')" oninput="filterMetricDropdown(this.value)"><div id="nkn-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:280px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:8px;z-index:100;margin-top:2px"></div></div>';
+  h+='<input id="nku" placeholder="Unit" style="max-width:80px">';
+  h+='<button onclick="addKPI(\''+ticker+'\')">+ Add KPI</button>';
+  h+='</div>';
   if(!kpis.length){
     h+='<div style="text-align:center;padding:30px;color:var(--text4);font-family:var(--sans);font-size:13px">No KPIs tracked yet. Add KPIs above — they will be populated automatically when you run analyses.</div>';
     return h;
@@ -1668,7 +1672,56 @@ async function saveScenarios(ticker){
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
 async function setOverallScore(t,p,s){document.querySelectorAll('.sb[data-period="'+p+'"]').forEach(b=>{if(!b.dataset.kpi)b.classList.toggle('on',parseInt(b.textContent)===s);});toast('Overall score is computed from individual KPI scores. Set scores on individual KPIs below.','info');}
 async function setKPIValue(t,k,p,currentVal){const newVal=prompt('Enter value:',currentVal||'');if(newVal===null)return;const numVal=newVal===''?null:parseFloat(newVal);try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:isNaN(numVal)?null:numVal,value_text:newVal})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
-async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
+async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;const dd=E('nkn-dropdown');if(dd)dd.style.display='none';try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
+
+// ── Metric name dropdown for KPI selection ──────────────────
+var _metricNamesCache={};
+async function showMetricDropdown(ticker){
+  const dd=E('nkn-dropdown');if(!dd)return;
+  if(!_metricNamesCache[ticker]){
+    try{
+      const r=await fetch('/api/v1/companies/'+enc(ticker)+'/metric-names');
+      if(r.ok)_metricNamesCache[ticker]=await r.json();
+      else{_metricNamesCache[ticker]={by_segment:{},total:0};return;}
+    }catch(e){return;}
+  }
+  const data=_metricNamesCache[ticker];
+  if(!data.total){dd.innerHTML='<div style="padding:12px;font-size:12px;color:var(--text4)">No extracted metrics yet. Process documents first.</div>';dd.style.display='block';return;}
+  _renderMetricDropdown(data,'');
+  dd.style.display='block';
+  document.addEventListener('click',_closeMetricDropdown);
+}
+function filterMetricDropdown(query){
+  const ticker=E('ck-company')?.value;
+  const data=_metricNamesCache[ticker];
+  if(!data)return;
+  _renderMetricDropdown(data,query.toLowerCase());
+}
+function _renderMetricDropdown(data,filter){
+  const dd=E('nkn-dropdown');if(!dd)return;
+  let html='';
+  const segments=Object.keys(data.by_segment).sort();
+  for(const seg of segments){
+    const metrics=data.by_segment[seg].filter(m=>!filter||m.name.toLowerCase().includes(filter));
+    if(!metrics.length)continue;
+    html+='<div style="padding:4px 12px;font-size:10px;font-weight:600;color:var(--text4);text-transform:uppercase;letter-spacing:.5px;background:var(--bg3);position:sticky;top:0">'+esc(seg)+'</div>';
+    for(const m of metrics){
+      const conf=m.confidence?(' ('+Math.round(m.confidence*100)+'%)':'');
+      html+='<div class="metric-dd-item" style="padding:6px 12px;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;border-bottom:1px solid var(--bg3)" onmouseover="this.style.background=\'var(--bg4)\'" onmouseout="this.style.background=\'none\'" onclick="selectMetricName(\''+esc(m.name).replace(/'/g,"\\'")+'\',\''+esc(m.unit||'').replace(/'/g,"\\'")+'\')"><span style="color:var(--text1)">'+esc(m.name)+'</span><span style="color:var(--text4);font-family:var(--mono);font-size:10px">'+esc(m.unit||'')+conf+'</span></div>';
+    }
+  }
+  if(!html)html='<div style="padding:12px;font-size:12px;color:var(--text4)">No matches</div>';
+  dd.innerHTML=html;
+}
+function selectMetricName(name,unit){
+  E('nkn').value=name;
+  if(unit&&E('nku'))E('nku').value=unit;
+  const dd=E('nkn-dropdown');if(dd)dd.style.display='none';
+}
+function _closeMetricDropdown(e){
+  const dd=E('nkn-dropdown');if(!dd)return;
+  if(!dd.contains(e.target)&&e.target.id!=='nkn'){dd.style.display='none';document.removeEventListener('click',_closeMetricDropdown);}
+}
 async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
 async function editKPI(t,k,currentName,currentUnit){
   const newName=prompt('KPI name:',currentName);if(!newName||newName===currentName&&!confirm('Change unit too?')){}
