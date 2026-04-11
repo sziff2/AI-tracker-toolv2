@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -37,6 +37,7 @@ from apps.api.routes import (
     harvester_router,
 )
 from apps.api.routes.feedback import router as feedback_router
+from apps.api.routes.pipeline import router as pipeline_router
 from configs.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,117 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
+# ── Authentication ───────────────────────────────────────────────
+
+import hashlib
+import hmac
+import secrets
+
+_AUTH_OPEN_PATHS = {"/health", "/robots.txt", "/login", "/auth/login"}
+
+
+def _sign_session(value: str) -> str:
+    """Create a signed session token."""
+    sig = hmac.new(settings.session_secret.encode(), value.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{value}.{sig}"
+
+
+def _verify_session(token: str) -> bool:
+    """Verify a signed session token."""
+    if not token or "." not in token:
+        return False
+    value, sig = token.rsplit(".", 1)
+    expected = hmac.new(settings.session_secret.encode(), value.encode(), hashlib.sha256).hexdigest()[:16]
+    return hmac.compare_digest(sig, expected)
+
+
+if settings.app_password:
+    @app.middleware("http")
+    async def auth_middleware(request: Request, call_next):
+        path = request.url.path
+        # Allow open paths
+        if path in _AUTH_OPEN_PATHS:
+            return await call_next(request)
+        # Check session cookie
+        session = request.cookies.get("session")
+        if session and _verify_session(session):
+            return await call_next(request)
+        # API calls get 401, browser gets redirect
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        return RedirectResponse("/login")
+
+
+LOGIN_PAGE = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login — AI Tracker</title>
+<style>
+body{background:#0c0d10;color:#e2e4ea;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.box{background:#12141a;border:1px solid #2a2d37;border-radius:12px;padding:32px;width:340px;text-align:center}
+h1{font-size:18px;font-weight:600;margin-bottom:4px}
+.sub{font-size:12px;color:#5a5d68;margin-bottom:24px}
+input{width:100%;padding:10px 14px;background:#0c0d10;border:1px solid #2a2d37;border-radius:8px;color:#e2e4ea;font-family:inherit;font-size:14px;margin-bottom:12px;box-sizing:border-box}
+input:focus{outline:none;border-color:#c9a960}
+button{width:100%;padding:10px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+button:hover{opacity:.9}
+.err{color:#ef4444;font-size:12px;margin-top:8px;display:none}
+</style></head>
+<body><div class="box">
+<h1>AI Tracker</h1>
+<div class="sub">Oldfield Partners</div>
+<form onsubmit="return doLogin(event)">
+<input type="password" id="pw" placeholder="Password" autofocus>
+<button type="submit">Sign in</button>
+</form>
+<div class="err" id="err">Incorrect password</div>
+</div>
+<script>
+async function doLogin(e){
+  e.preventDefault();
+  var pw=document.getElementById('pw').value;
+  var r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(r.ok){window.location.href='/';}
+  else{document.getElementById('err').style.display='block';document.getElementById('pw').value='';document.getElementById('pw').focus();}
+  return false;
+}
+</script></body></html>"""
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    return LOGIN_PAGE
+
+
+@app.post("/auth/login")
+async def do_login(request: Request):
+    try:
+        body = await request.json()
+        password = body.get("password", "")
+    except Exception:
+        return JSONResponse({"detail": "Invalid request"}, status_code=400)
+
+    if not hmac.compare_digest(password, settings.app_password):
+        return JSONResponse({"detail": "Incorrect password"}, status_code=401)
+
+    token = _sign_session(secrets.token_hex(16))
+    response = JSONResponse({"status": "ok"})
+    response.set_cookie(
+        "session", token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,  # 30 days
+    )
+    return response
+
+
+@app.post("/auth/logout")
+async def do_logout():
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie("session")
+    return response
+
+
 # ── Route registration ──────────────────────────────────────────
 PREFIX = settings.api_prefix
 
@@ -312,6 +424,7 @@ app.include_router(execution_router, prefix=PREFIX)
 app.include_router(autorun_router, prefix=PREFIX)
 app.include_router(harvester_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
+app.include_router(pipeline_router, prefix=PREFIX)
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)

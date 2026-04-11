@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
 
+    # ── Authentication ──────────────────────────────────────────
+    app_password: str = ""          # Set via APP_PASSWORD env var. Empty = no auth.
+    session_secret: str = "change-me-in-production"  # Signs session cookies
+
     # ── Database ─────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/research_agent"
     database_url_sync: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/research_agent"
