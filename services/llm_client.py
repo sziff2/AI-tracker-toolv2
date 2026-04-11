@@ -93,6 +93,33 @@ def _get_ctx(key: str, default=None):
 # Active budget guard — set by autorun, checked on every call
 _active_budget_guard: BudgetGuard | None = None
 
+# Circuit breaker — stops all LLM calls after a billing/auth error
+_circuit_broken = False
+_circuit_broken_reason = ""
+
+
+class CircuitBrokenError(Exception):
+    pass
+
+
+def _trip_circuit(reason: str):
+    global _circuit_broken, _circuit_broken_reason
+    _circuit_broken = True
+    _circuit_broken_reason = reason
+    logger.error("LLM circuit breaker TRIPPED: %s — all further calls will fail fast", reason)
+
+
+def _check_circuit():
+    if _circuit_broken:
+        raise CircuitBrokenError(f"LLM calls disabled: {_circuit_broken_reason}")
+
+
+def reset_circuit():
+    """Reset the circuit breaker (e.g. after topping up credits)."""
+    global _circuit_broken, _circuit_broken_reason
+    _circuit_broken = False
+    _circuit_broken_reason = ""
+
 
 def set_budget_guard(guard: BudgetGuard | None) -> None:
     """Attach (or clear) a BudgetGuard checked on every LLM call."""
@@ -309,6 +336,7 @@ def call_llm(
     if period:
         _call_context.period = period
 
+    _check_circuit()
     t0 = time.time()
     try:
         resp = client.messages.create(
@@ -322,7 +350,10 @@ def call_llm(
             "Anthropic 400 error with model %s: %s — prompt length: %d chars",
             model, e.message, len(prompt),
         )
-        if "model" in str(e.message).lower():
+        if "credit balance" in str(e.message).lower():
+            _trip_circuit("Anthropic credit balance too low")
+            raise
+        elif "model" in str(e.message).lower():
             logger.info("Trying fallback model claude-3-5-sonnet-20241022")
             resp = client.messages.create(
                 model="claude-3-5-sonnet-20241022",
@@ -433,6 +464,7 @@ async def call_llm_native_async(
     client = get_async_client()
     model = model or settings.llm_model
 
+    _check_circuit()
     sem = _get_semaphore()
     async with sem:
         t0 = time.time()
@@ -448,6 +480,10 @@ async def call_llm_native_async(
                 ),
                 timeout=timeout_seconds,
             )
+        except anthropic.BadRequestError as e:
+            if "credit balance" in str(e.message).lower():
+                _trip_circuit("Anthropic credit balance too low")
+            raise
         except asyncio.TimeoutError:
             logger.warning("Native async LLM call timed out after %ds", timeout_seconds)
             raise TimeoutError(f"LLM request timed out after {timeout_seconds}s")

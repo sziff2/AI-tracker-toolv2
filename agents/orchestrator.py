@@ -476,33 +476,19 @@ class AgentOrchestrator:
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
-        """Check if documents for this period have been parsed.
-        Looks for documents with parsing_status='completed' and
-        sections in the document_sections table."""
+        """Check if a processing job has completed for this period.
+        This ensures extraction actually finished, not just that
+        sections exist from a killed run."""
         try:
-            from apps.api.models import Document, DocumentSection
-            from sqlalchemy import func
-
-            # Check: are there parsed documents for this period?
+            from apps.api.models import ProcessingJob
             q = await db.execute(
-                select(func.count(Document.id))
-                .where(Document.company_id == company_id)
-                .where(Document.period_label == period_label)
-                .where(Document.parsing_status == "completed")
+                select(ProcessingJob)
+                .where(ProcessingJob.company_id == company_id)
+                .where(ProcessingJob.period_label == period_label)
+                .where(ProcessingJob.status == "completed")
+                .limit(1)
             )
-            parsed_count = q.scalar() or 0
-            if parsed_count == 0:
-                return False
-
-            # Check: do those documents have sections (actual parsed content)?
-            sq = await db.execute(
-                select(func.count(DocumentSection.id))
-                .join(Document, DocumentSection.document_id == Document.id)
-                .where(Document.company_id == company_id)
-                .where(Document.period_label == period_label)
-            )
-            section_count = sq.scalar() or 0
-            return section_count > 0
+            return q.scalar_one_or_none() is not None
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:100])
             return False

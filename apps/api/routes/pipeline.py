@@ -28,33 +28,41 @@ async def get_phase_a_status(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    # Check: are there parsed documents with sections for this period?
-    from apps.api.models import Document, DocumentSection
+    # Check: is there a completed processing job for this period?
+    # This ensures extraction actually finished, not just that sections exist
+    # from a previous (possibly killed) run.
+    from apps.api.models import Document, ProcessingJob
     from sqlalchemy import func
 
-    dq = await db.execute(
-        select(func.count(Document.id))
-        .where(Document.company_id == company.id)
-        .where(Document.period_label == period)
-        .where(Document.parsing_status == "completed")
+    # Check for a completed processing job
+    job_q = await db.execute(
+        select(ProcessingJob)
+        .where(ProcessingJob.company_id == company.id)
+        .where(ProcessingJob.period_label == period)
+        .where(ProcessingJob.status == "completed")
+        .order_by(desc(ProcessingJob.created_at))
+        .limit(1)
     )
-    parsed_count = dq.scalar() or 0
+    completed_job = job_q.scalar_one_or_none()
 
-    if parsed_count == 0:
-        return {"phase_a_complete": False, "extraction_method": None}
+    if not completed_job:
+        # No completed job — check if there's a running one
+        running_q = await db.execute(
+            select(ProcessingJob)
+            .where(ProcessingJob.company_id == company.id)
+            .where(ProcessingJob.period_label == period)
+            .where(ProcessingJob.status.in_(["queued", "processing"]))
+            .limit(1)
+        )
+        running = running_q.scalar_one_or_none()
+        return {
+            "phase_a_complete": False,
+            "extraction_method": None,
+            "processing": running is not None,
+        }
 
-    sq = await db.execute(
-        select(func.count(DocumentSection.id))
-        .join(Document, DocumentSection.document_id == Document.id)
-        .where(Document.company_id == company.id)
-        .where(Document.period_label == period)
-    )
-    section_count = sq.scalar() or 0
-
-    if section_count == 0:
-        return {"phase_a_complete": False, "extraction_method": None}
-
-    # Determine extraction method
+    # Completed job exists — get details
+    method = None
     ctx_q = await db.execute(
         select(ResearchOutput)
         .where(ResearchOutput.company_id == company.id)
@@ -63,7 +71,6 @@ async def get_phase_a_status(
         .limit(1)
     )
     ctx = ctx_q.scalar_one_or_none()
-    method = None
     if ctx:
         import json
         try:
@@ -71,11 +78,17 @@ async def get_phase_a_status(
         except Exception:
             pass
 
+    doc_q = await db.execute(
+        select(func.count(Document.id))
+        .where(Document.company_id == company.id)
+        .where(Document.period_label == period)
+        .where(Document.parsing_status == "completed")
+    )
+
     return {
         "phase_a_complete": True,
         "extraction_method": method or "legacy",
-        "parsed_documents": parsed_count,
-        "sections": section_count,
+        "parsed_documents": doc_q.scalar() or 0,
     }
 
 
