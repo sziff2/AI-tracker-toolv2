@@ -188,6 +188,49 @@ async def get_pipeline_run(
     }
 
 
+@router.get("/companies/{ticker}/agent-outputs/{period}")
+async def get_agent_outputs(
+    ticker: str,
+    period: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all agent outputs for a company/period. Powers the Results tab."""
+    from apps.api.models import AgentOutput
+    q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
+    company = q.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+
+    outputs_q = await db.execute(
+        select(AgentOutput)
+        .where(AgentOutput.company_id == company.id)
+        .where(AgentOutput.period_label == period)
+        .where(AgentOutput.status.in_(["completed", "degraded"]))
+        .order_by(desc(AgentOutput.created_at))
+    )
+    rows = outputs_q.scalars().all()
+
+    # Deduplicate — keep latest per agent_id
+    seen = set()
+    outputs = {}
+    for row in rows:
+        if row.agent_id in seen:
+            continue
+        seen.add(row.agent_id)
+        outputs[row.agent_id] = {
+            "agent_id": row.agent_id,
+            "status": row.status,
+            "output": row.output_json,
+            "confidence": float(row.confidence) if row.confidence else None,
+            "qc_score": float(row.qc_score) if row.qc_score else None,
+            "cost_usd": float(row.cost_usd) if row.cost_usd else None,
+            "duration_ms": row.duration_ms,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
+    return {"ticker": ticker, "period": period, "agents": outputs}
+
+
 # ─────────────────────────────────────────────────────────────────
 # Context Contract — shared macro assumptions
 # ─────────────────────────────────────────────────────────────────

@@ -948,6 +948,7 @@ function renderCockpit(ticker,d){
   resPeriods.forEach(function(p){
     renderPeriodActions(ticker,p,document.getElementById('period-actions-'+p));
     restorePipelineStatus(ticker,p);
+    loadAgentOutputs(ticker,p);
   });
 }
 function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');try{var u=new URL(location.href);u.searchParams.set('tab',t);history.replaceState({},'',u.toString());}catch(e){}if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
@@ -1270,6 +1271,7 @@ function renderCkResults(ticker,d){
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px"><div id="period-actions-'+esc(p)+'"></div><button class="btn2" style="font-size:11px;padding:5px 12px" title="Rewrites the analysis output only. Metrics unchanged. Use after editing your thesis. (~$0.15 Sonnet)" onclick="resynthesisePeriod(\''+ticker+'\',\''+esc(p)+'\')">✍ Regenerate Briefing</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     h+='<div id="pipeline-panel-'+esc(p)+'" style="display:none;margin-bottom:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px"></div>';
+    h+='<div id="agent-outputs-'+esc(p)+'" style="margin-bottom:16px"></div>';
     // Ask a Question at top
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
     // Analysis Output
@@ -1938,7 +1940,7 @@ function pollPipelineStatus(ticker,period,btn){
       .then(function(data){
         showPipelineStatus(period,data.status,data.agent_execution_log||[],data);
         if(data.status==='running'||data.status==='queued'||data.status==='not_started'){setTimeout(poll,3000);}
-        else{if(btn){btn.disabled=false;btn.textContent='Run Analysis';}if(data.status==='completed')loadCockpit();}
+        else{if(btn){btn.disabled=false;btn.textContent='Run Analysis';}if(data.status==='completed'){var t=E('ck-company');if(t)loadAgentOutputs(t.value,period);}}
       })
       .catch(function(){setTimeout(poll,3000);});
   }
@@ -1977,6 +1979,159 @@ function showPipelineStatus(period,status,executionLog,runData){
   }
   panel.innerHTML=html;
   panel.style.display='block';
+}
+
+// ── Agent Output Rendering ───────────────────────────────────────
+
+async function loadAgentOutputs(ticker,period){
+  var container=document.getElementById('agent-outputs-'+period);
+  if(!container)return;
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/agent-outputs/'+enc(period));
+    if(!r.ok)return;
+    var data=await r.json();
+    var agents=data.agents||{};
+    if(!Object.keys(agents).length)return;
+    var h='';
+    // Financial Analyst
+    var fa=agents.financial_analyst;
+    if(fa&&fa.output)h+=renderFACard(fa.output);
+    // Transcript
+    var tr=agents.transcript_deep_dive;
+    if(tr&&tr.output)h+=renderTranscriptCard(tr.output);
+    // Presentation
+    var pr=agents.presentation_analysis;
+    if(pr&&pr.output)h+=renderPresentationCard(pr.output);
+    // Bear / Bull side by side
+    var bear=agents.bear_case;var bull=agents.bull_case;
+    if((bear&&bear.output)||(bull&&bull.output))h+=renderBearBullCards(bear?bear.output:null,bull?bull.output:null);
+    // Debate
+    var debate=agents.debate_agent;
+    if(debate&&debate.output)h+=renderDebateCard(debate.output);
+    // QC
+    var qc=agents.quality_control;
+    if(qc&&qc.output)h+=renderQCCard(qc.output);
+    container.innerHTML=h;
+  }catch(e){}
+}
+
+function renderFACard(o){
+  if(!o)return '';
+  var grade=o.overall_grade||3;
+  var gc=['','#3d1f23','#3d2a1f','#2a2d1f','#1f3d23','#1f2d3d'][grade]||'var(--bg3)';
+  var gtx=['','var(--red)','#fb923c','#fbbf24','var(--green)','#60a5fa'][grade]||'var(--text2)';
+  var glabel=['','Significant miss','Miss','In line','Beat','Significant beat'][grade]||'';
+  var dir=o.thesis_direction||'unchanged';
+  var dc=dir==='strengthened'?'var(--green)':dir==='weakened'?'var(--red)':'var(--text3)';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px">';
+  h+='<div class="cd-t">Financial Analyst Assessment</div>';
+  h+='<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">';
+  h+='<div style="width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;font-family:var(--mono);background:'+gc+';color:'+gtx+'">'+grade+'</div>';
+  h+='<div><div style="font-size:14px;font-weight:600">'+esc(glabel)+'</div>';
+  if(o.expectations_benchmark)h+='<div style="font-size:12px;color:var(--text3);margin-top:2px">vs '+esc(o.expectations_benchmark)+'</div>';
+  h+='</div>';
+  h+='<div style="margin-left:auto;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;background:'+(dir==='strengthened'?'#1a2e1a':dir==='weakened'?'#2e1a1a':'#1a1a2e')+';color:'+dc+'">'+esc(dir.toUpperCase())+'</div>';
+  h+='</div>';
+  // Sections
+  var sections=[['revenue_assessment','Revenue'],['margin_analysis','Margins'],['cash_flow_quality','Cash Flow'],['balance_sheet_flags','Balance Sheet'],['segment_commentary','Segments'],['guidance_quality','Guidance'],['management_signals','Management Signals']];
+  for(var i=0;i<sections.length;i++){var s=sections[i];if(o[s[0]])h+='<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:4px">'+s[1]+'</div><div style="font-size:13px;color:var(--text2);line-height:1.6">'+esc(o[s[0]])+'</div></div>';}
+  // Tracked KPI assessment
+  if(o.tracked_kpi_assessment&&o.tracked_kpi_assessment.length){
+    h+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:8px">Tracked KPI Scores</div>';
+    for(var k=0;k<o.tracked_kpi_assessment.length;k++){var kpi=o.tracked_kpi_assessment[k];var ks=kpi.score||3;var kc=['','var(--red)','#fb923c','#fbbf24','var(--green)','#60a5fa'][ks]||'var(--text3)';h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+kc+';min-width:20px">'+ks+'</span><span style="font-size:12px;color:var(--text);flex:1">'+esc(kpi.kpi_name||'')+'</span><span style="font-size:11px;color:var(--text3)">'+esc(kpi.value||'')+'</span></div>';}
+    h+='</div>';
+  }
+  // Key surprises
+  if(o.key_surprises&&o.key_surprises.length){h+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:4px">Key Surprises</div>';for(var j=0;j<o.key_surprises.length;j++){h+='<div style="font-size:12px;color:var(--text2);padding:3px 0">'+esc(o.key_surprises[j])+'</div>';}h+='</div>';}
+  // Key assumptions
+  if(o.key_assumptions&&o.key_assumptions.length){
+    h+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--gold);margin-bottom:8px">Key Assumptions</div>';
+    for(var a=0;a<o.key_assumptions.length;a++){var as=o.key_assumptions[a];var prob=Math.round((as.probability||0.5)*100);var prior=Math.round((as.prior||0.5)*100);var adir=as.direction||'unchanged';var adirC=adir==='strengthened'?'var(--green)':adir==='weakened'?'var(--red)':'var(--text3)';var arrow=adir==='strengthened'?'&uarr;':adir==='weakened'?'&darr;':'&harr;';h+='<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)"><span style="flex:1;font-size:12px;color:var(--text)">'+esc(as.assumption||'')+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:600;color:'+adirC+';min-width:40px;text-align:right">'+prob+'%</span><div style="width:100px;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+prob+'%;background:'+adirC+';border-radius:3px"></div></div><span style="font-size:11px;min-width:70px;text-align:right;color:'+adirC+'">'+arrow+' from '+prior+'%</span></div>';}
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+function renderTranscriptCard(o){
+  if(!o)return '';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px;border-left:3px solid #60a5fa">';
+  h+='<div class="cd-t">Transcript Analysis</div>';
+  if(o.management_tone){var mt=o.management_tone;h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><span style="font-size:12px;color:var(--text3)">Management Tone:</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(mt.overall>=4?'var(--green)':mt.overall<=2?'var(--red)':'var(--gold)')+'">'+mt.overall+'/5</span><span style="font-size:12px;color:var(--text2)">'+esc(mt.confidence_level||'')+'</span></div>';}
+  if(o.guidance_statements&&o.guidance_statements.length){h+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:#60a5fa;margin-bottom:6px">Guidance Statements</div>';for(var i=0;i<o.guidance_statements.length;i++){var g=o.guidance_statements[i];var dc=g.direction==='raised'?'var(--green)':g.direction==='lowered'?'var(--red)':'var(--text3)';h+='<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:'+dc+';font-weight:600">'+esc(g.direction||'')+' </span><span style="color:var(--text)">'+esc(g.metric||'')+': </span><span style="color:var(--text2)">'+esc(g.statement||'')+'</span></div>';}h+='</div>';}
+  if(o.evasion_signals&&o.evasion_signals.length){h+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">Evasion Signals</div>';for(var e=0;e<o.evasion_signals.length;e++){var ev=o.evasion_signals[e];h+='<div style="padding:6px 12px;background:var(--bg3);border-radius:7px;margin-bottom:4px;font-size:12px"><div style="color:var(--text2)">Q: '+esc(ev.what_was_asked||'')+'</div><div style="color:var(--red);margin-top:2px">'+esc(ev.how_they_deflected||'')+'</div></div>';}h+='</div>';}
+  if(o.key_quotes&&o.key_quotes.length){h+='<div><div style="font-size:12px;font-weight:600;color:#60a5fa;margin-bottom:6px">Key Quotes</div>';for(var q=0;q<Math.min(o.key_quotes.length,3);q++){var kq=o.key_quotes[q];h+='<div style="padding:8px 12px;border-left:2px solid var(--border);margin-bottom:6px;font-size:12px;font-style:italic;color:var(--text2)">"'+esc(kq.quote||'')+'"<div style="font-style:normal;color:var(--text4);margin-top:2px">— '+esc(kq.speaker||'')+'</div></div>';}h+='</div>';}
+  h+='</div>';
+  return h;
+}
+
+function renderPresentationCard(o){
+  if(!o)return '';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px;border-left:3px solid #a78bfa">';
+  h+='<div class="cd-t">Presentation Analysis</div>';
+  if(o.management_message)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;padding:10px 12px;background:var(--bg3);border-radius:8px">'+esc(o.management_message)+'</div>';
+  if(o.notable_omissions&&o.notable_omissions.length){h+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">Notable Omissions</div>';for(var i=0;i<o.notable_omissions.length;i++){var om=o.notable_omissions[i];h+='<div style="padding:4px 0;font-size:12px;color:var(--text2)">'+esc(typeof om==='string'?om:om.topic||'')+' — <span style="color:var(--text4)">'+esc(typeof om==='string'?'':om.why_notable||'')+'</span></div>';}h+='</div>';}
+  if(o.new_metrics&&o.new_metrics.length){h+='<div><div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:6px">New Metrics Introduced</div>';for(var j=0;j<o.new_metrics.length;j++){var nm=o.new_metrics[j];h+='<div style="padding:4px 0;font-size:12px;color:var(--text2)">'+esc(nm.metric||'')+' — <span style="color:var(--text4)">'+esc(nm.why_introduced||'')+'</span></div>';}h+='</div>';}
+  h+='</div>';
+  return h;
+}
+
+function renderBearBullCards(bear,bull){
+  var h='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">';
+  // Bear
+  h+='<div class="cd" style="padding:20px;border-left:3px solid var(--red)">';
+  h+='<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:10px">Bear Case</div>';
+  if(bear){
+    if(bear.bear_thesis)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+esc(bear.bear_thesis)+'</div>';
+    if(bear.key_risks&&bear.key_risks.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Key Risks</div>';for(var i=0;i<bear.key_risks.length;i++){var r=bear.key_risks[i];var rp=Math.round((r.probability||0)*100);h+='<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="font-family:var(--mono);color:var(--gold);min-width:35px;text-align:right">'+rp+'%</span><span style="color:var(--text2);flex:1">'+esc(r.risk||'')+'</span></div>';}}
+    if(bear.downside_scenario)h+='<div style="margin-top:10px;padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;color:var(--text3)"><strong style="color:var(--red)">Downside:</strong> '+esc(bear.downside_scenario.implied_return||'')+' — '+esc(bear.downside_scenario.description||'')+'</div>';
+  }else{h+='<div style="font-size:12px;color:var(--text4)">Not yet run</div>';}
+  h+='</div>';
+  // Bull
+  h+='<div class="cd" style="padding:20px;border-left:3px solid var(--green)">';
+  h+='<div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:10px">Bull Case</div>';
+  if(bull){
+    if(bull.bull_thesis)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+esc(bull.bull_thesis)+'</div>';
+    if(bull.upside_catalysts&&bull.upside_catalysts.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Upside Catalysts</div>';for(var j=0;j<bull.upside_catalysts.length;j++){var c=bull.upside_catalysts[j];var cp=Math.round((c.probability||0)*100);h+='<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="font-family:var(--mono);color:var(--gold);min-width:35px;text-align:right">'+cp+'%</span><span style="color:var(--text2);flex:1">'+esc(c.catalyst||'')+'</span></div>';}}
+    if(bull.upside_scenario)h+='<div style="margin-top:10px;padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;color:var(--text3)"><strong style="color:var(--green)">Upside:</strong> '+esc(bull.upside_scenario.implied_return||'')+' — '+esc(bull.upside_scenario.description||'')+'</div>';
+  }else{h+='<div style="font-size:12px;color:var(--text4)">Not yet run</div>';}
+  h+='</div></div>';
+  return h;
+}
+
+function renderDebateCard(o){
+  if(!o)return '';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px">';
+  h+='<div class="cd-t">Investment Committee Debate</div>';
+  if(o.debate_summary)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+esc(o.debate_summary)+'</div>';
+  // Probability bar
+  var bp=o.bear_probability||0;var bsp=o.base_probability||0;var blp=o.bull_probability||0;
+  h+='<div style="display:flex;height:32px;border-radius:8px;overflow:hidden;margin:12px 0">';
+  if(bp>0)h+='<div style="width:'+bp+'%;background:#3d1f23;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--red)">'+Math.round(bp)+'%</div>';
+  if(bsp>0)h+='<div style="width:'+bsp+'%;background:#2a2d37;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--text2)">'+Math.round(bsp)+'%</div>';
+  if(blp>0)h+='<div style="width:'+blp+'%;background:#1a2e1a;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--green)">'+Math.round(blp)+'%</div>';
+  h+='</div>';
+  h+='<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:12px"><span>Bear</span><span>Base</span><span>Bull</span></div>';
+  // Verdict
+  if(o.verdict){var vc=o.verdict==='buy'?'var(--green)':o.verdict==='avoid'?'var(--red)':'var(--purple)';h+='<div style="display:inline-block;padding:4px 14px;border-radius:6px;font-size:12px;font-weight:600;background:#1e1533;color:'+vc+'">'+esc(o.verdict.toUpperCase())+'</div>';}
+  // Strongest arguments
+  if(o.strongest_bear_arg||o.strongest_bull_arg){h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">';if(o.strongest_bear_arg)h+='<div style="padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;border-left:2px solid var(--red)"><div style="color:var(--red);font-weight:600;margin-bottom:4px;font-size:11px">Strongest Bear Arg</div><div style="color:var(--text2)">'+esc(o.strongest_bear_arg)+'</div></div>';if(o.strongest_bull_arg)h+='<div style="padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;border-left:2px solid var(--green)"><div style="color:var(--green);font-weight:600;margin-bottom:4px;font-size:11px">Strongest Bull Arg</div><div style="color:var(--text2)">'+esc(o.strongest_bull_arg)+'</div></div>';h+='</div>';}
+  // Swing factors
+  if(o.key_swing_factors&&o.key_swing_factors.length){h+='<div style="margin-top:14px"><div style="font-size:11px;font-weight:600;color:var(--text4);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Key Swing Factors</div>';for(var i=0;i<o.key_swing_factors.length;i++){h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12px;color:var(--text2)"><span style="margin-top:5px;width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0"></span>'+esc(o.key_swing_factors[i])+'</div>';}h+='</div>';}
+  h+='</div>';
+  return h;
+}
+
+function renderQCCard(o){
+  if(!o)return '';
+  var score=o.overall_score||0;
+  var rec=o.recommendation||'review';
+  var rc=rec==='accept'?'var(--green)':rec==='rerun'?'var(--red)':'#fbbf24';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px;display:flex;align-items:center;gap:16px">';
+  h+='<div><div class="cd-t" style="margin-bottom:4px">Quality Control</div><div style="font-size:24px;font-weight:700;color:var(--gold);font-family:var(--mono)">'+score.toFixed(2)+'</div><span style="display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;background:'+(rec==='accept'?'#1a2e1a':rec==='rerun'?'#2e1a1a':'#2e2a1a')+';color:'+rc+'">'+esc(rec.toUpperCase())+'</span></div>';
+  h+='<div style="flex:1;font-size:12px;color:var(--text2);line-height:1.6;padding-left:20px;border-left:1px solid var(--border)">'+esc(o.summary||'')+'</div>';
+  h+='</div>';
+  return h;
 }
 
 async function restorePipelineStatus(ticker,period){
