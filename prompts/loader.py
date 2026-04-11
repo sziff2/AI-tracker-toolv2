@@ -230,9 +230,16 @@ def load_prompt(
         if block:
             contract = inputs["context_contract"]
             # context_contract may be a dict (from DB JSONB) — flatten to strings
-            contract_subs = (
-                _flatten_for_format(contract) if isinstance(contract, dict) else {"contract": str(contract)}
-            )
+            # Merge macro_assumptions into top level so {rates}, {usd} etc. resolve
+            if isinstance(contract, dict):
+                merged = dict(contract)
+                if isinstance(merged.get("macro_assumptions"), dict):
+                    merged.update(merged.pop("macro_assumptions"))
+                if isinstance(merged.get("analyst_overrides"), dict):
+                    merged.update(merged.pop("analyst_overrides"))
+                contract_subs = _flatten_for_format(merged)
+            else:
+                contract_subs = {"contract": str(contract)}
             parts.append(_safe_format(block, contract_subs, context=f"{agent_id}/context_contract"))
 
     # Output constraints block — appended to every agent prompt for consistency
