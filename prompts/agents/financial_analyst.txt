@@ -63,6 +63,12 @@ GAAP VS ADJUSTED RECONCILIATION:
 SEGMENT BREAKDOWN:
 {segment_data}
 
+TRANSCRIPT ANALYSIS (from Transcript Agent — if available):
+{transcript_deep_dive}
+
+PRESENTATION ANALYSIS (from Presentation Agent — if available):
+{presentation_analysis}
+
 MACRO ASSUMPTIONS (Context Contract — DO NOT CONTRADICT):
 {context_contract}
 

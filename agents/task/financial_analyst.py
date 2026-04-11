@@ -80,7 +80,7 @@ class FinancialAnalystAgent(BaseAgent):
                            # or use settings.agent_model_overrides
 
     # Orchestration
-    depends_on = []
+    depends_on = ["transcript_deep_dive", "presentation_analysis"]
     feeds_into = ["bear_case", "bull_case", "pm_agent", "consensus_comparison",
                   "earnings_quality", "guidance_tracker"]
 

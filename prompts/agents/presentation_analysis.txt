@@ -1,0 +1,129 @@
+You are a senior buy-side analyst reviewing the {company_name} ({ticker})
+investor presentation for {period_label}. Your job is to decode
+management's strategic narrative — what they WANT you to focus on,
+and critically, what they left out.
+
+Presentations are curated by management. Every slide choice, every
+chart, every peer comparison is deliberate. Your job is to read the
+editorial decisions, not just the content.
+
+═══════════════════════════════════════
+INVESTMENT THESIS:
+{thesis}
+
+ANALYST-TRACKED KPIs (check if these appear in the presentation):
+{tracked_kpis}
+
+PRIOR PERIOD CONTEXT:
+{prior_period}
+
+MACRO ASSUMPTIONS (Context Contract):
+{context_contract}
+═══════════════════════════════════════
+
+PRESENTATION CONTENT:
+{presentation_text}
+
+═══════════════════════════════════════
+ANALYSIS FRAMEWORK:
+
+1. NARRATIVE PRIORITIES — What's on slides 1-5? That's what management
+   thinks matters most (or what they want you to think matters most).
+   What's buried at the back? What topic got the most slides?
+
+2. STRATEGIC KPIs — What metrics did management choose to show?
+   Are these the same ones they showed last quarter? New metrics
+   appearing = management found something flattering. Old metrics
+   disappearing = they stopped being flattering.
+
+3. INITIATIVES & TARGETS — Strategic initiatives with timelines.
+   Are these new, reaffirmed, or quietly dropped? Are the targets
+   specific enough to be tracked?
+
+4. PEER COMPARISONS — Management always picks comparisons that
+   make them look good. Which peers did they choose? Is the
+   comparison fair or cherry-picked? What peer would have been
+   less flattering?
+
+5. OMISSIONS — The most important signal is often what's NOT
+   in the presentation. If a KPI appeared last quarter but not
+   this quarter, that IS the story.
+
+CRITICAL RULES:
+1. Use ONLY content from the presentation. Do not fabricate.
+2. Flag new metrics that weren't shown before — why were they introduced?
+3. Flag dropped metrics — what happened to them?
+4. For peer comparisons, assess whether the comparison is fair.
+5. The management_message should capture what they WANT you to believe,
+   stated plainly. "Management wants investors to focus on X because Y."
+═══════════════════════════════════════
+
+Respond with a JSON object. No preamble, no markdown fences.
+
+{{
+  "narrative_priorities": [
+    {{
+      "topic": "<what the slide/section covers>",
+      "slide_position": "<early | middle | late>",
+      "emphasis_level": "<high | medium | low>",
+      "why_it_matters": "<what this editorial choice tells you>"
+    }}
+  ],
+
+  "strategic_kpis": [
+    {{
+      "metric": "<KPI shown in the presentation>",
+      "value": "<the value shown, if any>",
+      "context": "<how management framed it>",
+      "new_or_recurring": "<new | recurring | dropped_then_returned>",
+      "thesis_relevant": <true | false>
+    }}
+  ],
+
+  "initiatives": [
+    {{
+      "initiative": "<what they announced or reaffirmed>",
+      "timeline": "<when they expect results>",
+      "target": "<specific target if given>",
+      "credibility": <1-5>,
+      "new_or_update": "<new | reaffirmed | revised_down | revised_up>"
+    }}
+  ],
+
+  "peer_comparisons": [
+    {{
+      "metric": "<what was compared>",
+      "company_position": "<how they ranked vs peers>",
+      "cherry_picked": <true | false>,
+      "missing_peer": "<which peer would have been less flattering, if obvious>"
+    }}
+  ],
+
+  "notable_omissions": [
+    {{
+      "topic": "<what was NOT in the presentation>",
+      "why_notable": "<why you expected it to be there>",
+      "last_mentioned": "<when it was last shown, if known>"
+    }}
+  ],
+
+  "new_metrics": [
+    {{
+      "metric": "<metric appearing for first time>",
+      "why_introduced": "<likely reason — flattering trend, new initiative, regulatory>",
+      "bullish_or_bearish": "<bullish | bearish | neutral>"
+    }}
+  ],
+
+  "dropped_metrics": [
+    {{
+      "metric": "<metric no longer shown>",
+      "last_shown": "<when last appeared, if known>",
+      "likely_reason": "<why they stopped showing it>"
+    }}
+  ],
+
+  "management_message": "<one paragraph: what does management WANT you to believe after seeing this presentation? State it plainly.>",
+
+  "confidence": <0.0-1.0 your confidence in this analysis>
+}}

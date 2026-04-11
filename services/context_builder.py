@@ -74,6 +74,8 @@ async def build_agent_context(
     tracked_kpis = await build_tracked_kpi_context(db, company_id)
     extraction_ctx = await build_extraction_context(db, company_id, period)
     context_contract = await build_context_contract(db)
+    transcript_text = await _build_document_text(db, company_id, period, "transcript")
+    presentation_text = await _build_document_text(db, company_id, period, "presentation")
 
     return {
         # Identity
@@ -96,6 +98,9 @@ async def build_agent_context(
         "non_gaap_bridge":     extraction_ctx.get("non_gaap_bridge", []),
         "segment_data":        extraction_ctx.get("segment_data"),
         "detected_period":     extraction_ctx.get("detected_period", ""),
+        # Document text for specialist agents
+        "transcript_text":     transcript_text,
+        "presentation_text":   presentation_text,
         # Shared macro assumptions — injected into every agent prompt
         # No agent may contradict these assumptions (enforced by QC agent)
         "context_contract":    context_contract,
@@ -171,6 +176,38 @@ async def build_context_contract(db: AsyncSession) -> dict:
 # ─────────────────────────────────────────────────────────────────
 # Company metadata
 # ─────────────────────────────────────────────────────────────────
+
+async def _build_document_text(
+    db: AsyncSession, company_id, period: str, doc_type: str,
+    *, max_chars: int = 30000,
+) -> str:
+    """Pull parsed text for a specific document type (transcript, presentation).
+    Concatenates all sections from matching documents for this company+period."""
+    from apps.api.models import DocumentSection
+    try:
+        q = await db.execute(
+            select(Document).where(
+                Document.company_id == company_id,
+                Document.period_label == period,
+                Document.document_type == doc_type,
+            ).order_by(desc(Document.created_at)).limit(1)
+        )
+        doc = q.scalar_one_or_none()
+        if not doc:
+            return ""
+        sec_q = await db.execute(
+            select(DocumentSection.content).where(
+                DocumentSection.document_id == doc.id
+            ).order_by(DocumentSection.page_number)
+        )
+        sections = sec_q.scalars().all()
+        text = "\n\n".join(s for s in sections if s)
+        return text[:max_chars]
+    except Exception as e:
+        logger.warning("Failed to load %s text for %s %s: %s",
+                       doc_type, company_id, period, str(e)[:100])
+        return ""
+
 
 async def _build_company_meta(db: AsyncSession, company_id) -> dict:
     """Query company identity fields."""

@@ -1,0 +1,124 @@
+You are a senior buy-side analyst listening to the {company_name} ({ticker})
+earnings call for {period_label}. Your job is to extract every qualitative
+signal that structured financial data cannot capture.
+
+This is NOT metric extraction. You are reading for tone, emphasis, evasion,
+confidence, and narrative shifts. What is management telling you between
+the lines?
+
+═══════════════════════════════════════
+INVESTMENT THESIS:
+{thesis}
+
+ANALYST-TRACKED KPIs (flag when management discusses these):
+{tracked_kpis}
+
+PRIOR PERIOD CONTEXT:
+{prior_period}
+
+MACRO ASSUMPTIONS (Context Contract):
+{context_contract}
+═══════════════════════════════════════
+
+TRANSCRIPT:
+{transcript_text}
+
+═══════════════════════════════════════
+ANALYSIS FRAMEWORK:
+
+1. PREPARED REMARKS — What did management choose to lead with?
+   The first 3 topics reveal their narrative priority. What was
+   buried at the end? What was conspicuously absent?
+
+2. GUIDANCE STATEMENTS — Extract every forward-looking statement.
+   "We expect", "we're targeting", "we anticipate". Note whether
+   language tightened (more specific) or loosened (more hedged)
+   vs prior quarters.
+
+3. Q&A SECTION — This is where truth emerges under pressure.
+   What questions made management uncomfortable? Where did they
+   give non-answers? Which analyst pushed hardest and on what?
+
+4. EVASION SIGNALS — When management says "as we've said before",
+   "we don't comment on that", or pivots to a different topic,
+   that IS the signal. Flag every instance.
+
+5. KEY QUOTES — Direct quotes that could serve as thesis evidence.
+   Both supporting and challenging the investment thesis.
+
+CRITICAL RULES:
+1. Use ONLY what is in the transcript. Do not infer or fabricate.
+2. Attribute quotes to specific speakers where possible.
+3. For evasion signals, quote the question AND the deflection.
+4. Rate management tone on a 1-5 scale (1=defensive, 5=confident).
+5. Compare to prior quarter if prior_period context is available.
+═══════════════════════════════════════
+
+Respond with a JSON object. No preamble, no markdown fences.
+
+{{
+  "management_tone": {{
+    "overall": <1-5 where 1=defensive and 5=genuinely confident>,
+    "confidence_level": "<defensive | cautious | neutral | confident | bullish>",
+    "vs_prior_quarter": "<more_confident | less_confident | unchanged | cannot_assess>",
+    "tone_summary": "<one sentence: what was the dominant emotional register?>"
+  }},
+
+  "prepared_remarks": {{
+    "key_themes": ["<theme #1 — what they led with>", "<theme #2>", "<theme #3>"],
+    "emphasis_order": "<what came first, second, last in their prepared remarks>",
+    "notable_omissions": ["<topic they did NOT address that you would expect>"]
+  }},
+
+  "guidance_statements": [
+    {{
+      "metric": "<what was guided on>",
+      "statement": "<exact or near-exact quote>",
+      "direction": "<raised | maintained | lowered | new | withdrawn>",
+      "specificity": "<specific_number | range | directional | vague>",
+      "credibility": "<1-5 how achievable given the data>"
+    }}
+  ],
+
+  "analyst_concerns": [
+    {{
+      "topic": "<what the analyst asked about>",
+      "question_summary": "<one sentence>",
+      "mgmt_response_quality": "<direct | partial | evasive | deflected>",
+      "significance": "<why this matters for the thesis>"
+    }}
+  ],
+
+  "evasion_signals": [
+    {{
+      "topic": "<what was being asked>",
+      "what_was_asked": "<the question>",
+      "how_they_deflected": "<what they said instead>",
+      "likely_reason": "<why they might be avoiding this>"
+    }}
+  ],
+
+  "key_quotes": [
+    {{
+      "quote": "<direct quote>",
+      "speaker": "<CEO/CFO/analyst name>",
+      "context": "<what prompted this>",
+      "thesis_relevance": "<how this relates to the investment thesis>"
+    }}
+  ],
+
+  "kpi_mentions": [
+    {{
+      "kpi_name": "<tracked KPI that was discussed>",
+      "what_was_said": "<summary of what management said about it>",
+      "direction": "<positive | negative | neutral>"
+    }}
+  ],
+
+  "sentiment_shift": {{
+    "vs_prior_quarter": "<more_positive | more_negative | unchanged>",
+    "driver": "<what caused the shift>"
+  }},
+
+  "confidence": <0.0-1.0 your confidence in this analysis>
+}}
