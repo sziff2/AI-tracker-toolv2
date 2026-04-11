@@ -371,6 +371,20 @@ async def create_note(ticker: str, body: NoteCreate, db: AsyncSession = Depends(
     )
     db.add(note)
     await db.commit()
+
+    # Post to Teams if it's a feedback note
+    if body.note_type == "feedback":
+        try:
+            from services.alerts import send_alert
+            author_str = f" ({body.author})" if body.author else ""
+            tab_str = f" [{body.title}]" if body.title else ""
+            await send_alert(
+                f"Feedback on {ticker}{tab_str}{author_str}: {body.content[:500]}",
+                level="info",
+            )
+        except Exception:
+            pass  # Don't fail the note save if Teams fails
+
     return {
         "id": str(note.id), "title": note.title,
         "created_at": note.created_at.isoformat() if note.created_at else None,

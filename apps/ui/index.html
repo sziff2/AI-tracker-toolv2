@@ -833,6 +833,12 @@ function renderCockpit(ticker,d){
   h+='<div id="ck-esg" style="'+(activeTab!=='esg'?'display:none':'')+'"><div class="ld" id="esg-loading">Loading ESG…</div></div>';
   h+='<div id="ck-decisions" style="'+(activeTab!=='decisions'?'display:none':'')+'">'+renderCkDecisions(ticker,d)+'</div>';
   h+='<div id="ck-documents" style="'+(activeTab!=='documents'?'display:none':'')+'"><div class="ld" style="margin:24px 0">Loading…</div></div>';
+  // Feedback box — always visible at bottom
+  h+='<div style="margin-top:28px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:14px">💬</span><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:var(--text4);text-transform:uppercase;letter-spacing:.8px">Feedback</span></div>';
+  h+='<textarea id="ck-feedback" placeholder="Comments, corrections, or suggestions..." style="width:100%;min-height:36px;max-height:200px;padding:8px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;color:var(--text1);font-family:var(--sans);font-size:12px;line-height:1.5;resize:none;overflow:hidden" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\'"></textarea>';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="ck-feedback-author" placeholder="Your name" value="'+esc(localStorage.getItem('op_author')||'')+'" style="max-width:140px;padding:4px 8px;background:var(--bg1);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-family:var(--sans);font-size:11px"><button onclick="submitFeedback(\''+ticker+'\')" style="padding:4px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-family:var(--sans);font-size:11px;cursor:pointer">Send</button><span id="ck-feedback-status" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span></div>';
+  h+='</div>';
   c.innerHTML=h;
 }
 function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');try{var u=new URL(location.href);u.searchParams.set('tab',t);history.replaceState({},'',u.toString());}catch(e){}if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
@@ -1733,6 +1739,21 @@ async function editKPI(t,k,currentName,currentUnit){
   if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
 }
 async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){toast('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function submitFeedback(t){
+  var content=E('ck-feedback');var author=E('ck-feedback-author');var status=E('ck-feedback-status');
+  if(!content||!content.value.trim()){toast('Enter a comment.');return;}
+  var tab=window._ckActiveTab||'general';
+  var au=author?author.value.trim():'';
+  if(au)localStorage.setItem('op_author',au);
+  status.textContent='Sending...';status.style.color='var(--gold)';
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:'feedback',title:tab,content:content.value.trim(),author:au||null})});
+    if(!r.ok)throw new Error('Failed');
+    content.value='';content.style.height='36px';
+    status.textContent='Sent to Teams';status.style.color='var(--green)';
+    setTimeout(function(){status.textContent='';},3000);
+  }catch(e){status.textContent='Failed';status.style.color='var(--red)';}
+}
 async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){toast('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
 
 // ── Renderers for new analysis results ──────────────────────
