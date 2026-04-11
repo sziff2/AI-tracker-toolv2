@@ -112,10 +112,13 @@ class FinancialAnalystAgent(BaseAgent):
     }
 
     def should_run(self, inputs: dict) -> bool:
-        """Skip if no metrics extracted — nothing to analyse."""
+        """Run if we have any useful data — metrics, transcript, or presentation."""
         metrics = inputs.get("extracted_metrics", "")
-        if not metrics or metrics == "No metrics extracted for this period.":
-            logger.warning("Financial Analyst skipping — no extracted metrics")
+        has_metrics = metrics and metrics != "No metrics extracted for this period."
+        has_transcript = bool(inputs.get("transcript_deep_dive") or inputs.get("transcript_text"))
+        has_presentation = bool(inputs.get("presentation_analysis") or inputs.get("presentation_text"))
+        if not has_metrics and not has_transcript and not has_presentation:
+            logger.warning("Financial Analyst skipping — no metrics, transcript, or presentation data")
             return False
         return True
 

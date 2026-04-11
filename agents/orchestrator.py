@@ -476,31 +476,33 @@ class AgentOrchestrator:
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
-        """Check if extraction has run for this company/period.
-        Accepts either extraction_context in research_outputs OR
-        extracted metrics in the extracted_metrics table (for periods
-        processed before extraction_context persistence was added)."""
+        """Check if documents for this period have been parsed.
+        Looks for documents with parsing_status='completed' and
+        sections in the document_sections table."""
         try:
-            # Primary check: extraction_context row
-            q = await db.execute(
-                select(ResearchOutput)
-                .where(ResearchOutput.company_id == company_id)
-                .where(ResearchOutput.period_label == period_label)
-                .where(ResearchOutput.output_type == "extraction_context")
-                .limit(1)
-            )
-            if q.scalar_one_or_none() is not None:
-                return True
-            # Fallback: check if extracted metrics exist
-            from apps.api.models import ExtractedMetric
+            from apps.api.models import Document, DocumentSection
             from sqlalchemy import func
-            mq = await db.execute(
-                select(func.count(ExtractedMetric.id))
-                .where(ExtractedMetric.company_id == company_id)
-                .where(ExtractedMetric.period_label == period_label)
+
+            # Check: are there parsed documents for this period?
+            q = await db.execute(
+                select(func.count(Document.id))
+                .where(Document.company_id == company_id)
+                .where(Document.period_label == period_label)
+                .where(Document.parsing_status == "completed")
             )
-            count = mq.scalar() or 0
-            return count > 0
+            parsed_count = q.scalar() or 0
+            if parsed_count == 0:
+                return False
+
+            # Check: do those documents have sections (actual parsed content)?
+            sq = await db.execute(
+                select(func.count(DocumentSection.id))
+                .join(Document, DocumentSection.document_id == Document.id)
+                .where(Document.company_id == company_id)
+                .where(Document.period_label == period_label)
+            )
+            section_count = sq.scalar() or 0
+            return section_count > 0
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:100])
             return False

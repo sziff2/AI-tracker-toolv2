@@ -28,39 +28,55 @@ async def get_phase_a_status(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    # Check extraction_context first
+    # Check: are there parsed documents with sections for this period?
+    from apps.api.models import Document, DocumentSection
+    from sqlalchemy import func
+
+    dq = await db.execute(
+        select(func.count(Document.id))
+        .where(Document.company_id == company.id)
+        .where(Document.period_label == period)
+        .where(Document.parsing_status == "completed")
+    )
+    parsed_count = dq.scalar() or 0
+
+    if parsed_count == 0:
+        return {"phase_a_complete": False, "extraction_method": None}
+
+    sq = await db.execute(
+        select(func.count(DocumentSection.id))
+        .join(Document, DocumentSection.document_id == Document.id)
+        .where(Document.company_id == company.id)
+        .where(Document.period_label == period)
+    )
+    section_count = sq.scalar() or 0
+
+    if section_count == 0:
+        return {"phase_a_complete": False, "extraction_method": None}
+
+    # Determine extraction method
     ctx_q = await db.execute(
         select(ResearchOutput)
         .where(ResearchOutput.company_id == company.id)
         .where(ResearchOutput.period_label == period)
         .where(ResearchOutput.output_type == "extraction_context")
-        .order_by(desc(ResearchOutput.created_at))
         .limit(1)
     )
     ctx = ctx_q.scalar_one_or_none()
+    method = None
     if ctx:
         import json
-        method = None
         try:
-            data = json.loads(ctx.content_json or "{}")
-            method = data.get("extraction_method")
+            method = json.loads(ctx.content_json or "{}").get("extraction_method")
         except Exception:
             pass
-        return {"phase_a_complete": True, "extraction_method": method}
 
-    # Fallback: check if extracted metrics exist
-    from apps.api.models import ExtractedMetric
-    from sqlalchemy import func
-    mq = await db.execute(
-        select(func.count(ExtractedMetric.id))
-        .where(ExtractedMetric.company_id == company.id)
-        .where(ExtractedMetric.period_label == period)
-    )
-    count = mq.scalar() or 0
-    if count > 0:
-        return {"phase_a_complete": True, "extraction_method": "legacy"}
-
-    return {"phase_a_complete": False, "extraction_method": None}
+    return {
+        "phase_a_complete": True,
+        "extraction_method": method or "legacy",
+        "parsed_documents": parsed_count,
+        "sections": section_count,
+    }
 
 
 @router.post("/companies/{ticker}/run-pipeline/{period}")
