@@ -471,7 +471,12 @@ class AgentOrchestrator:
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
+        """Check if extraction has run for this company/period.
+        Accepts either extraction_context in research_outputs OR
+        extracted metrics in the extracted_metrics table (for periods
+        processed before extraction_context persistence was added)."""
         try:
+            # Primary check: extraction_context row
             q = await db.execute(
                 select(ResearchOutput)
                 .where(ResearchOutput.company_id == company_id)
@@ -479,7 +484,18 @@ class AgentOrchestrator:
                 .where(ResearchOutput.output_type == "extraction_context")
                 .limit(1)
             )
-            return q.scalar_one_or_none() is not None
+            if q.scalar_one_or_none() is not None:
+                return True
+            # Fallback: check if extracted metrics exist
+            from apps.api.models import ExtractedMetric
+            from sqlalchemy import func
+            mq = await db.execute(
+                select(func.count(ExtractedMetric.id))
+                .where(ExtractedMetric.company_id == company_id)
+                .where(ExtractedMetric.period_label == period_label)
+            )
+            count = mq.scalar() or 0
+            return count > 0
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:100])
             return False

@@ -28,6 +28,7 @@ async def get_phase_a_status(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
+    # Check extraction_context first
     ctx_q = await db.execute(
         select(ResearchOutput)
         .where(ResearchOutput.company_id == company.id)
@@ -37,18 +38,29 @@ async def get_phase_a_status(
         .limit(1)
     )
     ctx = ctx_q.scalar_one_or_none()
-    if not ctx:
-        return {"phase_a_complete": False, "extraction_method": None}
+    if ctx:
+        import json
+        method = None
+        try:
+            data = json.loads(ctx.content_json or "{}")
+            method = data.get("extraction_method")
+        except Exception:
+            pass
+        return {"phase_a_complete": True, "extraction_method": method}
 
-    import json
-    method = None
-    try:
-        data = json.loads(ctx.content_json or "{}")
-        method = data.get("extraction_method")
-    except Exception:
-        pass
+    # Fallback: check if extracted metrics exist
+    from apps.api.models import ExtractedMetric
+    from sqlalchemy import func
+    mq = await db.execute(
+        select(func.count(ExtractedMetric.id))
+        .where(ExtractedMetric.company_id == company.id)
+        .where(ExtractedMetric.period_label == period)
+    )
+    count = mq.scalar() or 0
+    if count > 0:
+        return {"phase_a_complete": True, "extraction_method": "legacy"}
 
-    return {"phase_a_complete": True, "extraction_method": method}
+    return {"phase_a_complete": False, "extraction_method": None}
 
 
 @router.post("/companies/{ticker}/run-pipeline/{period}")
