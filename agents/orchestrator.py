@@ -288,9 +288,14 @@ class AgentOrchestrator:
                 inputs = await build_agent_context(db, company_id, period_label)
             inputs["pipeline_run_id"] = run_id
 
+            # Ensure agents are discovered (may be running in Celery worker
+            # where FastAPI lifespan autodiscover hasn't run)
+            if not AgentRegistry.get_all():
+                AgentRegistry.autodiscover()
+
             execution_order = AgentRegistry.get_execution_order(agent_ids)
             if not execution_order:
-                logger.warning("No agents registered. Did autodiscover() run in lifespan?")
+                logger.warning("No agents registered after autodiscover()")
                 result.status = "completed"
                 return result
 
