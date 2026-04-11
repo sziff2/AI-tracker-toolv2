@@ -196,7 +196,7 @@ async def _build_document_text(
         if not doc:
             return ""
         sec_q = await db.execute(
-            select(DocumentSection.content).where(
+            select(DocumentSection.text_content).where(
                 DocumentSection.document_id == doc.id
             ).order_by(DocumentSection.page_number)
         )
