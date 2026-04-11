@@ -1692,7 +1692,7 @@ async function showMetricDropdown(ticker){
   document.addEventListener('click',_closeMetricDropdown);
 }
 function filterMetricDropdown(query){
-  const ticker=E('ck-company')?.value;
+  const el=E('ck-company');const ticker=el?el.value:null;
   const data=_metricNamesCache[ticker];
   if(!data)return;
   _renderMetricDropdown(data,query.toLowerCase());
@@ -1700,14 +1700,18 @@ function filterMetricDropdown(query){
 function _renderMetricDropdown(data,filter){
   const dd=E('nkn-dropdown');if(!dd)return;
   let html='';
-  const segments=Object.keys(data.by_segment).sort();
-  for(const seg of segments){
-    const metrics=data.by_segment[seg].filter(m=>!filter||m.name.toLowerCase().includes(filter));
+  var segments=Object.keys(data.by_segment).sort();
+  for(var si=0;si<segments.length;si++){
+    var seg=segments[si];
+    var metrics=data.by_segment[seg].filter(function(m){return !filter||m.name.toLowerCase().includes(filter)});
     if(!metrics.length)continue;
     html+='<div style="padding:4px 12px;font-size:10px;font-weight:600;color:var(--text4);text-transform:uppercase;letter-spacing:.5px;background:var(--bg3);position:sticky;top:0">'+esc(seg)+'</div>';
-    for(const m of metrics){
-      const conf=m.confidence?(' ('+Math.round(m.confidence*100)+'%)':'');
-      html+='<div class="metric-dd-item" style="padding:6px 12px;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;border-bottom:1px solid var(--bg3)" onmouseover="this.style.background=\'var(--bg4)\'" onmouseout="this.style.background=\'none\'" onclick="selectMetricName(\''+esc(m.name).replace(/'/g,"\\'")+'\',\''+esc(m.unit||'').replace(/'/g,"\\'")+'\')"><span style="color:var(--text1)">'+esc(m.name)+'</span><span style="color:var(--text4);font-family:var(--mono);font-size:10px">'+esc(m.unit||'')+conf+'</span></div>';
+    for(var mi=0;mi<metrics.length;mi++){
+      var m=metrics[mi];
+      var conf=m.confidence?(' ('+Math.round(m.confidence*100)+'pct)'):'';
+      var mname=esc(m.name).replace(/'/g,'');
+      var munit=esc(m.unit||'').replace(/'/g,'');
+      html+='<div style="padding:6px 12px;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;border-bottom:1px solid var(--bg3)" onmouseover="this.style.background=\'var(--bg4)\'" onmouseout="this.style.background=\'none\'" onclick="selectMetricName(\''+mname+'\',\''+munit+'\')"><span style="color:var(--text1)">'+esc(m.name)+'</span><span style="color:var(--text4);font-family:var(--mono);font-size:10px">'+esc(m.unit||'')+conf+'</span></div>';
     }
   }
   if(!html)html='<div style="padding:12px;font-size:12px;color:var(--text4)">No matches</div>';
