@@ -76,6 +76,8 @@ async def build_agent_context(
     context_contract = await build_context_contract(db)
     transcript_text = await _build_document_text(db, company_id, period, "transcript")
     presentation_text = await _build_document_text(db, company_id, period, "presentation")
+    transcript_analysis = await _load_document_analysis(db, company_id, period, "transcript_analysis")
+    presentation_analysis = await _load_document_analysis(db, company_id, period, "presentation_analysis")
 
     return {
         # Identity
@@ -98,9 +100,11 @@ async def build_agent_context(
         "non_gaap_bridge":     extraction_ctx.get("non_gaap_bridge", []),
         "segment_data":        extraction_ctx.get("segment_data"),
         "detected_period":     extraction_ctx.get("detected_period", ""),
-        # Document text for specialist agents
-        "transcript_text":     transcript_text,
-        "presentation_text":   presentation_text,
+        # Document text (raw) and pre-built analyses (from ingestion)
+        "transcript_text":         transcript_text,
+        "presentation_text":       presentation_text,
+        "transcript_deep_dive":    transcript_analysis,
+        "presentation_analysis":   presentation_analysis,
         # Shared macro assumptions — injected into every agent prompt
         # No agent may contradict these assumptions (enforced by QC agent)
         "context_contract":    context_contract,
@@ -207,6 +211,29 @@ async def _build_document_text(
         logger.warning("Failed to load %s text for %s %s: %s",
                        doc_type, company_id, period, str(e)[:100])
         return ""
+
+
+async def _load_document_analysis(
+    db: AsyncSession, company_id, period: str, output_type: str,
+) -> dict:
+    """Load pre-built document analysis (transcript or presentation)
+    stored during ingestion in research_outputs."""
+    try:
+        q = await db.execute(
+            select(ResearchOutput)
+            .where(ResearchOutput.company_id == company_id)
+            .where(ResearchOutput.period_label == period)
+            .where(ResearchOutput.output_type == output_type)
+            .order_by(desc(ResearchOutput.created_at))
+            .limit(1)
+        )
+        row = q.scalar_one_or_none()
+        if row and row.content_json:
+            return json.loads(row.content_json)
+    except Exception as e:
+        logger.warning("Failed to load %s for %s %s: %s",
+                       output_type, company_id, period, str(e)[:100])
+    return {}
 
 
 async def _build_company_meta(db: AsyncSession, company_id) -> dict:

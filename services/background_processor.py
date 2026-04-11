@@ -66,6 +66,82 @@ async def _add_log(job_id: uuid.UUID, message: str, level: str = "info"):
         await db.commit()
 
 
+async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_text: str):
+    """Run LLM analysis on transcripts and presentations during ingestion.
+    Stores output in research_outputs so the Financial Analyst agent can
+    consume it as pre-built context."""
+    import json as _json
+    from services.llm_client import call_llm_native_async
+    from prompts.loader import load_prompt
+
+    # Build minimal inputs for the prompt
+    inputs = {
+        "company_name": "",
+        "ticker": "",
+        "period_label": doc.period_label or "",
+        "thesis": "",
+        "tracked_kpis": "",
+        "prior_period": "",
+        "context_contract": {},
+    }
+
+    # Get company info
+    try:
+        from sqlalchemy import select as sa_select
+        cq = await db.execute(sa_select(Company).where(Company.id == doc.company_id))
+        company = cq.scalar_one_or_none()
+        if company:
+            inputs["company_name"] = company.name or ""
+            inputs["ticker"] = company.ticker or ""
+    except Exception:
+        pass
+
+    # Set the document text
+    if dtype == "transcript":
+        inputs["transcript_text"] = full_text[:30000]
+        agent_id = "transcript_deep_dive"
+        output_type = "transcript_analysis"
+    else:
+        inputs["presentation_text"] = full_text[:30000]
+        agent_id = "presentation_analysis"
+        output_type = "presentation_analysis"
+
+    # Build and run prompt
+    prompt_result = load_prompt(agent_id, inputs)
+    prompt = prompt_result[0] if isinstance(prompt_result, tuple) else prompt_result
+
+    result = await call_llm_native_async(
+        prompt,
+        max_tokens=4096,
+        feature=f"doc_{dtype}_analysis",
+    )
+
+    # Parse JSON response
+    raw = result["text"].strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1]) if len(lines) > 2 else raw[3:]
+
+    try:
+        output = _json.loads(raw)
+    except Exception:
+        logger.warning("Failed to parse %s analysis JSON for doc %s", dtype, doc.id)
+        output = {"raw_text": raw[:5000], "parse_failed": True}
+
+    # Persist as research_output
+    ro = ResearchOutput(
+        id=uuid.uuid4(),
+        company_id=doc.company_id,
+        period_label=doc.period_label,
+        output_type=output_type,
+        content_json=_json.dumps(output, default=str),
+    )
+    db.add(ro)
+    await db.commit()
+    logger.info("Persisted %s analysis for doc %s (%s %s)",
+                dtype, doc.id, inputs["ticker"], doc.period_label)
+
+
 async def _persist_extraction_profile(db: AsyncSession, doc, extraction: dict):
     """Persist enriched extraction metadata to extraction_profiles table
     AND to research_outputs (as extraction_context) so build_agent_context()
@@ -499,6 +575,14 @@ async def run_batch_pipeline(
                             logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
 
                         mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
+
+                        # Run document-level LLM analysis for transcripts and presentations
+                        if dtype in ("transcript", "presentation") and full_text and len(full_text) > 500:
+                            try:
+                                await _analyse_document_with_llm(doc_db, doc, dtype, full_text)
+                            except Exception as da_err:
+                                logger.warning("Document analysis failed for %s (%s): %s", did, dtype, str(da_err)[:200])
+
                         return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title, "mda_narrative": mda}
                 except Exception as e:
                     doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})

@@ -41,7 +41,9 @@ from agents.registry import AgentRegistry
 logger = logging.getLogger(__name__)
 
 
-@AgentRegistry.register
+# NOT registered as a pipeline agent — runs during ingestion instead.
+# Prompt file (prompts/agents/presentation_analysis.txt) is used by
+# background_processor._analyse_document_with_llm() during document processing.
 class PresentationAgent(BaseAgent):
 
     agent_id   = "presentation_analysis"

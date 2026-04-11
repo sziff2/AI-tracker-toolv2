@@ -40,7 +40,9 @@ from agents.registry import AgentRegistry
 logger = logging.getLogger(__name__)
 
 
-@AgentRegistry.register
+# NOT registered as a pipeline agent — runs during ingestion instead.
+# Prompt file (prompts/agents/transcript_deep_dive.txt) is used by
+# background_processor._analyse_document_with_llm() during document processing.
 class TranscriptAgent(BaseAgent):
 
     agent_id   = "transcript_deep_dive"
