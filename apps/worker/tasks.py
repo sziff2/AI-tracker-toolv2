@@ -186,3 +186,76 @@ async def _async_generate(company_id: str, period_label: str):
         await generate_briefing(db, cid, period_label)
         await generate_ir_questions(db, cid, period_label)
         logger.info("[%s/%s] Output generation complete.", company_id, period_label)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase B — Agent pipeline tasks
+# ─────────────────────────────────────────────────────────────────
+
+@celery_app.task(bind=True, name="run_document_pipeline", max_retries=0)
+def run_document_pipeline_task(
+    self,
+    company_id: str,
+    period_label: str,
+    agent_ids: list[str] | None = None,
+) -> dict:
+    """Phase B: agent pipeline after document extraction."""
+    import asyncio
+    from agents.orchestrator import AgentOrchestrator
+    logger.info("run_document_pipeline: %s %s", company_id, period_label)
+    try:
+        result = asyncio.run(
+            AgentOrchestrator().run_document_pipeline(company_id, period_label, agent_ids)
+        )
+        return {
+            "pipeline_run_id":  result.pipeline_run_id,
+            "status":           result.status,
+            "total_cost_usd":   result.total_cost_usd,
+            "agents_completed": result.agents_completed,
+            "agents_failed":    result.agents_failed,
+            "duration_ms":      result.duration_ms,
+            "error_message":    result.error_message,
+        }
+    except Exception as e:
+        logger.exception("run_document_pipeline failed: %s", e)
+        raise
+
+
+@celery_app.task(bind=True, name="run_macro_refresh", max_retries=0)
+def run_macro_refresh_task(self) -> dict:
+    """Monthly macro agent refresh."""
+    import asyncio
+    from agents.orchestrator import AgentOrchestrator
+    logger.info("run_macro_refresh task started")
+    try:
+        result = asyncio.run(AgentOrchestrator().run_macro_refresh())
+        return {"status": result.status, "agents_completed": result.agents_completed}
+    except Exception as e:
+        logger.exception("run_macro_refresh failed: %s", e)
+        raise
+
+
+@celery_app.task(bind=True, name="run_agent_on_demand", max_retries=0)
+def run_agent_on_demand_task(
+    self,
+    agent_id: str,
+    company_id: str | None = None,
+    period_label: str | None = None,
+) -> dict:
+    """On-demand single agent with auto dependency resolution."""
+    import asyncio
+    from agents.orchestrator import AgentOrchestrator
+    logger.info("run_agent_on_demand: %s for %s %s", agent_id, company_id, period_label)
+    try:
+        result = asyncio.run(
+            AgentOrchestrator().run_agent_on_demand(agent_id, company_id, period_label)
+        )
+        return {
+            "pipeline_run_id":  result.pipeline_run_id,
+            "status":           result.status,
+            "agents_completed": result.agents_completed,
+            "total_cost_usd":   result.total_cost_usd,
+        }
+    except Exception as e:
+        logger.exception("run_agent_on_demand failed: %s", e)
+        raise
