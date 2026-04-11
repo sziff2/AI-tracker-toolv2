@@ -2,7 +2,7 @@
 Pipeline API routes — trigger and monitor Phase B agent runs.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
@@ -186,3 +186,93 @@ async def get_pipeline_run(
         "error_message":        run.error_message,
         "agent_execution_log":  run.agent_execution_log or [],
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Context Contract — shared macro assumptions
+# ─────────────────────────────────────────────────────────────────
+
+@router.get("/context-contract")
+async def get_context_contract(db: AsyncSession = Depends(get_db)):
+    """Get the active context contract."""
+    from apps.api.models import ContextContract
+    q = await db.execute(
+        select(ContextContract)
+        .where(ContextContract.is_active == True)
+        .order_by(desc(ContextContract.version))
+        .limit(1)
+    )
+    contract = q.scalar_one_or_none()
+    if not contract:
+        return {"active": False}
+    return {
+        "active": True,
+        "version": contract.version,
+        "macro_assumptions": contract.macro_assumptions or {},
+        "analyst_overrides": contract.analyst_overrides or {},
+        "authored_by": contract.authored_by,
+        "created_at": contract.created_at.isoformat() if contract.created_at else None,
+    }
+
+
+@router.put("/context-contract")
+async def save_context_contract(request: Request, db: AsyncSession = Depends(get_db)):
+    """Save a new context contract version. Deactivates previous."""
+    import uuid
+    from apps.api.models import ContextContract
+    from sqlalchemy import update
+
+    body = await request.json()
+    macro = body.get("macro_assumptions", {})
+    notes = body.get("analyst_notes", "")
+    author = body.get("authored_by", "analyst")
+
+    # Deactivate all existing
+    await db.execute(
+        update(ContextContract).values(is_active=False)
+    )
+
+    # Get next version number
+    q = await db.execute(
+        select(ContextContract.version)
+        .order_by(desc(ContextContract.version))
+        .limit(1)
+    )
+    last = q.scalar_one_or_none()
+    next_version = (last or 0) + 1
+
+    contract = ContextContract(
+        id=uuid.uuid4(),
+        version=next_version,
+        is_active=True,
+        macro_assumptions=macro,
+        analyst_overrides={"notes": notes} if notes else None,
+        authored_by=author,
+    )
+    db.add(contract)
+    await db.commit()
+
+    return {"status": "saved", "version": next_version}
+
+
+@router.get("/context-contract/history")
+async def get_contract_history(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent context contract versions."""
+    from apps.api.models import ContextContract
+    q = await db.execute(
+        select(ContextContract)
+        .order_by(desc(ContextContract.version))
+        .limit(limit)
+    )
+    contracts = q.scalars().all()
+    return [{
+        "version": c.version,
+        "is_active": c.is_active,
+        "macro_assumptions": c.macro_assumptions or {},
+        "analyst_overrides": c.analyst_overrides or {},
+        "authored_by": c.authored_by,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    } for c in contracts]
