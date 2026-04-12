@@ -73,8 +73,24 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
     import json as _json
     from services.llm_client import call_llm_native_async
     from prompts.loader import load_prompt
+    from services.context_builder import build_context_contract
 
-    # Build minimal inputs for the prompt
+    # Load the active macro context contract so transcript/presentation
+    # analysis prompts can resolve their {rates}, {usd}, {credit}, {growth},
+    # {commodities}, {geopolitical}, {inflation}, {liquidity} placeholders
+    # (same block the agent pipeline uses). Without this the prompt ships
+    # with literal "{rates}" etc. in the text and the LLM often returns
+    # malformed JSON in response.
+    try:
+        context_contract = await build_context_contract(db)
+    except Exception as e:
+        logger.warning("Failed to load context contract for %s analysis: %s", dtype, str(e)[:200])
+        context_contract = {}
+
+    # Build minimal inputs for the prompt.
+    # Only include context_contract when it's non-empty — the loader uses
+    # `"context_contract" in inputs` as the signal to render the contract
+    # block, so an empty dict would trip the placeholder warnings anyway.
     inputs = {
         "company_name": "",
         "ticker": "",
@@ -82,8 +98,9 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
         "thesis": "",
         "tracked_kpis": "",
         "prior_period": "",
-        "context_contract": {},
     }
+    if context_contract and context_contract.get("macro_assumptions"):
+        inputs["context_contract"] = context_contract
 
     # Get company info
     try:
