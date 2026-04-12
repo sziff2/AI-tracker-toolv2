@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from apps.api.database import get_db
-from apps.api.models import Company, PipelineRun
+from apps.api.models import Company, PipelineRun, LLMUsageLog
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["analytics"])
@@ -76,6 +76,101 @@ async def get_cost_breakdown(db: AsyncSession = Depends(get_db)):
             "total_runs": total_runs,
             "avg_cost_per_run": round(total_spend / total_runs, 4) if total_runs > 0 else 0.0,
         },
+    }
+
+
+@router.get("/analytics/llm-usage")
+async def get_llm_usage_breakdown(
+    ticker: str | None = None,
+    period: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Per-feature LLM cost breakdown from llm_usage_log. Unlike
+    /analytics/costs (which only reads pipeline_runs.total_cost_usd and
+    therefore only shows agent spend), this endpoint covers EVERY call
+    through llm_client — extraction, section analysis, two-pass, table
+    extraction, transcript/presentation document analysis, agents, etc.
+
+    Query params:
+      ticker: filter to one company (Bloomberg format, e.g. "ALLY US")
+      period: filter to one period (e.g. "2025_Q1")
+
+    Returns rows grouped by feature with totals + a grand total so you
+    can see how much extraction costs vs agent pipeline costs for any
+    (company, period) slice.
+    """
+    q = (
+        select(
+            LLMUsageLog.feature,
+            LLMUsageLog.model,
+            func.count(LLMUsageLog.id).label("calls"),
+            func.coalesce(func.sum(LLMUsageLog.input_tokens), 0).label("input_tokens"),
+            func.coalesce(func.sum(LLMUsageLog.output_tokens), 0).label("output_tokens"),
+            func.coalesce(func.sum(LLMUsageLog.cost_usd), 0).label("cost_usd"),
+        )
+        .group_by(LLMUsageLog.feature, LLMUsageLog.model)
+        .order_by(func.sum(LLMUsageLog.cost_usd).desc().nulls_last())
+    )
+    if ticker:
+        q = q.where(LLMUsageLog.ticker == ticker.upper())
+    if period:
+        q = q.where(LLMUsageLog.period_label == period)
+
+    result = await db.execute(q)
+
+    rows: list[dict] = []
+    total_cost = 0.0
+    total_calls = 0
+    total_in = 0
+    total_out = 0
+    for r in result.all():
+        cost = float(r.cost_usd or 0)
+        calls = int(r.calls or 0)
+        in_t = int(r.input_tokens or 0)
+        out_t = int(r.output_tokens or 0)
+        total_cost += cost
+        total_calls += calls
+        total_in += in_t
+        total_out += out_t
+        rows.append({
+            "feature": r.feature or "unknown",
+            "model": r.model,
+            "calls": calls,
+            "input_tokens": in_t,
+            "output_tokens": out_t,
+            "cost_usd": round(cost, 4),
+        })
+
+    # Bucket into extraction / agent / analysis / other for the summary
+    def _bucket(feature: str) -> str:
+        f = (feature or "").lower()
+        if f.startswith("agent_"):
+            return "agents"
+        if "extract" in f or f in ("section_extraction",):
+            return "extraction"
+        if "analysis" in f or "doc_" in f:
+            return "document_analysis"
+        return "other"
+
+    bucket_totals: dict[str, dict] = {}
+    for r in rows:
+        b = _bucket(r["feature"])
+        bt = bucket_totals.setdefault(b, {"calls": 0, "cost_usd": 0.0})
+        bt["calls"] += r["calls"]
+        bt["cost_usd"] += r["cost_usd"]
+    for b in bucket_totals.values():
+        b["cost_usd"] = round(b["cost_usd"], 4)
+
+    return {
+        "ticker": ticker,
+        "period": period,
+        "total_cost_usd": round(total_cost, 4),
+        "total_calls": total_calls,
+        "total_input_tokens": total_in,
+        "total_output_tokens": total_out,
+        "by_bucket": bucket_totals,
+        "by_feature": rows,
     }
 
 
