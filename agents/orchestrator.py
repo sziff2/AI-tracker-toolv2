@@ -476,19 +476,28 @@ class AgentOrchestrator:
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
-        """Check if a processing job has completed for this period.
-        This ensures extraction actually finished, not just that
-        sections exist from a killed run."""
+        """Phase A is complete only when EVERY document in the period has
+        `parsing_status == 'completed'`. A period with zero documents is
+        not complete (nothing to analyse). A period with any pending,
+        processing, or failed document is not complete — agents should
+        wait for extraction to finish first."""
         try:
-            from apps.api.models import ProcessingJob
+            from apps.api.models import Document
+            from sqlalchemy import func, case
             q = await db.execute(
-                select(ProcessingJob)
-                .where(ProcessingJob.company_id == company_id)
-                .where(ProcessingJob.period_label == period_label)
-                .where(ProcessingJob.status == "completed")
-                .limit(1)
+                select(
+                    func.count(Document.id).label("total"),
+                    func.sum(
+                        case((Document.parsing_status == "completed", 1), else_=0)
+                    ).label("done"),
+                )
+                .where(Document.company_id == company_id)
+                .where(Document.period_label == period_label)
             )
-            return q.scalar_one_or_none() is not None
+            row = q.first()
+            if not row or not row.total:
+                return False
+            return int(row.done or 0) == int(row.total)
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:100])
             return False

@@ -20,75 +20,79 @@ async def get_phase_a_status(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Check whether Phase A (extraction) is complete for a company + period.
-    UI calls this to decide whether to enable the Run Analysis button.
+    Phase A is complete only when EVERY document in the period has
+    `parsing_status == 'completed'`. Returns per-status doc counts so the
+    UI can show exactly what's blocking agents from running.
     """
     q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = q.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    # Check: is there a completed processing job for this period?
-    # This ensures extraction actually finished, not just that sections exist
-    # from a previous (possibly killed) run.
-    from apps.api.models import Document, ProcessingJob
+    from apps.api.models import Document
     from sqlalchemy import func
 
-    # Check for a completed processing job
-    job_q = await db.execute(
-        select(ProcessingJob)
-        .where(ProcessingJob.company_id == company.id)
-        .where(ProcessingJob.period_label == period)
-        .where(ProcessingJob.status == "completed")
-        .order_by(desc(ProcessingJob.created_at))
-        .limit(1)
-    )
-    completed_job = job_q.scalar_one_or_none()
-
-    if not completed_job:
-        # No completed job — check if there's a running one
-        running_q = await db.execute(
-            select(ProcessingJob)
-            .where(ProcessingJob.company_id == company.id)
-            .where(ProcessingJob.period_label == period)
-            .where(ProcessingJob.status.in_(["queued", "processing"]))
-            .limit(1)
-        )
-        running = running_q.scalar_one_or_none()
-        return {
-            "phase_a_complete": False,
-            "extraction_method": None,
-            "processing": running is not None,
-        }
-
-    # Completed job exists — get details
-    method = None
-    ctx_q = await db.execute(
-        select(ResearchOutput)
-        .where(ResearchOutput.company_id == company.id)
-        .where(ResearchOutput.period_label == period)
-        .where(ResearchOutput.output_type == "extraction_context")
-        .limit(1)
-    )
-    ctx = ctx_q.scalar_one_or_none()
-    if ctx:
-        import json
-        try:
-            method = json.loads(ctx.content_json or "{}").get("extraction_method")
-        except Exception:
-            pass
-
-    doc_q = await db.execute(
-        select(func.count(Document.id))
+    # Per-status document count for this period
+    rows = await db.execute(
+        select(Document.parsing_status, func.count(Document.id))
         .where(Document.company_id == company.id)
         .where(Document.period_label == period)
-        .where(Document.parsing_status == "completed")
+        .group_by(Document.parsing_status)
     )
+    counts = {status or "unknown": int(n) for status, n in rows.all()}
+    total = sum(counts.values())
+    done = counts.get("completed", 0)
+    pending = counts.get("pending", 0)
+    processing = counts.get("processing", 0)
+    failed = counts.get("failed", 0)
+
+    all_complete = total > 0 and done == total
+
+    # Pending/processing doc metadata (for the UI to show which docs are blocking)
+    pending_docs: list[dict] = []
+    if not all_complete and total > 0:
+        pd_q = await db.execute(
+            select(Document.id, Document.document_type, Document.parsing_status, Document.source_url)
+            .where(Document.company_id == company.id)
+            .where(Document.period_label == period)
+            .where(Document.parsing_status != "completed")
+        )
+        for did, dtype, pstatus, url in pd_q.all():
+            pending_docs.append({
+                "id": str(did),
+                "document_type": dtype,
+                "parsing_status": pstatus,
+                "source_url": url,
+            })
+
+    # Extraction method (populated only once something has been extracted)
+    method = None
+    if done > 0:
+        ctx_q = await db.execute(
+            select(ResearchOutput)
+            .where(ResearchOutput.company_id == company.id)
+            .where(ResearchOutput.period_label == period)
+            .where(ResearchOutput.output_type == "extraction_context")
+            .limit(1)
+        )
+        ctx = ctx_q.scalar_one_or_none()
+        if ctx:
+            import json
+            try:
+                method = json.loads(ctx.content_json or "{}").get("extraction_method")
+            except Exception:
+                pass
 
     return {
-        "phase_a_complete": True,
-        "extraction_method": method or "legacy",
-        "parsed_documents": doc_q.scalar() or 0,
+        "phase_a_complete": all_complete,
+        "extraction_method": method or ("legacy" if done > 0 else None),
+        "total_documents": total,
+        "parsed_documents": done,
+        "pending_documents": pending,
+        "processing_documents": processing,
+        "failed_documents": failed,
+        "processing": processing > 0 or pending > 0,
+        "pending_doc_details": pending_docs,
     }
 
 
@@ -112,10 +116,27 @@ async def trigger_pipeline(
 
     orch = AgentOrchestrator()
     if not await orch._is_phase_a_complete(db, str(company.id), period):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Extraction not complete for {ticker} {period}. Process document first.",
+        # Report exactly what's missing so the UI can prompt the analyst
+        from apps.api.models import Document
+        from sqlalchemy import func
+        rows = await db.execute(
+            select(Document.parsing_status, func.count(Document.id))
+            .where(Document.company_id == company.id)
+            .where(Document.period_label == period)
+            .group_by(Document.parsing_status)
         )
+        counts = {s or "unknown": int(n) for s, n in rows.all()}
+        total = sum(counts.values())
+        done = counts.get("completed", 0)
+        missing = total - done
+        if total == 0:
+            msg = f"No documents in {ticker} {period}. Upload or ingest documents first."
+        else:
+            msg = (
+                f"{missing} of {total} documents still need to be parsed "
+                f"for {ticker} {period}. Run document processing first."
+            )
+        raise HTTPException(status_code=400, detail=msg)
 
     task = run_document_pipeline_task.delay(str(company.id), period)
     return {
