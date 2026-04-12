@@ -697,7 +697,7 @@ async function loadDD(){try{const r=await fetch('/api/v1/companies-list');if(r.o
     });
     sc.innerHTML=h;
   }}
-function ckCompanyChange(){ckHideNewCo();loadCockpit();}
+function ckCompanyChange(){ckHideNewCo();window._ckActiveResPeriod=null;loadCockpit();}
 function ckShowNewCo(){E('ck-new-co-panel').style.display='block';E('ck-add-co-btn').style.display='none';E('ck-company').value='';E('ck-content').innerHTML='';['ck-new-ticker','ck-new-name','ck-new-sector','ck-new-country','ck-new-th-core','ck-new-th-risks','ck-new-th-val'].forEach(x=>{if(E(x))E(x).value='';});CK_NEW_FILES=[];ckNewRenderFL();}
 function ckHideNewCo(){const p=E('ck-new-co-panel');if(p)p.style.display='none';const b=E('ck-add-co-btn');if(b)b.style.display='block';}
 var CK_NEW_FILES=[];
@@ -861,7 +861,7 @@ async function ckSubmitNewPeriod(ticker){
       const d=await r.json();
       await new Promise((resolve,reject)=>{const poll=setInterval(async()=>{try{const rj=await fetch('/api/v1/jobs/'+d.job_id);if(!rj.ok)return;const j=await rj.json();ldEl.innerHTML=esc((j.current_step||'processing').replace(/_/g,' '))+' '+(j.progress_pct||0)+'%';if(j.status==='completed'){clearInterval(poll);resolve();}else if(j.status==='failed'){clearInterval(poll);reject(new Error(j.error_message||'Failed'));}}catch(e){}},3000);});
     }
-    ldEl.style.display='none';ckHideNewPeriod();loadCockpit();
+    ldEl.style.display='none';ckHideNewPeriod();_ckReload();
   }catch(e){errEl.textContent=e.message;errEl.style.display='block';}
   btn.disabled=false;btn.textContent='Analyse Period';ldEl.style.display='none';
 }
@@ -907,7 +907,13 @@ function resetForm(){E('form-section').style.display='block';E('result-section')
 
 // ═══ COCKPIT ═══════════════════════════════════════════════
 var _ckCache={};
-function _ckInvalidate(ticker){delete _ckCache[ticker];}
+function _ckInvalidate(ticker){if(ticker)delete _ckCache[ticker];else _ckCache={};}
+// Helper: invalidate cache for current company and reload while preserving tab + period state
+function _ckReload(){
+  var t=E('ck-company');var ticker=t?t.value:null;
+  if(ticker)_ckInvalidate(ticker);
+  loadCockpit();
+}
 async function loadCockpit(){const t=E('ck-company').value,c=E('ck-content');if(!t){c.innerHTML='';return;}
   // Check cache (30s TTL)
   var cached=_ckCache[t];
@@ -944,9 +950,10 @@ function renderCockpit(ticker,d){
   h+='</div>';
   c.innerHTML=h;
   // Populate Run Analysis button, pipeline status, and agent outputs
-  // ONLY for the currently visible period (not all 8-13 quarters).
+  // ONLY for the currently visible period (respect remembered selection).
   var resPeriods=sortPeriods(Object.keys({...(d.analyses_by_period||{}),...(d.docs_by_period||{})}));
-  var visiblePeriod=resPeriods[0]; // first period is shown by default
+  var remembered=window._ckActiveResPeriod;
+  var visiblePeriod=(remembered&&resPeriods.includes(remembered))?remembered:resPeriods[0];
   if(visiblePeriod){
     renderPeriodActions(ticker,visiblePeriod,document.getElementById('period-actions-'+visiblePeriod));
     restorePipelineStatus(ticker,visiblePeriod);
@@ -1117,7 +1124,7 @@ async function runLLMUpdateThesis(ticker){
     const d=await r.json();
     btn.textContent='Updated '+d.fields_updated.length+' fields';
     setTimeout(()=>{btn.textContent='Update from Analysis';btn.disabled=false;},2000);
-    loadCockpit();
+    _ckReload();
   }catch(e){
     toast('Update failed: '+e.message);
     btn.textContent='Update from Analysis';btn.disabled=false;
@@ -1129,7 +1136,7 @@ async function ckCreateThesis(ticker){
   if(!core){toast('Enter a core thesis.');return;}
   try{
     await fetch('/api/v1/companies/'+enc(ticker)+'/thesis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({thesis_date:new Date().toISOString().split('T')[0],core_thesis:core,key_risks:E('ck-create-th-risks').value.trim()||null,valuation_framework:E('ck-create-th-val').value.trim()||null})});
-    loadCockpit();
+    _ckReload();
   }catch(e){toast('Failed: '+e.message);}
 }
 async function ckAutoGenThesis(ticker){
@@ -1137,7 +1144,7 @@ async function ckAutoGenThesis(ticker){
   try{
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/generate-thesis',{method:'POST'});
     if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
-    btn.textContent='Done!';loadCockpit();
+    btn.textContent='Done!';_ckReload();
   }catch(e){toast('Failed: '+e.message);btn.textContent='✨ Auto-generate';btn.disabled=false;}
 }
 
@@ -1256,11 +1263,14 @@ function renderCkResults(ticker,d){
   const abp=d.analyses_by_period||{};const dbp=d.docs_by_period||{};
   window._npDocsbyPeriod=dbp;
   const allPeriods=sortPeriods(Object.keys({...abp,...dbp}));
+  // Respect remembered active period if it still exists
+  const remembered=window._ckActiveResPeriod;
+  const activePeriod=(remembered&&allPeriods.includes(remembered))?remembered:allPeriods[0];
   let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">';
   h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3)">Period:</div>';
   if(allPeriods.length){
     h+='<select class="fi" id="res-period-select" onchange="showResPeriod(this.value)" style="width:auto;font-size:13px;padding:7px 14px;font-weight:600">';
-    allPeriods.forEach((p,i)=>{h+='<option value="'+esc(p)+'"'+(i===0?' selected':'')+'>'+esc(normalisePeriodLabel(p)||p)+'</option>';});
+    allPeriods.forEach((p,i)=>{h+='<option value="'+esc(p)+'"'+(p===activePeriod?' selected':'')+'>'+esc(normalisePeriodLabel(p)||p)+'</option>';});
     h+='</select>';
   } else {
     h+='<span style="font-family:var(--sans);font-size:13px;color:var(--text4)">No periods yet</span>';
@@ -1277,7 +1287,7 @@ function renderCkResults(ticker,d){
   h+='<div class="ld" id="np-loading" style="display:none"></div><div class="err" id="np-error" style="display:none"></div></div>';
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Ingest documents via the Documents tab, then click "+ New Period" to analyse them.</div>';
   allPeriods.forEach((p,i)=>{
-    h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(i===0?'':'display:none')+'">';
+    h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(p===activePeriod?'':'display:none')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px"><div id="period-actions-'+esc(p)+'"></div><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     h+='<div id="pipeline-panel-'+esc(p)+'" style="display:none;margin-bottom:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px"></div>';
     h+='<div id="agent-outputs-'+esc(p)+'" style="margin-bottom:16px"></div>';
@@ -1295,6 +1305,7 @@ function renderCkResults(ticker,d){
   return h;
 }
 function showResPeriod(p,btn){
+  window._ckActiveResPeriod=p; // remember for next render
   document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-period-select')el.style.display='none';});
   const target=E('res-'+p);if(target)target.style.display='block';
   // Sync dropdown if called programmatically
@@ -1306,7 +1317,11 @@ function showResPeriod(p,btn){
 }
 async function deletePeriod(ticker,period){
   if(!confirm('Delete all documents, metrics, and analysis for '+period+'? This cannot be undone.'))return;
-  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');loadCockpit();}catch(e){toast('Delete failed: '+e.message);}
+  try{const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period),{method:'DELETE'});if(!r.ok)throw new Error('Failed');
+    // Clear remembered period if we just deleted it
+    if(window._ckActiveResPeriod===period)window._ckActiveResPeriod=null;
+    _ckReload();
+  }catch(e){toast('Delete failed: '+e.message);}
 }
 
 function handleAddDocs(input,ticker,period){
@@ -1342,6 +1357,7 @@ function handleAddDocs(input,ticker,period){
 }
 
 async function uploadAddDocs(ticker,period,count){
+  window._ckActiveResPeriod=period; // stick to this period after reload
   const staged=window._addDocFiles;if(!staged||!staged.length)return;
   const listEl=E('add-doc-list-'+period);
   listEl.innerHTML='<div class="ld">Uploading '+count+' documents…</div>';
@@ -1369,6 +1385,7 @@ async function uploadAddDocs(ticker,period,count){
 }
 async function resynthesisePeriod(ticker,period){
   if(!confirm('Re-run synthesis for '+period+'? This will regenerate the analysis output using your updated thesis context. Existing metrics and extractions are preserved.'))return;
+  window._ckActiveResPeriod=period; // stick to this period after reload
   try{
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/resynthesise',{method:'POST'});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
@@ -1382,6 +1399,7 @@ async function resynthesisePeriod(ticker,period){
 }
 async function reprocessPeriod(ticker,period){
   if(!confirm('Reprocess documents for '+period+'? This will clear existing metrics and outputs, then re-parse and re-extract all documents from scratch.'))return;
+  window._ckActiveResPeriod=period; // stick to this period after reload
   try{
     const r=await fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
@@ -1436,12 +1454,12 @@ async function updateDocMeta(docId,fields,ticker){
     var r=await fetch('/api/v1/documents/'+docId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)});
     if(!r.ok)throw new Error('Failed');
     // If period changed, reload cockpit to move doc to correct period
-    if(fields.period_label){loadCockpit();}
+    if(fields.period_label){_ckReload();}
   }catch(e){toast('Update failed: '+e.message);}
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
-  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';loadCockpit();}catch(e){toast('Failed: '+e.message);}
+  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';_ckReload();}catch(e){toast('Failed: '+e.message);}
 }
 
 async function askGlobal(ticker){
@@ -1774,8 +1792,8 @@ async function saveScenarios(ticker){
 // ── Actions ──────────────────────────────────────────────────
 async function setScore(t,k,p,s){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:s})});document.querySelectorAll('.sb[data-kpi="'+k+'"][data-period="'+p+'"]').forEach(b=>{b.classList.toggle('on',parseInt(b.textContent)===s);});}catch(e){}}
 async function setOverallScore(t,p,s){document.querySelectorAll('.sb[data-period="'+p+'"]').forEach(b=>{if(!b.dataset.kpi)b.classList.toggle('on',parseInt(b.textContent)===s);});toast('Overall score is computed from individual KPI scores. Set scores on individual KPIs below.','info');}
-async function setKPIValue(t,k,p,currentVal){const newVal=prompt('Enter value:',currentVal||'');if(newVal===null)return;const numVal=newVal===''?null:parseFloat(newVal);try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:isNaN(numVal)?null:numVal,value_text:newVal})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
-async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;const dd=E('nkn-dropdown');if(dd)dd.style.display='none';try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});loadCockpit();}catch(e){}}
+async function setKPIValue(t,k,p,currentVal){const newVal=prompt('Enter value:',currentVal||'');if(newVal===null)return;const numVal=newVal===''?null:parseFloat(newVal);try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k+'/scores/'+p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:isNaN(numVal)?null:numVal,value_text:newVal})});_ckReload();}catch(e){toast('Failed: '+e.message);}}
+async function addKPI(t){const n=E('nkn').value.trim(),u=E('nku').value.trim();if(!n)return;const dd=E('nkn-dropdown');if(dd)dd.style.display='none';try{await fetch('/api/v1/companies/'+enc(t)+'/kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpis:[{kpi_name:n,unit:u||null}]})});_ckReload();}catch(e){}}
 
 // ── Metric name dropdown for KPI selection ──────────────────
 var _metricNamesCache={};
@@ -1829,13 +1847,13 @@ function _closeMetricDropdown(e){
   const dd=E('nkn-dropdown');if(!dd)return;
   if(!dd.contains(e.target)&&e.target.id!=='nkn'){dd.style.display='none';document.removeEventListener('click',_closeMetricDropdown);}
 }
-async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});loadCockpit();}catch(e){}}
+async function delKPI(t,k){if(!confirm('Remove this KPI?'))return;try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'DELETE'});_ckReload();}catch(e){}}
 async function editKPI(t,k,currentName,currentUnit){
   const newName=prompt('KPI name:',currentName);if(!newName||newName===currentName&&!confirm('Change unit too?')){}
   const newUnit=prompt('Unit:',currentUnit);
-  if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});loadCockpit();}catch(e){toast('Failed: '+e.message);}}
+  if(newName){try{await fetch('/api/v1/companies/'+enc(t)+'/kpis/'+k,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpi_name:newName,unit:newUnit||null})});_ckReload();}catch(e){toast('Failed: '+e.message);}}
 }
-async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){toast('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function addDecision(t){const a=E('dec-action').value,r=E('dec-rationale').value.trim(),cv=E('dec-conviction').value,au=E('dec-author').value.trim();if(!r){toast('Enter a rationale.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,rationale:r,conviction:cv?parseInt(cv):null,author:au||null})});if(au)localStorage.setItem('op_author',au);_ckReload();}catch(e){}}
 // ── Context Contract (Macro View) ────────────────────────────────
 
 var _mcFields=['rates','usd','credit','growth','commodities','geopolitical','inflation','liquidity'];
@@ -1910,6 +1928,7 @@ async function renderPeriodActions(ticker,period,containerEl){
 
 function analyseFullPeriod(ticker,period,btn){
   // Phase A: process documents (parse + extract), then auto-trigger Phase B
+  window._ckActiveResPeriod=period; // stick to this period after reload
   if(btn){btn.disabled=true;btn.textContent='Processing documents...';}
   showPipelineStatus(period,'running',[{agent_id:'document_processing',status:'running',duration_ms:0}],{});
   fetch('/api/v1/companies/'+enc(ticker)+'/periods/'+enc(period)+'/reprocess',{method:'POST'})
@@ -1940,6 +1959,7 @@ function pollPhaseA(ticker,period,btn,jobId){
 }
 
 function startPipelineRun(ticker,period,btn){
+  window._ckActiveResPeriod=period; // stick to this period after reload
   if(btn){btn.disabled=true;btn.textContent='Queuing...';}
   showPipelineStatus(period,'queued',[],{});
   // Use launch timestamp as the "newer than" marker — simpler than a DB round-trip.
@@ -2186,7 +2206,7 @@ async function submitFeedback(t){
     setTimeout(function(){status.textContent='';},3000);
   }catch(e){status.textContent='Failed';status.style.color='var(--red)';}
 }
-async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){toast('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);loadCockpit();}catch(e){}}
+async function addNote(t){const ty=E('note-type').value,ti=E('note-title').value.trim(),co=E('note-content').value.trim(),au=E('note-author').value.trim();if(!co){toast('Enter content.');return;}try{await fetch('/api/v1/companies/'+enc(t)+'/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note_type:ty,title:ti||null,content:co,author:au||null})});if(au)localStorage.setItem('op_author',au);_ckReload();}catch(e){}}
 
 // ── Renderers for new analysis results ──────────────────────
 
