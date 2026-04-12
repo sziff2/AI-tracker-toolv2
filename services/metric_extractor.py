@@ -223,11 +223,18 @@ async def _extract_with_sections(
     if tables_data and doc_type in SECTION_SPLIT_TYPES:
         table_task = _extract_from_tables(db, document, tables_data)
 
+    # Two-pass structural extraction for financial statements
+    # (splits into IS/BS/CF/segments, LLM only classifies labels, numbers from parser)
+    two_pass_task = None
+    if tables_data and doc_type in SECTION_SPLIT_TYPES:
+        two_pass_task = _extract_two_pass(db, document, tables_data, sector)
+
     # Gather all tasks
     section_results = await asyncio.gather(
         *[run_section_extraction(t) for t in extraction_tasks],
         extract_segments(segment_text, sector_context),
         *([] if table_task is None else [table_task]),
+        *([] if two_pass_task is None else [two_pass_task]),
         return_exceptions=True,
     )
 
@@ -253,11 +260,22 @@ async def _extract_with_sections(
         logger.info("Segment decomposition added %d items", len(segment_items))
 
     # Table extraction result
-    if table_task is not None and len(section_results) > num_section_tasks + 1:
-        table_result = section_results[num_section_tasks + 1]
+    idx = num_section_tasks + 1
+    if table_task is not None and len(section_results) > idx:
+        table_result = section_results[idx]
         if isinstance(table_result, list) and not isinstance(table_result, Exception):
             all_items.extend(table_result)
             logger.info("Table-first extraction added %d items", len(table_result))
+        idx += 1
+
+    # Two-pass structural extraction result
+    if two_pass_task is not None and len(section_results) > idx:
+        tp_result = section_results[idx]
+        if isinstance(tp_result, list) and not isinstance(tp_result, Exception):
+            all_items.extend(tp_result)
+            logger.info("Two-pass structural extraction added %d items", len(tp_result))
+        elif isinstance(tp_result, Exception):
+            logger.warning("Two-pass extraction failed: %s", str(tp_result)[:200])
 
     # ── Step 5: Period validation ────────────────────────────
     detected_period = detect_reporting_period(text, document.period_label or "")
@@ -387,6 +405,85 @@ async def _extract_with_sections(
         "non_gaap_bridge": bridge_data.get("bridges", []),
         "non_gaap_comparison": bridge_comparison,
     }
+
+
+async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
+    """Two-pass structural extraction of financial statement tables.
+
+    Pass 1: LLM classifies row labels only (no numbers — can't hallucinate).
+    Pass 2: Match labels to parser's pre-extracted numbers (no LLM).
+
+    Bypasses the section_splitter text-based approach for financial
+    statements, which hits max_tokens on dense tables. Each table gets
+    its own small LLM call (2048 tokens for label classification) so
+    truncation is near-impossible.
+    """
+    try:
+        from services.financial_statement_segmenter import segment_document, StatementType
+        from services.two_pass_extractor import two_pass_extract
+        from apps.api.models import Company
+        import sqlalchemy
+
+        company_q = await db.execute(
+            sqlalchemy.select(Company).where(Company.id == document.company_id)
+        )
+        company = company_q.scalar_one_or_none()
+        if not company:
+            return []
+
+        # Convert tables_data [{page, tables}] into segment_document format
+        pages = []
+        tables_by_page = {}
+        for page_data in tables_data:
+            page_num = page_data.get("page", 0)
+            page_tables = page_data.get("tables", [])
+            pages.append({"page_num": page_num, "text": ""})
+            if page_tables:
+                tables_by_page[page_num] = page_tables
+
+        structure = segment_document(pages, tables_by_page, sector=sector)
+        logger.info("Two-pass: segmented %d financial tables from %d pages",
+                    len(structure.tables), len(pages))
+
+        if not structure.tables:
+            return []
+
+        # Run two_pass_extract on each table in parallel
+        tasks = [
+            two_pass_extract(table, company.name, company.ticker)
+            for table in structure.tables
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Collect and convert to ExtractedMetric-compatible format
+        all_items = []
+        for table, result in zip(structure.tables, results):
+            if isinstance(result, Exception):
+                logger.warning("Two-pass failed for %s: %s",
+                               table.statement_type.value, str(result)[:100])
+                continue
+            if not isinstance(result, list):
+                continue
+            for item in result:
+                if item.get("value") is None:
+                    continue
+                all_items.append({
+                    "metric_name": item.get("metric", "unknown"),
+                    "metric_value": item.get("value"),
+                    "metric_text": item.get("original_label", ""),
+                    "unit": f"{table.currency}_{table.unit_scale[:1].upper()}"
+                            if table.unit_scale else table.currency,
+                    "period": table.period,
+                    "segment": table.segment,
+                    "line_item_type": table.statement_type.value,
+                    "source_snippet": item.get("original_label", ""),
+                    "confidence": 0.95,  # high — numbers from parser, labels from Haiku
+                    "source": "two_pass",
+                })
+        return all_items
+    except Exception as e:
+        logger.warning("Two-pass extraction failed: %s", str(e)[:200])
+        return []
 
 
 async def _extract_from_tables(db, document, tables_data) -> list[dict]:

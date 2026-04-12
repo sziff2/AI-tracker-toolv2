@@ -307,7 +307,20 @@ def _parse_json(raw: str) -> Any:
         pass
     try:
         result = _repair_truncated_json(cleaned)
-        logger.warning("Repaired truncated JSON (%d chars)", len(cleaned))
+        tail = cleaned[-300:].replace("\n", "\\n")
+        # Detect prose vs mid-array truncation
+        tail_text = cleaned[-300:]
+        has_key_indicators = any(k in tail_text for k in
+                                  ['"metric', '"value', '"name', '"statement'])
+        ends_with_closing = cleaned.rstrip().endswith((']', '}'))
+        if ends_with_closing and not has_key_indicators:
+            kind = "prose_tail_harmless"
+        elif has_key_indicators and not ends_with_closing:
+            kind = "MID_ARRAY_TRUNCATION"
+        else:
+            kind = "unknown"
+        logger.warning("Repaired JSON (%d chars, %s) tail=%r",
+                       len(cleaned), kind, tail)
         return result
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse LLM JSON: %s — raw: %s", exc, raw[:1000])
