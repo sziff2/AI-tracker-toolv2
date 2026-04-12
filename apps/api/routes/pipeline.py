@@ -235,38 +235,41 @@ async def get_agent_outputs(
     period: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all agent outputs for a company/period. Powers the Results tab."""
+    """Get the latest agent outputs for a company/period (one row per agent).
+    Uses a SQL-level DISTINCT ON to avoid loading every historical run."""
     from apps.api.models import AgentOutput
-    q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = q.scalar_one_or_none()
-    if not company:
+    from sqlalchemy import text
+    q = await db.execute(select(Company.id).where(Company.ticker == ticker.upper()))
+    co_row = q.first()
+    if not co_row:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+    company_id = co_row[0]
 
-    outputs_q = await db.execute(
-        select(AgentOutput)
-        .where(AgentOutput.company_id == company.id)
-        .where(AgentOutput.period_label == period)
-        .where(AgentOutput.status.in_(["completed", "degraded"]))
-        .order_by(desc(AgentOutput.created_at))
-    )
-    rows = outputs_q.scalars().all()
+    # Use raw SQL DISTINCT ON — one row per agent_id, latest only.
+    # Much faster than loading all rows and dedup'ing in Python.
+    sql = text("""
+        SELECT DISTINCT ON (agent_id)
+            agent_id, status, output_json, confidence, qc_score,
+            cost_usd, duration_ms, created_at
+        FROM agent_outputs
+        WHERE company_id = :cid
+          AND period_label = :period
+          AND status IN ('completed', 'degraded')
+        ORDER BY agent_id, created_at DESC
+    """)
+    result = await db.execute(sql, {"cid": str(company_id), "period": period})
 
-    # Deduplicate — keep latest per agent_id
-    seen = set()
     outputs = {}
-    for row in rows:
-        if row.agent_id in seen:
-            continue
-        seen.add(row.agent_id)
-        outputs[row.agent_id] = {
-            "agent_id": row.agent_id,
-            "status": row.status,
-            "output": row.output_json,
-            "confidence": float(row.confidence) if row.confidence else None,
-            "qc_score": float(row.qc_score) if row.qc_score else None,
-            "cost_usd": float(row.cost_usd) if row.cost_usd else None,
-            "duration_ms": row.duration_ms,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
+    for row in result.mappings():
+        outputs[row["agent_id"]] = {
+            "agent_id": row["agent_id"],
+            "status": row["status"],
+            "output": row["output_json"],
+            "confidence": float(row["confidence"]) if row["confidence"] is not None else None,
+            "qc_score": float(row["qc_score"]) if row["qc_score"] is not None else None,
+            "cost_usd": float(row["cost_usd"]) if row["cost_usd"] is not None else None,
+            "duration_ms": row["duration_ms"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
 
     return {"ticker": ticker, "period": period, "agents": outputs}
