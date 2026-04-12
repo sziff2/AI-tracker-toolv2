@@ -17,6 +17,48 @@ from configs.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────────────────────
+# Celery async task runner
+# ─────────────────────────────────────────────────────────────────
+#
+# Celery's prefork worker keeps the Python process alive across tasks.
+# Each task that calls `asyncio.run(...)` creates a fresh event loop,
+# runs the coroutine, then closes that loop. But services/api/database
+# exports a module-level async_engine whose connection pool caches
+# `AsyncConnection` objects bound to whichever event loop first used
+# them. When the NEXT task starts a new event loop and SQLAlchemy
+# reaches into the pool, the cached connection's cleanup paths call
+# `self._loop.create_task(...)` on the OLD (now closed) loop and
+# crash with `RuntimeError: Event loop is closed`.
+#
+# Observed in prod: a daily price refresh task populated the pool at
+# 18:00:05, then a pipeline task at 18:05:43 immediately died with:
+#   "Exception terminating connection <AdaptedConnection>"
+#   "RuntimeError: Event loop is closed"
+#   "Phase A check failed: Task <Task pending...>"
+# and returned phase_a_incomplete in 0.18s without running anything.
+#
+# Fix: dispose the async engine INSIDE the same event loop that owns
+# the connections. The finally block runs while the loop is still
+# live, so pool cleanup schedules work on the correct loop. After
+# dispose returns, asyncio.run closes the loop. The next task gets a
+# fresh pool and is immune to cross-task contamination.
+def _run_async_task(coro):
+    import asyncio
+    from apps.api.database import async_engine
+
+    async def _with_engine_cleanup():
+        try:
+            return await coro
+        finally:
+            try:
+                await async_engine.dispose()
+            except Exception as e:
+                logger.warning("async_engine.dispose() failed during task cleanup: %s", str(e)[:200])
+
+    return asyncio.run(_with_engine_cleanup())
+
 # ── Celery app ───────────────────────────────────────────────────
 celery_app = Celery(
     "research_agent",
@@ -56,8 +98,7 @@ def weekly_harvest_and_report():
     Weekly auto-harvest: runs EDGAR + Investegate + IR regex scraper
     (no LLM to contain costs), saves a report, and posts to Teams.
     """
-    import asyncio
-    result = asyncio.run(_async_weekly_harvest())
+    result = _run_async_task(_async_weekly_harvest())
     logger.info("[HARVEST] Weekly run complete: %s", {k: v for k, v in result.items() if k != "details"})
     return {k: v for k, v in result.items() if k != "details"}
 
@@ -70,8 +111,7 @@ async def _async_weekly_harvest():
 @celery_app.task(name="apps.worker.tasks.refresh_prices_task")
 def refresh_prices_task():
     """Daily price refresh for all active companies."""
-    import asyncio
-    result = asyncio.run(_async_refresh_prices())
+    result = _run_async_task(_async_refresh_prices())
     logger.info("[PRICES] Daily refresh: %s", result)
     return result
 
@@ -90,8 +130,7 @@ def harvest_new_documents(tickers: list = None, skip_llm: bool = False):
         tickers: Optional list of tickers to restrict the run.
         skip_llm: If True, skip the LLM scraper.
     """
-    import asyncio
-    result = asyncio.run(_async_harvest(tickers, skip_llm))
+    result = _run_async_task(_async_harvest(tickers, skip_llm))
     logger.info("[HARVEST] Manual run complete: %s", {k: v for k, v in result.items() if k != "details"})
     return result
 
@@ -114,11 +153,10 @@ def run_document_pipeline_task(
     force_rerun: bool = False,
 ) -> dict:
     """Phase B: agent pipeline after document extraction."""
-    import asyncio
     from agents.orchestrator import AgentOrchestrator
     logger.info("run_document_pipeline: %s %s (force_rerun=%s)", company_id, period_label, force_rerun)
     try:
-        result = asyncio.run(
+        result = _run_async_task(
             AgentOrchestrator().run_document_pipeline(
                 company_id, period_label, agent_ids, force_rerun=force_rerun,
             )
@@ -140,11 +178,10 @@ def run_document_pipeline_task(
 @celery_app.task(bind=True, name="run_macro_refresh", max_retries=0)
 def run_macro_refresh_task(self) -> dict:
     """Monthly macro agent refresh."""
-    import asyncio
     from agents.orchestrator import AgentOrchestrator
     logger.info("run_macro_refresh task started")
     try:
-        result = asyncio.run(AgentOrchestrator().run_macro_refresh())
+        result = _run_async_task(AgentOrchestrator().run_macro_refresh())
         return {"status": result.status, "agents_completed": result.agents_completed}
     except Exception as e:
         logger.exception("run_macro_refresh failed: %s", e)
@@ -159,11 +196,10 @@ def run_agent_on_demand_task(
     period_label: str | None = None,
 ) -> dict:
     """On-demand single agent with auto dependency resolution."""
-    import asyncio
     from agents.orchestrator import AgentOrchestrator
     logger.info("run_agent_on_demand: %s for %s %s", agent_id, company_id, period_label)
     try:
-        result = asyncio.run(
+        result = _run_async_task(
             AgentOrchestrator().run_agent_on_demand(agent_id, company_id, period_label)
         )
         return {
