@@ -55,6 +55,10 @@ class DebateAgent(BaseAgent):
     agent_id   = "debate_agent"
     agent_name = "Debate Agent"
     tier       = AgentTier.META
+    # Override to Sonnet — synthesises FA + Bear + Bull into a weighted
+    # bull/base/bear probability split. Most analytically demanding
+    # step in the pipeline; Haiku struggles with the nuance.
+    model_override = "claude-sonnet-4-6"
 
     depends_on = ["bear_case", "bull_case", "financial_analyst"]
     feeds_into = ["quality_control", "pm_agent"]

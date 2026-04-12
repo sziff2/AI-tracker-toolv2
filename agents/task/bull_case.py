@@ -46,6 +46,8 @@ class BullCaseAgent(BaseAgent):
     agent_id   = "bull_case"
     agent_name = "Bull Case"
     tier       = AgentTier.TASK
+    # Override to Sonnet — mirror of bear_case, same reasoning demands.
+    model_override = "claude-sonnet-4-6"
 
     depends_on = ["financial_analyst"]
     feeds_into = ["debate_agent", "pm_agent"]

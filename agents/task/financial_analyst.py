@@ -75,9 +75,9 @@ class FinancialAnalystAgent(BaseAgent):
     tier       = AgentTier.TASK
 
     # Override to Sonnet — quality matters for this foundational agent
-    # even though TASK tier defaults to Haiku
-    model_override = None  # Set to "claude-sonnet-4-6" once prompts are stable
-                           # or use settings.agent_model_overrides
+    # even though TASK tier defaults to Haiku. Every other agent reads
+    # this output, so sloppy reasoning here cascades.
+    model_override = "claude-sonnet-4-6"
 
     # Orchestration
     depends_on = []  # transcript + presentation analyses are pre-built during ingestion

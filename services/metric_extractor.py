@@ -195,11 +195,26 @@ async def _extract_with_sections(
     # Uses call_llm_native_async (true async + retry) instead of
     # call_llm_json_async (ThreadPoolExecutor, no retry) to avoid
     # silent failures on rate limits / transient errors.
+    #
+    # Each section is tagged with a model_tier by the section splitter:
+    #   "fast"    → Haiku (financial statements tables, highlights —
+    #               structured extraction, no narrative nuance needed)
+    #   "default" → Sonnet (MD&A, risk factors, narrative — needs
+    #               understanding of management framing and context)
+    # Honouring that tier cuts section_extraction cost by ~60% on
+    # dense 10-K/10-Q filings where financial statements dominate.
+    from configs.settings import settings
+    def _model_for_tier(tier: str) -> str:
+        if tier == "fast":
+            return settings.agent_fast_model       # Haiku
+        return settings.agent_default_model        # Sonnet
+
     async def run_section_extraction(task):
         try:
             result = await call_llm_native_async(
                 task["prompt"],
                 max_tokens=task["max_tokens"],
+                model=_model_for_tier(task.get("tier", "default")),
                 feature="section_extraction",
             )
             return _llm_parse_json(result["text"])

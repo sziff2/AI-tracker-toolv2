@@ -52,6 +52,9 @@ class BearCaseAgent(BaseAgent):
     agent_id   = "bear_case"
     agent_name = "Bear Case"
     tier       = AgentTier.TASK
+    # Override to Sonnet — adversarial reasoning with probability-weighted
+    # risk scoring and citation-backed arguments needs quality model.
+    model_override = "claude-sonnet-4-6"
 
     depends_on = ["financial_analyst"]
     feeds_into = ["debate_agent", "pm_agent"]
