@@ -35,6 +35,7 @@ from apps.api.routes import (
     execution_router,
     autorun_router,
     harvester_router,
+    analytics_router,
 )
 from apps.api.routes.feedback import router as feedback_router
 from apps.api.routes.pipeline import router as pipeline_router
@@ -423,6 +424,7 @@ app.include_router(portfolio_router, prefix=PREFIX)
 app.include_router(execution_router, prefix=PREFIX)
 app.include_router(autorun_router, prefix=PREFIX)
 app.include_router(harvester_router, prefix=PREFIX)
+app.include_router(analytics_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
 app.include_router(pipeline_router, prefix=PREFIX)
 

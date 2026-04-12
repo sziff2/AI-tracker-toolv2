@@ -189,6 +189,7 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="nav-it" id="nav-data" onclick="showPage('data')"><span class="nav-ico">📁</span> Data Hub</div>
     <div class="nav-it" id="nav-lab" onclick="showPage('lab')"><span class="nav-ico">🧪</span> Prompt Lab β</div>
     <div class="nav-it" id="nav-autorun" onclick="showPage('autorun')"><span class="nav-ico">🤖</span> AutoResearch</div>
+    <div class="nav-it" id="nav-costs" onclick="showPage('costs');loadCostsPage()"><span class="nav-ico">💰</span> Costs</div>
   </div>
 
   <div class="nav-sec">
@@ -566,6 +567,18 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="op-content"></div>
 </div>
 
+<!-- ═══ COSTS PAGE ═══ -->
+<div id="page-costs" style="display:none">
+  <h1>Anthropic API spend</h1>
+  <p class="sub">Cumulative cost per company and month, plus the most recent pipeline runs. Pulled from <code>pipeline_runs</code>.</p>
+  <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+    <button class="btn2" onclick="loadCostsPage()">↻ Refresh</button>
+  </div>
+  <div id="costs-summary" style="margin-bottom:20px"></div>
+  <div id="costs-table" style="margin-bottom:28px"></div>
+  <div id="costs-recent"></div>
+</div>
+
 </div>
 </div>
 <script>
@@ -651,7 +664,7 @@ async function fbSaveComment(id,ticker,period,section,promptType,comment){
   }catch(e){console.warn('Comment save failed',e);}
 }
 function enc(t){return encodeURIComponent(t);}
-function showPage(p){if(p==='new'){p='cockpit';window._ckActiveTab='documents';}['new','cockpit','lab','data','portfolio','analytics','optimise','autorun','macro'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='data')loadPortfolios();if(p==='macro')loadContextContract();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();}
+function showPage(p){if(p==='new'){p='cockpit';window._ckActiveTab='documents';}['new','cockpit','lab','data','portfolio','analytics','optimise','autorun','macro','costs'].forEach(x=>{const el=E('page-'+x);if(el)el.style.display=x===p?'block':'none';});document.querySelectorAll('.nav-it').forEach(n=>{const id=n.id.replace('nav-','');n.classList.toggle('on',id===p);});if(p==='cockpit')loadDD();if(p==='lab')loadLab();if(p==='portfolio')loadPortfolios();if(p==='data')loadPortfolios();if(p==='macro')loadContextContract();if(p==='analytics')initAnalyticsPage();if(p==='optimise')initOptimisePage();if(p==='autorun')initAutoRun();if(p==='costs')loadCostsPage();}
 function toggleEl(id,a){const el=E(id),ar=E(a);el.classList.toggle('open');ar.textContent=el.classList.contains('open')?'▾':'▸';}
 function getPeriod(){return E('period-year').value+'_'+E('period-type').value;}
 
@@ -4409,6 +4422,113 @@ const AR_EVALS={extraction:[{id:'snippet_recall',name:'Snippet Recall',weight:'4
 const AR_PROMPT_TYPES={extraction:[{id:'extraction_combined',label:'Combined Extractor',doc:'earnings_release, transcript, annual_report'},{id:'extraction_earnings',label:'Earnings Release',doc:'earnings_release'},{id:'extraction_transcript',label:'Transcript',doc:'transcript'},{id:'extraction_broker',label:'Broker Note',doc:'broker_note'},{id:'extraction_presentation',label:'Presentation',doc:'presentation'},{id:'extraction_annual_report',label:'Annual Report / 10-K',doc:'annual_report, 10-K'}],output:[{id:'synthesis',label:'Synthesis Briefing',doc:'earnings_release, transcript'},{id:'briefing',label:'One-Page Briefing',doc:'earnings_release, transcript'},{id:'ir_questions',label:'IR Questions',doc:'earnings_release, transcript'},{id:'surprise',label:'Surprise Detector',doc:'earnings_release, transcript'},{id:'thesis_comparison',label:'Thesis Comparison',doc:'earnings_release, transcript'}]};
 let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
 function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
+
+// ── Costs dashboard ──────────────────────────────────────────────
+async function loadCostsPage(){
+  var sumEl=E('costs-summary'),tblEl=E('costs-table'),recEl=E('costs-recent');
+  if(!sumEl||!tblEl||!recEl)return;
+  sumEl.innerHTML='<div style="color:var(--text3);font-family:var(--sans);font-size:13px">Loading…</div>';
+  tblEl.innerHTML='';recEl.innerHTML='';
+  try{
+    var [bdRes,recRes]=await Promise.all([
+      fetch('/api/v1/analytics/costs'),
+      fetch('/api/v1/analytics/costs/recent?limit=25'),
+    ]);
+    if(!bdRes.ok)throw new Error('Cost breakdown request failed');
+    var bd=await bdRes.json();
+    var rec=recRes.ok?await recRes.json():{runs:[]};
+    renderCostsSummary(bd.summary);
+    renderCostsTable(bd.rows||[]);
+    renderCostsRecent(rec.runs||[]);
+  }catch(e){
+    sumEl.innerHTML='<div style="color:var(--red);font-family:var(--sans);font-size:13px">Failed to load costs: '+esc(e.message||String(e))+'</div>';
+  }
+}
+
+function _costColour(c){
+  if(c>=20)return 'var(--red)';
+  if(c>=5)return 'var(--amber)';
+  return 'var(--text)';
+}
+
+function renderCostsSummary(s){
+  if(!s)return;
+  var h='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
+  var tiles=[
+    {label:'Total spend',value:'$'+Number(s.total_spend_usd||0).toFixed(2),col:_costColour(s.total_spend_usd||0)},
+    {label:'Total runs',value:String(s.total_runs||0),col:'var(--text)'},
+    {label:'Avg cost / run',value:'$'+Number(s.avg_cost_per_run||0).toFixed(4),col:'var(--text)'},
+  ];
+  tiles.forEach(function(t){
+    h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px">';
+    h+='<div style="font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:8px">'+esc(t.label)+'</div>';
+    h+='<div style="font-family:var(--sans);font-size:24px;font-weight:600;color:'+t.col+'">'+esc(t.value)+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  E('costs-summary').innerHTML=h;
+}
+
+function renderCostsTable(rows){
+  if(!rows.length){E('costs-table').innerHTML='<div style="color:var(--text3);font-family:var(--sans);font-size:13px;padding:20px;text-align:center">No pipeline runs recorded yet.</div>';return;}
+  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">Spend by company × month</div>';
+  h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">';
+  h+='<table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
+  h+='<thead><tr style="background:var(--bg3);border-bottom:1px solid var(--border)">';
+  ['Ticker','Company','Month','Runs','Input tok','Output tok','LLM calls','Avg $/run','Total $'].forEach(function(c,i){
+    var align=i>=3?'right':'left';
+    h+='<th style="padding:10px 14px;text-align:'+align+';font-weight:600;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
+    var col=_costColour(r.total_cost_usd||0);
+    var mo=r.month?r.month.substring(0,7):'—';
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:10px 14px;font-family:var(--mono);color:var(--gold);font-weight:600">'+esc(r.ticker)+'</td>';
+    h+='<td style="padding:10px 14px;color:var(--text2)">'+esc(r.company_name||'')+'</td>';
+    h+='<td style="padding:10px 14px;color:var(--text2);font-family:var(--mono);font-size:11px">'+esc(mo)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text2)">'+(r.run_count||0)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.total_input_tokens||0).toLocaleString()+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.total_output_tokens||0).toLocaleString()+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+(r.total_llm_calls||0)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3)">$'+Number(r.avg_cost_per_run||0).toFixed(4)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);font-weight:600;color:'+col+'">$'+Number(r.total_cost_usd||0).toFixed(4)+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  E('costs-table').innerHTML=h;
+}
+
+function renderCostsRecent(runs){
+  if(!runs.length){E('costs-recent').innerHTML='';return;}
+  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">Recent pipeline runs</div>';
+  h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">';
+  h+='<table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
+  h+='<thead><tr style="background:var(--bg3);border-bottom:1px solid var(--border)">';
+  ['Started','Ticker','Period','Status','Trigger','Duration','LLM calls','Cost'].forEach(function(c,i){
+    var align=i>=5?'right':'left';
+    h+='<th style="padding:10px 14px;text-align:'+align+';font-weight:600;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  var statusCol={completed:'var(--green)',failed:'var(--red)',aborted:'var(--red)',running:'var(--blue)',queued:'var(--amber)',budget_exceeded:'var(--amber)'};
+  runs.forEach(function(r){
+    var col=statusCol[r.status]||'var(--text3)';
+    var when=r.started_at?r.started_at.substring(0,19).replace('T',' '):'—';
+    var dur=r.duration_ms?(r.duration_ms/1000).toFixed(1)+'s':'—';
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text3)">'+esc(when)+'</td>';
+    h+='<td style="padding:10px 14px;font-family:var(--mono);color:var(--gold);font-weight:600">'+esc(r.ticker)+'</td>';
+    h+='<td style="padding:10px 14px;color:var(--text2)">'+esc(r.period_label||'—')+'</td>';
+    h+='<td style="padding:10px 14px;color:'+col+';font-weight:600">'+esc(r.status||'?')+'</td>';
+    h+='<td style="padding:10px 14px;color:var(--text3)">'+esc(r.trigger||'—')+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3)">'+dur+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3)">'+(r.total_llm_calls||0)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:'+_costColour(r.total_cost_usd||0)+';font-weight:600">$'+Number(r.total_cost_usd||0).toFixed(4)+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  E('costs-recent').innerHTML=h;
+}
 function arSetMode(mode){_arMode=mode;['extraction','output','log','usage'].forEach(m=>{const el=E('ar-mode-'+m);if(el)el.style.display=m===mode?'block':'none';const tab=E('ar-tab-'+m);if(tab)tab.classList.toggle('on',m===mode);});if(mode==='log')arRefreshStatus();}
 function arRenderTypeToggles(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-types');if(!el)return;el.innerHTML=AR_PROMPT_TYPES[pipeline].map(t=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="checkbox" value="${t.id}" checked style="accent-color:var(--gold);margin-top:2px;flex-shrink:0"><div><div style="font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text)">${t.label}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">Docs: ${t.doc}</div></div></label>`).join('');}
 function arRenderEvals(pipeline){const pfx=pipeline==='extraction'?'ext':'out';const el=E('ar-'+pfx+'-evals');if(!el)return;el.innerHTML=AR_EVALS[pipeline].map(ev=>`<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${ev.colour};border-radius:10px;padding:14px 16px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text)">${ev.name}</span><span style="font-family:var(--mono);font-size:11px;color:${ev.colour};background:rgba(255,255,255,.04);padding:2px 8px;border-radius:4px;font-weight:600">${ev.weight}</span></div><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:6px;font-style:italic">${ev.how}</div><div style="font-family:var(--sans);font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:7px">${ev.description}</div><div style="font-family:var(--sans);font-size:11px;color:var(--text3);line-height:1.55;border-top:1px solid var(--border);padding-top:7px"><strong style="color:var(--text4)">Why it matters:</strong> ${ev.why}</div></div>`).join('');}

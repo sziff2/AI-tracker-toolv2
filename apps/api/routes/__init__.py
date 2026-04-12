@@ -11,5 +11,6 @@ from apps.api.routes.portfolio import router as portfolio_router
 from apps.api.routes.execution import router as execution_router
 from apps.api.routes.autorun import router as autorun_router
 from apps.api.routes.harvester import router as harvester_router
+from apps.api.routes.analytics import router as analytics_router
 
-__all__ = ["companies_router", "documents_router", "outputs_router", "review_router", "kpi_tracker_router", "cockpit_router", "experiments_router", "esg_router", "portfolio_router", "execution_router", "autorun_router", "harvester_router"]
+__all__ = ["companies_router", "documents_router", "outputs_router", "review_router", "kpi_tracker_router", "cockpit_router", "experiments_router", "esg_router", "portfolio_router", "execution_router", "autorun_router", "harvester_router", "analytics_router"]
