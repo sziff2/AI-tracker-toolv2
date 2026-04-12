@@ -112,6 +112,7 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
 
     result = await call_llm_native_async(
         prompt,
+        model=settings.agent_fast_model,  # Haiku for cost efficiency
         max_tokens=4096,
         feature=f"doc_{dtype}_analysis",
     )
@@ -538,50 +539,76 @@ async def run_batch_pipeline(
                             doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
                             return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
 
-                        # Extract - use returned text directly
-                        try:
-                            if dtype in ESG_DOC_TYPES:
-                                extraction = await extract_esg(doc_db, doc, full_text)
-                                items = extraction.get("raw_items", [])
-                                doc_result["steps"].append({"step": "extract_esg", "status": "ok",
-                                    "env": len(extraction.get("environmental", [])),
-                                    "soc": len(extraction.get("social", [])),
-                                    "gov": len(extraction.get("governance", []))})
-                                esg_data = {
-                                    "environmental": extraction.get("environmental", [])[:10],
-                                    "social": extraction.get("social", [])[:10],
-                                    "governance": extraction.get("governance", [])[:15],
-                                    "fields_populated": extraction.get("esg_fields_populated", {}),
-                                }
-                                logger.info("Extracted ESG from %s: %d items (dtype=%s)", did, len(items), dtype)
-                            else:
-                                extraction = await extract_by_document_type(doc_db, doc, full_text, tables_data=tables_data)
-                                items = extraction.get("raw_items", [])
-                                doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
-                                logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
+                        # Step 2: Extract metrics + run document analysis IN PARALLEL
+                        # - Metric extraction (Haiku section-aware for 10-Qs)
+                        # - Transcript/presentation LLM analysis (Haiku, runs concurrently)
+                        async def _run_extraction():
+                            try:
+                                if dtype in ESG_DOC_TYPES:
+                                    return ("esg", await extract_esg(doc_db, doc, full_text))
+                                else:
+                                    return ("metrics", await extract_by_document_type(
+                                        doc_db, doc, full_text, tables_data=tables_data
+                                    ))
+                            except Exception as e:
+                                logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
+                                return ("error", str(e)[:200])
 
-                                # Persist extraction profile (enriched metadata)
-                                try:
-                                    await _persist_extraction_profile(doc_db, doc, extraction)
-                                except Exception as ep:
-                                    logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
-
-                            # Warn if extraction returned no items
-                            if not items:
-                                logger.warning("No items extracted from %s (%s) - text was %d chars",
-                                               doc.title, dtype, len(full_text))
-                        except Exception as e:
-                            doc_result["steps"].append({"step": "extract", "status": "error", "detail": str(e)[:200]})
-                            logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
-
-                        mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
-
-                        # Run document-level LLM analysis for transcripts and presentations
-                        if dtype in ("transcript", "presentation") and full_text and len(full_text) > 500:
+                        async def _run_doc_analysis():
+                            if dtype not in ("transcript", "presentation"):
+                                return None
+                            if not full_text or len(full_text) < 500:
+                                return None
                             try:
                                 await _analyse_document_with_llm(doc_db, doc, dtype, full_text)
-                            except Exception as da_err:
-                                logger.warning("Document analysis failed for %s (%s): %s", did, dtype, str(da_err)[:200])
+                                return "ok"
+                            except Exception as e:
+                                logger.warning("Document analysis failed for %s (%s): %s", did, dtype, str(e)[:200])
+                                return None
+
+                        # Run both in parallel
+                        ext_result, _doc_analysis_result = await asyncio.gather(
+                            _run_extraction(),
+                            _run_doc_analysis(),
+                            return_exceptions=False,
+                        )
+
+                        # Process extraction result
+                        items = []
+                        extraction = None
+                        esg_data = None
+                        ext_kind, ext_value = ext_result
+                        if ext_kind == "esg":
+                            extraction = ext_value
+                            items = extraction.get("raw_items", [])
+                            doc_result["steps"].append({"step": "extract_esg", "status": "ok",
+                                "env": len(extraction.get("environmental", [])),
+                                "soc": len(extraction.get("social", [])),
+                                "gov": len(extraction.get("governance", []))})
+                            esg_data = {
+                                "environmental": extraction.get("environmental", [])[:10],
+                                "social": extraction.get("social", [])[:10],
+                                "governance": extraction.get("governance", [])[:15],
+                                "fields_populated": extraction.get("esg_fields_populated", {}),
+                            }
+                            logger.info("Extracted ESG from %s: %d items (dtype=%s)", did, len(items), dtype)
+                        elif ext_kind == "metrics":
+                            extraction = ext_value
+                            items = extraction.get("raw_items", [])
+                            doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                            logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
+                            try:
+                                await _persist_extraction_profile(doc_db, doc, extraction)
+                            except Exception as ep:
+                                logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
+                        else:
+                            doc_result["steps"].append({"step": "extract", "status": "error", "detail": ext_value})
+
+                        if not items and ext_kind != "error":
+                            logger.warning("No items extracted from %s (%s) - text was %d chars",
+                                           doc.title, dtype, len(full_text))
+
+                        mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
 
                         return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title, "mda_narrative": mda}
                 except Exception as e:
