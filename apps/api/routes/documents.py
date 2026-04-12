@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from apps.api.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db, get_company_or_404
@@ -584,6 +584,7 @@ async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get
 async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await get_company_or_404(db, ticker)
 
+    from apps.api.models import HarvestedDocument
     try:
         docs = await db.execute(select(Document).where(Document.company_id == company.id))
         doc_ids = [d.id for d in docs.scalars().all()]
@@ -599,6 +600,12 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
             await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
             await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
             await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
+            # Null out harvester pointers so the documents FK doesn't block deletion
+            await db.execute(
+                update(HarvestedDocument)
+                .where(HarvestedDocument.document_id.in_(doc_ids))
+                .values(document_id=None, ingested=False)
+            )
             await db.execute(delete(Document).where(Document.company_id == company.id))
 
         outputs = await db.execute(select(ResearchOutput.id).where(ResearchOutput.company_id == company.id))
@@ -622,6 +629,7 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
 async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
     company = await get_company_or_404(db, ticker)
 
+    from apps.api.models import HarvestedDocument
     try:
         # Find documents for this period
         docs = await db.execute(
@@ -640,6 +648,12 @@ async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depen
             await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
             await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
             await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
+            # Null out harvester pointers so the documents FK doesn't block deletion
+            await db.execute(
+                update(HarvestedDocument)
+                .where(HarvestedDocument.document_id.in_(doc_ids))
+                .values(document_id=None, ingested=False)
+            )
             await db.execute(delete(Document).where(Document.id.in_(doc_ids)))
 
         # Also delete metrics not linked to documents for this period
