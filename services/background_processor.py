@@ -79,10 +79,18 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
     # analysis prompts can resolve their {rates}, {usd}, {credit}, {growth},
     # {commodities}, {geopolitical}, {inflation}, {liquidity} placeholders
     # (same block the agent pipeline uses). Without this the prompt ships
-    # with literal "{rates}" etc. in the text and the LLM often returns
-    # malformed JSON in response.
+    # with literal "{rates}" etc. in the text and the LLM returns malformed
+    # JSON in response.
+    #
+    # Use a FRESH session, not the caller's — _process_one_doc runs
+    # extraction and document analysis in parallel via asyncio.gather, so
+    # the shared session is already mid-operation when we reach this
+    # point. Reusing it triggers SQLAlchemy "concurrent operations are
+    # not permitted" errors. One short-lived session just for this
+    # lookup sidesteps that completely.
     try:
-        context_contract = await build_context_contract(db)
+        async with AsyncSessionLocal() as contract_db:
+            context_contract = await build_context_contract(contract_db)
     except Exception as e:
         logger.warning("Failed to load context contract for %s analysis: %s", dtype, str(e)[:200])
         context_contract = {}

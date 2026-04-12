@@ -20,16 +20,19 @@ async def get_phase_a_status(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Phase A is complete only when EVERY document in the period has
-    `parsing_status == 'completed'`. Returns per-status doc counts so the
-    UI can show exactly what's blocking agents from running.
+    Phase A is complete only when EVERY document in the period has been
+    parsed AND has had extraction run against it (ExtractionProfile row
+    present). The second condition is critical: the batch pipeline sets
+    parsing_status='completed' before extraction finishes, so a docs-only
+    check leaves a multi-minute window where an analyst can fire agents
+    against an empty dataset on a large 10-Q.
     """
     q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = q.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    from apps.api.models import Document
+    from apps.api.models import Document, ExtractionProfile
     from sqlalchemy import func
 
     # Per-status document count for this period
@@ -46,33 +49,68 @@ async def get_phase_a_status(
     processing = counts.get("processing", 0)
     failed = counts.get("failed", 0)
 
-    all_complete = total > 0 and done == total
+    # Distinct documents with at least one ExtractionProfile row
+    prof_q = await db.execute(
+        select(func.count(func.distinct(ExtractionProfile.document_id)))
+        .where(ExtractionProfile.company_id == company.id)
+        .where(ExtractionProfile.period_label == period)
+    )
+    extracted = int(prof_q.scalar() or 0)
 
-    # Pending/processing doc metadata (for the UI to show which docs are blocking)
-    pending_docs: list[dict] = []
-    if not all_complete and total > 0:
-        pd_q = await db.execute(
-            select(Document.id, Document.document_type, Document.parsing_status, Document.source_url)
-            .where(Document.company_id == company.id)
-            .where(Document.period_label == period)
-            .where(Document.parsing_status != "completed")
-        )
-        for did, dtype, pstatus, url in pd_q.all():
-            pending_docs.append({
-                "id": str(did),
-                "document_type": dtype,
-                "parsing_status": pstatus,
-                "source_url": url,
-            })
+    all_parsed = total > 0 and done == total
+    all_extracted = all_parsed and extracted == total
+    extraction_in_progress = all_parsed and extracted < total
 
-    # Extraction method (populated only once something has been extracted)
+    # Pending/extracting doc metadata (for UI to show what's blocking)
+    blocking_docs: list[dict] = []
+    if (not all_extracted) and total > 0:
+        if all_parsed:
+            # Extraction is the bottleneck — show docs still missing a profile
+            extracted_ids_q = await db.execute(
+                select(func.distinct(ExtractionProfile.document_id))
+                .where(ExtractionProfile.company_id == company.id)
+                .where(ExtractionProfile.period_label == period)
+            )
+            extracted_ids = {row[0] for row in extracted_ids_q.all()}
+            pd_q = await db.execute(
+                select(Document.id, Document.document_type, Document.source_url)
+                .where(Document.company_id == company.id)
+                .where(Document.period_label == period)
+            )
+            for did, dtype, url in pd_q.all():
+                if did in extracted_ids:
+                    continue
+                blocking_docs.append({
+                    "id": str(did),
+                    "document_type": dtype,
+                    "parsing_status": "extracting",
+                    "source_url": url,
+                })
+        else:
+            # Parsing is the bottleneck
+            pd_q = await db.execute(
+                select(Document.id, Document.document_type, Document.parsing_status, Document.source_url)
+                .where(Document.company_id == company.id)
+                .where(Document.period_label == period)
+                .where(Document.parsing_status != "completed")
+            )
+            for did, dtype, pstatus, url in pd_q.all():
+                blocking_docs.append({
+                    "id": str(did),
+                    "document_type": dtype,
+                    "parsing_status": pstatus,
+                    "source_url": url,
+                })
+
+    # Extraction method (from most recent extraction_context row)
     method = None
-    if done > 0:
+    if extracted > 0:
         ctx_q = await db.execute(
             select(ResearchOutput)
             .where(ResearchOutput.company_id == company.id)
             .where(ResearchOutput.period_label == period)
             .where(ResearchOutput.output_type == "extraction_context")
+            .order_by(desc(ResearchOutput.created_at))
             .limit(1)
         )
         ctx = ctx_q.scalar_one_or_none()
@@ -84,15 +122,17 @@ async def get_phase_a_status(
                 pass
 
     return {
-        "phase_a_complete": all_complete,
-        "extraction_method": method or ("legacy" if done > 0 else None),
+        "phase_a_complete": all_extracted,
+        "extraction_method": method or ("legacy" if extracted > 0 else None),
         "total_documents": total,
         "parsed_documents": done,
+        "extracted_documents": extracted,
         "pending_documents": pending,
         "processing_documents": processing,
         "failed_documents": failed,
-        "processing": processing > 0 or pending > 0,
-        "pending_doc_details": pending_docs,
+        "processing": processing > 0 or pending > 0 or extraction_in_progress,
+        "extraction_in_progress": extraction_in_progress,
+        "pending_doc_details": blocking_docs,
     }
 
 

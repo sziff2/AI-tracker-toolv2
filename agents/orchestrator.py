@@ -525,29 +525,53 @@ class AgentOrchestrator:
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
         """Phase A is complete only when EVERY document in the period has
-        `parsing_status == 'completed'`. A period with zero documents is
-        not complete (nothing to analyse). A period with any pending,
-        processing, or failed document is not complete — agents should
-        wait for extraction to finish first."""
+        both been parsed AND had extraction run against it.
+
+        Parsing alone isn't enough — the batch pipeline parses first,
+        then runs section-aware / two-pass extraction, which can take
+        1-3 minutes on a dense 10-Q. During that window parsing_status
+        reads 'completed' but metrics haven't been written yet. Firing
+        agents in that window hands them an empty extraction dataset.
+
+        ExtractionProfile is written once per document at the END of
+        the extractor's `_persist_extraction_profile` call, so its
+        presence is a reliable "extraction actually finished" signal.
+        We require one ExtractionProfile row per Document in the period."""
         try:
-            from apps.api.models import Document
-            from sqlalchemy import func, case
-            q = await db.execute(
-                select(
-                    func.count(Document.id).label("total"),
-                    func.sum(
-                        case((Document.parsing_status == "completed", 1), else_=0)
-                    ).label("done"),
-                )
+            from apps.api.models import Document, ExtractionProfile
+            from sqlalchemy import func
+            # Total document count for this period
+            doc_q = await db.execute(
+                select(func.count(Document.id))
+                .where(Document.company_id == company_id)
+                .where(Document.period_label == period_label)
+                .where(Document.parsing_status == "completed")
+            )
+            total_parsed = int(doc_q.scalar() or 0)
+            if total_parsed == 0:
+                return False
+
+            # Documents with at least one ExtractionProfile row
+            # (distinct document_id because a reprocess can create >1)
+            prof_q = await db.execute(
+                select(func.count(func.distinct(ExtractionProfile.document_id)))
+                .where(ExtractionProfile.company_id == company_id)
+                .where(ExtractionProfile.period_label == period_label)
+            )
+            total_with_profile = int(prof_q.scalar() or 0)
+
+            # Also require the total document count (parsed or not) matches
+            # — otherwise a mid-parse document would let us slip through.
+            total_q = await db.execute(
+                select(func.count(Document.id))
                 .where(Document.company_id == company_id)
                 .where(Document.period_label == period_label)
             )
-            row = q.first()
-            if not row or not row.total:
-                return False
-            return int(row.done or 0) == int(row.total)
+            total_docs = int(total_q.scalar() or 0)
+
+            return total_docs > 0 and total_parsed == total_docs and total_with_profile == total_docs
         except Exception as e:
-            logger.warning("Phase A check failed: %s", str(e)[:100])
+            logger.warning("Phase A check failed: %s", str(e)[:200])
             return False
 
     def _group_by_layer(self, agents: list) -> list[tuple[int, list]]:
