@@ -8,7 +8,7 @@ this function ensures those promotions flow through to real analyses.
 Usage:
     from services.prompt_registry import get_active_prompt
 
-    template = await get_active_prompt(db, "synthesis", fallback=SYNTHESIS_BRIEFING)
+    template = await get_active_prompt(db, "extraction_earnings", fallback=EARNINGS_RELEASE_EXTRACTOR)
     prompt = template.format(company=..., ...)
 """
 
@@ -38,7 +38,7 @@ async def get_active_prompt(
 
     Args:
         db:          async SQLAlchemy session
-        prompt_type: e.g. "synthesis", "extraction_earnings", "thesis_comparison"
+        prompt_type: e.g. "extraction_earnings", "extraction_transcript"
         fallback:    the hardcoded prompt from prompts/__init__.py
 
     Returns:

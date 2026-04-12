@@ -575,6 +575,83 @@ def normalise_period(raw_period: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────
+# 5b. Period arithmetic — sequential / comparable period resolution
+# Moved here from thesis_comparator.py when the legacy pipeline was
+# removed. These are pure period math utilities with no LLM/DB deps,
+# so they live alongside normalise_period for cohesion.
+# ─────────────────────────────────────────────────────────────────
+
+def _previous_period(period_label: str) -> str:
+    """
+    Derive the prior period label.
+    Handles: 2025_Q1→2024_Q4, 2025_Q2→2025_Q1, 2025_HY→2024_HY,
+             2025_FY→2024_FY, 2025_H1→2024_H1, etc.
+    """
+    if not period_label or "_" not in period_label:
+        return ""
+    try:
+        parts = period_label.split("_", 1)
+        year = int(parts[0])
+        suffix = parts[1].upper()
+
+        if suffix.startswith("Q"):
+            q = int(suffix[1:])
+            if q == 1:
+                return f"{year - 1}_Q4"
+            return f"{year}_Q{q - 1}"
+        elif suffix in ("HY", "H1"):
+            return f"{year - 1}_{suffix}"
+        elif suffix == "H2":
+            return f"{year}_H1"
+        elif suffix == "FY":
+            # FY is equivalent to Q4 — prior period is Q3 of same year
+            return f"{year}_Q3"
+        else:
+            return f"{year - 1}_{suffix}"
+    except Exception:
+        return ""
+
+
+def _comparable_periods(period_label: str) -> list[str]:
+    """
+    Return a list of periods to compare against, in priority order.
+    E.g. for 2025_Q4: try 2025_Q3 first, then 2024_Q4 (YoY), then any available.
+    """
+    if not period_label or "_" not in period_label:
+        return []
+    try:
+        parts = period_label.split("_", 1)
+        year = int(parts[0])
+        suffix = parts[1].upper()
+
+        candidates: list[str] = []
+        if suffix.startswith("Q"):
+            q = int(suffix[1:])
+            # Sequential quarter
+            if q > 1:
+                candidates.append(f"{year}_Q{q-1}")
+            else:
+                candidates.append(f"{year-1}_Q4")
+            # Year-on-year
+            candidates.append(f"{year-1}_Q{q}")
+        elif suffix in ("HY", "H1"):
+            candidates.append(f"{year-1}_{suffix}")
+            candidates.append(f"{year-1}_H2")
+        elif suffix == "H2":
+            candidates.append(f"{year}_H1")
+            candidates.append(f"{year-1}_H2")
+        elif suffix == "FY":
+            # FY is equivalent to Q4 — compare against Q3 (sequential), Q4 prior year (YoY), and prior FY
+            candidates.append(f"{year}_Q3")
+            candidates.append(f"{year-1}_Q4")
+            candidates.append(f"{year-1}_FY")
+            candidates.append(f"{year-1}_H2")
+        return candidates
+    except Exception:
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────
 # 6. Combined pipeline: normalise → validate segments → dedup
 # ─────────────────────────────────────────────────────────────────
 

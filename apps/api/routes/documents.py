@@ -22,7 +22,6 @@ from schemas import DocumentCreate, DocumentOut
 from services.document_ingestion import ingest_document
 from services.document_parser import process_document
 from services.metric_extractor import extract_metrics
-from services.thesis_comparator import compare_thesis
 
 router = APIRouter(tags=["documents"])
 
@@ -387,22 +386,9 @@ async def extract_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     }
 
 
-# ─────────────────────────────────────────────────────────────────
-# Compare document against thesis
-# ─────────────────────────────────────────────────────────────────
-@router.post("/documents/{document_id}/compare")
-async def compare_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Document).where(Document.id == document_id))
-    doc = result.scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
-
-    try:
-        comparison = await compare_thesis(db, doc.company_id, doc.id, doc.period_label)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-
-    return comparison.model_dump()
+# Per-document /compare endpoint was part of the legacy pipeline.
+# Thesis comparison is now the Financial Analyst agent's job — trigger
+# it via POST /companies/{ticker}/run-pipeline/{period}.
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -769,70 +755,10 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     }
 
 
-@router.post("/companies/{ticker}/periods/{period_label}/resynthesise")
-async def resynthesise_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
-    """
-    Re-run only synthesis, thesis comparison, surprises, and IR questions
-    using existing extracted metrics. Skips document parsing/extraction.
-    Use this when you've updated the thesis and want to regenerate the output.
-    """
-    from apps.api.models import ProcessingJob
-    from services.background_processor import run_resynthesise_pipeline, start_background_job
-
-    company = await get_company_or_404(db, ticker)
-
-    # Verify documents exist for this period
-    docs_q = await db.execute(
-        select(Document).where(
-            Document.company_id == company.id,
-            Document.period_label == period_label,
-        )
-    )
-    docs = docs_q.scalars().all()
-    if not docs:
-        raise HTTPException(404, f"No documents found for {ticker} / {period_label}")
-
-    # Clear existing research outputs only (keep metrics and sections)
-    try:
-        outputs = await db.execute(
-            select(ResearchOutput.id).where(
-                ResearchOutput.company_id == company.id, ResearchOutput.period_label == period_label
-            )
-        )
-        output_ids = [o[0] for o in outputs.all()]
-        if output_ids:
-            await db.execute(delete(ResearchOutput).where(ResearchOutput.id.in_(output_ids)))
-        # Clear event assessments so they can be regenerated
-        doc_ids = [d.id for d in docs]
-        await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        logger.warning("Cleanup before resynthesise failed: %s", str(e)[:200])
-
-    # Create processing job
-    job = ProcessingJob(
-        id=uuid.uuid4(),
-        company_id=company.id,
-        period_label=period_label,
-        job_type="batch",
-        status="queued",
-        current_step="resynthesising",
-        progress_pct=0,
-    )
-    db.add(job)
-    await db.commit()
-
-    start_background_job(
-        run_resynthesise_pipeline(job.id, company.id, company.ticker, period_label)
-    )
-
-    return {
-        "job_id": str(job.id),
-        "documents": len(docs),
-        "status": "queued",
-        "message": f"Re-synthesising {ticker} / {period_label} with updated thesis context",
-    }
+# /resynthesise was removed when the legacy pipeline was deleted. To
+# re-run analysis against an updated thesis, call
+# POST /companies/{ticker}/run-pipeline/{period}?force_rerun=true which
+# forces a fresh agent pipeline run bypassing the cache.
 
 
 # ═══════════════════════════════════════════════════════════════

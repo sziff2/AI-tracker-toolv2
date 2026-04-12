@@ -5,7 +5,7 @@ Unit tests for service-level logic (no DB or LLM required).
 import json
 import pytest
 
-from services.thesis_comparator import _previous_period, _comparable_periods
+from services.metric_normaliser import _previous_period, _comparable_periods
 from services.metric_normaliser import (
     normalise_metric_name,
     normalise_unit,

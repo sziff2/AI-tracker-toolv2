@@ -15,9 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db
 from apps.api.models import (
-    Company, Document, ExtractedMetric, ThesisVersion, EventAssessment,
-    ResearchOutput, ReviewQueueItem, TrackedKPI, KPIScore,
-    DecisionLog, AnalystNote,
+    Company, Document, ExtractedMetric, ThesisVersion,
+    ResearchOutput, TrackedKPI, KPIScore,
+    DecisionLog, AnalystNote, AgentOutput,
 )
 
 router = APIRouter(tags=["cockpit"])
@@ -81,19 +81,28 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
             "negative_surprises": thesis.negative_surprises,
         }
 
-    # ── Latest thesis assessment ──────────────────────────────
-    assess_q = await db.execute(
-        select(EventAssessment).where(EventAssessment.company_id == cid)
-        .order_by(EventAssessment.created_at.desc()).limit(1)
+    # ── Latest thesis assessment (from FA agent) ──────────────
+    # Sources thesis_direction / grade / narrative summary from the most
+    # recent completed Financial Analyst run. Replaces the legacy
+    # event_assessments query — that table is no longer written to now
+    # that the agent pipeline owns the analysis path.
+    fa_q = await db.execute(
+        select(AgentOutput)
+        .where(AgentOutput.company_id == cid)
+        .where(AgentOutput.agent_id == "financial_analyst")
+        .where(AgentOutput.status.in_(("completed", "degraded")))
+        .order_by(AgentOutput.created_at.desc())
+        .limit(1)
     )
-    latest_assessment = assess_q.scalar_one_or_none()
+    latest_fa = fa_q.scalar_one_or_none()
     assessment_data = None
-    if latest_assessment:
+    if latest_fa and latest_fa.output_json:
+        fa_out = latest_fa.output_json if isinstance(latest_fa.output_json, dict) else {}
         assessment_data = {
-            "thesis_direction": latest_assessment.thesis_direction,
-            "surprise_level": latest_assessment.surprise_level,
-            "summary": latest_assessment.summary,
-            "confidence": float(latest_assessment.confidence) if latest_assessment.confidence else None,
+            "thesis_direction": fa_out.get("thesis_direction"),
+            "surprise_level": None,  # field removed — FA exposes key_surprises list instead
+            "summary": fa_out.get("overall_assessment"),
+            "confidence": float(latest_fa.confidence) if latest_fa.confidence is not None else None,
         }
 
     # ── KPI tracker ───────────────────────────────────────────
@@ -226,18 +235,8 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         "created_at": d.created_at.isoformat() if d.created_at else None,
     } for d in notes_q.scalars().all()]
 
-    # ── Review items ──────────────────────────────────────────
-    review_q = await db.execute(
-        select(ReviewQueueItem).where(
-            ReviewQueueItem.status == "open"
-        ).order_by(ReviewQueueItem.created_at.desc()).limit(10)
-    )
-    # Filter to this company's items by checking entity relationships
-    reviews = [{
-        "id": str(r.id), "entity_type": r.entity_type, "queue_reason": r.queue_reason,
-        "priority": r.priority, "status": r.status,
-        "created_at": r.created_at.isoformat() if r.created_at else None,
-    } for r in review_q.scalars().all()]
+    # Review queue was part of the legacy pipeline's unbuilt moderation
+    # surface and has been removed. Nothing writes to review_queue now.
 
     # ── Metrics summary ───────────────────────────────────────
     metrics_count_q = await db.execute(
@@ -257,20 +256,32 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         "active": t.active,
     } for t in all_theses_q.scalars().all()]
 
-    # ── All thesis assessments ────────────────────────────────
-    all_assessments_q = await db.execute(
-        select(EventAssessment, Document.period_label)
-        .join(Document, EventAssessment.document_id == Document.id)
-        .where(EventAssessment.company_id == cid)
-        .order_by(EventAssessment.created_at.desc())
+    # ── All thesis assessments (from FA agent history) ────────
+    # One row per completed financial_analyst run, latest first. Feeds
+    # the thesis-evidence timeline in the UI. Source fields map as:
+    #   FA thesis_direction   → .thesis_direction
+    #   FA overall_assessment → .summary
+    #   (no surprise_level)   → None
+    fa_history_q = await db.execute(
+        select(AgentOutput)
+        .where(AgentOutput.company_id == cid)
+        .where(AgentOutput.agent_id == "financial_analyst")
+        .where(AgentOutput.status.in_(("completed", "degraded")))
+        .order_by(AgentOutput.created_at.desc())
     )
-    all_assessments = [{
-        "period": row[1],
-        "thesis_direction": row[0].thesis_direction,
-        "surprise_level": row[0].surprise_level,
-        "summary": row[0].summary,
-        "created_at": row[0].created_at.isoformat() if row[0].created_at else None,
-    } for row in all_assessments_q.all()]
+    all_assessments = []
+    for row in fa_history_q.scalars().all():
+        out = row.output_json if isinstance(row.output_json, dict) else {}
+        if not out:
+            continue
+        all_assessments.append({
+            "period": row.period_label,
+            "thesis_direction": out.get("thesis_direction"),
+            "surprise_level": None,
+            "summary": out.get("overall_assessment"),
+            "overall_grade": out.get("overall_grade"),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        })
 
     # ── Group documents by period ─────────────────────────────
     docs_by_period = {}
@@ -305,7 +316,6 @@ async def get_cockpit(ticker: str, db: AsyncSession = Depends(get_db)):
         "docs_by_period": docs_by_period,
         "decisions": decisions,
         "notes": notes,
-        "review_items": reviews,
         "stats": {
             "total_metrics": total_metrics,
             "total_documents": len(docs),
@@ -726,17 +736,21 @@ async def chat_all_periods(ticker: str, body: GlobalChatRequest, db: AsyncSessio
         for n in notes_q.scalars().all()
     ) or "No notes."
 
-    # 5. Thesis assessments over time
-    assessments_q = await db.execute(
-        select(EventAssessment, Document.period_label)
-        .join(Document, EventAssessment.document_id == Document.id)
-        .where(EventAssessment.company_id == cid)
-        .order_by(EventAssessment.created_at.desc()).limit(10)
+    # 5. Thesis assessments over time (from FA agent history)
+    fa_hist_q = await db.execute(
+        select(AgentOutput)
+        .where(AgentOutput.company_id == cid)
+        .where(AgentOutput.agent_id == "financial_analyst")
+        .where(AgentOutput.status.in_(("completed", "degraded")))
+        .order_by(AgentOutput.created_at.desc()).limit(10)
     )
-    assessments_text = "\n".join(
-        f"- {row[1]}: thesis {row[0].thesis_direction} ({row[0].surprise_level} surprise)"
-        for row in assessments_q.all()
-    ) or "No assessments."
+    _fa_lines = []
+    for row in fa_hist_q.scalars().all():
+        out = row.output_json if isinstance(row.output_json, dict) else {}
+        direction = out.get("thesis_direction") or "?"
+        grade = out.get("overall_grade")
+        _fa_lines.append(f"- {row.period_label}: thesis {direction} (grade {grade})")
+    assessments_text = "\n".join(_fa_lines) or "No assessments."
 
     # 6. Source documents list
     docs_q = await db.execute(

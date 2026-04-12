@@ -69,10 +69,6 @@ class Settings(BaseSettings):
     # Enable agent output caching (24h TTL per agent).
     agent_cache_enabled: bool = False
 
-    # Legacy synthesis step (thesis_comparator, surprise_detector, output_generator).
-    # The agent pipeline has replaced these. Set to True to run both during transition.
-    run_legacy_synthesis: bool = False
-
     # Per-agent model overrides — applied by the orchestrator at pipeline
     # config time, before agents run. Takes precedence over tier defaults
     # but yields to agent.model_override set on the class itself.

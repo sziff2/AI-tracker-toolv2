@@ -10,13 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db
-from apps.api.models import Company, Document, ExtractedMetric, EventAssessment, ResearchOutput, ThesisVersion
+from apps.api.models import Company, Document, ExtractedMetric, ResearchOutput, ThesisVersion
 from schemas import ResearchOutputOut
-from services.output_generator import (
-    generate_briefing,
-    generate_ir_questions,
-    generate_thesis_drift_report,
-)
 
 router = APIRouter(tags=["outputs"])
 
@@ -186,34 +181,8 @@ async def list_outputs(ticker: str, db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.post("/companies/{ticker}/generate-briefing")
-async def briefing(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
-    b = await generate_briefing(db, company.id, period_label)
-    return b.model_dump()
-
-
-@router.post("/companies/{ticker}/generate-ir-questions")
-async def ir_questions(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
-    questions = await generate_ir_questions(db, company.id, period_label)
-    return [q.model_dump() for q in questions]
-
-
-@router.post("/companies/{ticker}/generate-thesis-drift")
-async def thesis_drift(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
-    company = result.scalar_one_or_none()
-    if not company:
-        raise HTTPException(404, f"Company {ticker} not found")
-    try:
-        drift = await generate_thesis_drift_report(db, company.id, period_label)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    return drift
+# generate-briefing, generate-ir-questions, and generate-thesis-drift
+# were removed when the legacy pipeline was deleted. The agent pipeline
+# (FA + Bear + Bull + Debate + QC) now produces all of this output via
+# POST /companies/{ticker}/run-pipeline/{period}. See agents/ for the
+# individual agents and apps/api/routes/pipeline.py for the trigger.

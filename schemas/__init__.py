@@ -146,22 +146,6 @@ class ThesisOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Event Assessment
-# ═══════════════════════════════════════════════════════════════════
-class EventAssessmentOut(BaseModel):
-    id: uuid.UUID
-    company_id: uuid.UUID
-    document_id: uuid.UUID
-    event_type: Optional[str]
-    thesis_direction: Optional[str]
-    surprise_level: Optional[str]
-    summary: Optional[str]
-    confidence: Optional[float]
-    needs_review: bool
-    created_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -235,84 +219,16 @@ class GuidanceItem(BaseModel):
     confidence: float = 1.0
 
 
-class ThesisComparison(BaseModel):
-    thesis_direction: str       # strengthened | weakened | unchanged
-    confidence: float = 0.85
-    supporting_signals: list[str] = Field(default_factory=list)
-    weakening_signals: list[str] = Field(default_factory=list)
-    new_risks: list[str] = Field(default_factory=list)
-    risks_receding: list[str] = Field(default_factory=list)
-    unresolved_questions: list[str] = Field(default_factory=list)
-    summary: str
 
 
-class SurpriseItem(BaseModel):
-    metric_or_topic: str
-    direction: str              # positive | negative
-    magnitude: str              # minor | major
-    description: str
-    source_snippet: str
 
 
-class IRQuestion(BaseModel):
-    topic: str
-    question: str
-    rationale: str
 
 
 # ─────────────────────────────────────────────────────────────────
 # Probabilistic / Bayesian structures
 # ─────────────────────────────────────────────────────────────────
 
-class ScenarioOutcome(BaseModel):
-    """Single weighted scenario. Probabilities across scenarios should sum to ~1.0."""
-    label: str                          # e.g. "Bull", "Base", "Bear"
-    probability: float                  # 0.0–1.0
-    description: str
-    key_trigger: str
-    thesis_impact: str                  # strengthened | weakened | neutral
-    implied_return: Optional[str] = None
 
 
-class BayesianSignal(BaseModel):
-    """Evidence that updates a prior belief."""
-    assumption: str
-    prior_view: str
-    new_evidence: str
-    posterior_direction: str            # strengthened | weakened | unchanged | reversed
-    update_magnitude: str               # large | moderate | small
-    confidence: float
-    source: str                         # earnings | transcript | broker | guidance
 
-
-class AssumptionProbability(BaseModel):
-    """Key thesis assumption with explicit probability."""
-    assumption: str
-    probability: float                  # 0.0–1.0
-    direction: str                      # positive | negative | neutral
-    rationale: str
-    key_watch: str
-
-
-class ProbabilisticBriefing(BaseModel):
-    """Full probabilistic output block embedded in a briefing."""
-    scenarios: list[ScenarioOutcome] = Field(default_factory=list)
-    bayesian_signals: list[BayesianSignal] = Field(default_factory=list)
-    key_assumptions: list[AssumptionProbability] = Field(default_factory=list)
-    overall_conviction_direction: str   # buy | hold | sell | watch
-    overall_conviction_score: float     # 0.0–1.0
-    conviction_rationale: str
-
-
-# ─────────────────────────────────────────────────────────────────
-# Enriched BriefingSection (backwards-compatible)
-# ─────────────────────────────────────────────────────────────────
-
-class BriefingSection(BaseModel):
-    what_happened: str
-    what_changed: str
-    thesis_status: str
-    risks: str
-    follow_ups: str
-    bottom_line: str
-    probabilistic: Optional[ProbabilisticBriefing] = None

@@ -435,13 +435,14 @@ Return ONLY the improved prompt text. No explanation, no markdown fences."""
 # ── Seed initial variants ─────────────────────────────────────
 @router.post("/experiments/seed")
 async def seed_variants(db: AsyncSession = Depends(get_db)):
+    # Only extraction prompts are seeded now — synthesis, thesis
+    # comparison, surprise detection and IR questions have all moved
+    # into the agent pipeline where each agent owns its own prompt
+    # file under prompts/agents/.
     from prompts import (
         COMBINED_EXTRACTOR, EARNINGS_RELEASE_EXTRACTOR, TRANSCRIPT_EXTRACTOR,
         BROKER_NOTE_EXTRACTOR, PRESENTATION_EXTRACTOR,
-        ONE_PAGE_BRIEFING, SYNTHESIS_BRIEFING,
-        SURPRISE_DETECTOR, IR_QUESTION_GENERATOR,
     )
-    from services.thesis_comparator import THESIS_COMPARATOR_V2
 
     seeds = [
         ("extraction_combined", "v1_default", COMBINED_EXTRACTOR),
@@ -449,11 +450,6 @@ async def seed_variants(db: AsyncSession = Depends(get_db)):
         ("extraction_transcript", "v1_default", TRANSCRIPT_EXTRACTOR),
         ("extraction_broker", "v1_default", BROKER_NOTE_EXTRACTOR),
         ("extraction_presentation", "v1_default", PRESENTATION_EXTRACTOR),
-        ("synthesis", "v1_default", SYNTHESIS_BRIEFING),
-        ("briefing", "v1_default", ONE_PAGE_BRIEFING),
-        ("thesis_comparison", "v1_default", THESIS_COMPARATOR_V2),
-        ("surprise", "v1_default", SURPRISE_DETECTOR),
-        ("ir_questions", "v1_default", IR_QUESTION_GENERATOR),
     ]
 
     created = []

@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────
 # Period arithmetic — local to avoid importing from deprecated
-# thesis_comparator.py (being replaced by agents)
+# Shared context helpers feeding the agent pipeline
 # ─────────────────────────────────────────────────────────────────
 
 def _previous_period(period: str) -> str:
