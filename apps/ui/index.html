@@ -570,12 +570,17 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 <!-- ═══ COSTS PAGE ═══ -->
 <div id="page-costs" style="display:none">
   <h1>Anthropic API spend</h1>
-  <p class="sub">Cumulative cost per company and month, plus the most recent pipeline runs. Pulled from <code>pipeline_runs</code>.</p>
-  <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+  <p class="sub">Every LLM call logged to <code>llm_usage_log</code> — extraction, document analysis, agents. Filter by ticker or period to attribute spend precisely.</p>
+  <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <input class="fi" id="costs-ticker" placeholder="Ticker (e.g. ALLY US)" style="max-width:200px" oninput="loadCostsPage()" />
+    <input class="fi" id="costs-period" placeholder="Period (e.g. 2025_Q1)" style="max-width:180px" oninput="loadCostsPage()" />
     <button class="btn2" onclick="loadCostsPage()">↻ Refresh</button>
+    <span id="costs-filter-note" style="font-family:var(--sans);font-size:11px;color:var(--text4)"></span>
   </div>
   <div id="costs-summary" style="margin-bottom:20px"></div>
+  <div id="costs-bucket" style="margin-bottom:20px"></div>
   <div id="costs-table" style="margin-bottom:28px"></div>
+  <div id="costs-monthly" style="margin-bottom:28px"></div>
   <div id="costs-recent"></div>
 </div>
 
@@ -4410,21 +4415,63 @@ let _arMode='extraction',_arPollTimer=null,_arInitDone=false;
 function initAutoRun(){if(!_arInitDone){arRenderTypeToggles('extraction');arRenderTypeToggles('output');arRenderEvals('extraction');arRenderEvals('output');_arInitDone=true;}arRefreshStatus();arStartPoll();}
 
 // ── Costs dashboard ──────────────────────────────────────────────
+// Data sources:
+//   /analytics/llm-usage    — EVERY call logged to llm_usage_log (real
+//                              cost: extraction + agents + analysis)
+//   /analytics/costs        — pipeline_runs rollup by company × month
+//                              (agents only, but covers historical rows
+//                              even when llm_usage_log tagging was missing)
+//   /analytics/costs/recent — last 25 pipeline runs
+var _costsDebounce=null;
 async function loadCostsPage(){
-  var sumEl=E('costs-summary'),tblEl=E('costs-table'),recEl=E('costs-recent');
+  if(_costsDebounce){clearTimeout(_costsDebounce);}
+  _costsDebounce=setTimeout(_loadCostsPageImpl,200);
+}
+async function _loadCostsPageImpl(){
+  var sumEl=E('costs-summary'),tblEl=E('costs-table'),recEl=E('costs-recent'),buckEl=E('costs-bucket'),monEl=E('costs-monthly'),noteEl=E('costs-filter-note');
   if(!sumEl||!tblEl||!recEl)return;
   sumEl.innerHTML='<div style="color:var(--text3);font-family:var(--sans);font-size:13px">Loading…</div>';
-  tblEl.innerHTML='';recEl.innerHTML='';
+  if(buckEl)buckEl.innerHTML='';
+  tblEl.innerHTML='';
+  if(monEl)monEl.innerHTML='';
+  recEl.innerHTML='';
+
+  var tickerEl=E('costs-ticker'),periodEl=E('costs-period');
+  var tickerF=(tickerEl&&tickerEl.value||'').trim();
+  var periodF=(periodEl&&periodEl.value||'').trim();
+
+  var usageUrl='/api/v1/analytics/llm-usage';
+  var params=[];
+  if(tickerF)params.push('ticker='+encodeURIComponent(tickerF));
+  if(periodF)params.push('period='+encodeURIComponent(periodF));
+  if(params.length)usageUrl+='?'+params.join('&');
+
+  if(noteEl){
+    if(tickerF||periodF){
+      noteEl.textContent='Filtered: '+[tickerF,periodF].filter(Boolean).join(' · ');
+    }else{
+      noteEl.textContent='All time, all tickers';
+    }
+  }
+
   try{
-    var [bdRes,recRes]=await Promise.all([
+    // Parallel fetch: usage (for filtered end-to-end cost), monthly rollup,
+    // and recent runs. monthly + recent are NOT filtered because they
+    // currently only know pipeline_runs (agent spend).
+    var [usageRes,monthlyRes,recRes]=await Promise.all([
+      fetch(usageUrl),
       fetch('/api/v1/analytics/costs'),
       fetch('/api/v1/analytics/costs/recent?limit=25'),
     ]);
-    if(!bdRes.ok)throw new Error('Cost breakdown request failed');
-    var bd=await bdRes.json();
+    if(!usageRes.ok)throw new Error('llm-usage request failed');
+    var usage=await usageRes.json();
+    var monthly=monthlyRes.ok?await monthlyRes.json():{rows:[],summary:{}};
     var rec=recRes.ok?await recRes.json():{runs:[]};
-    renderCostsSummary(bd.summary);
-    renderCostsTable(bd.rows||[]);
+
+    renderCostsSummary(usage);
+    renderCostsBuckets(usage);
+    renderCostsTable(usage.by_feature||[]);
+    renderCostsMonthly(monthly.rows||[]);
     renderCostsRecent(rec.runs||[]);
   }catch(e){
     sumEl.innerHTML='<div style="color:var(--red);font-family:var(--sans);font-size:13px">Failed to load costs: '+esc(e.message||String(e))+'</div>';
@@ -4437,13 +4484,19 @@ function _costColour(c){
   return 'var(--text)';
 }
 
-function renderCostsSummary(s){
-  if(!s)return;
-  var h='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">';
+function renderCostsSummary(u){
+  if(!u)return;
+  var totalCost=Number(u.total_cost_usd||0);
+  var totalCalls=Number(u.total_calls||0);
+  var inTok=Number(u.total_input_tokens||0);
+  var outTok=Number(u.total_output_tokens||0);
+  var avgPerCall=totalCalls?(totalCost/totalCalls):0;
+  var h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">';
   var tiles=[
-    {label:'Total spend',value:'$'+Number(s.total_spend_usd||0).toFixed(2),col:_costColour(s.total_spend_usd||0)},
-    {label:'Total runs',value:String(s.total_runs||0),col:'var(--text)'},
-    {label:'Avg cost / run',value:'$'+Number(s.avg_cost_per_run||0).toFixed(4),col:'var(--text)'},
+    {label:'Total spend',value:'$'+totalCost.toFixed(totalCost<1?4:2),col:_costColour(totalCost)},
+    {label:'LLM calls',value:totalCalls.toLocaleString(),col:'var(--text)'},
+    {label:'Avg $/call',value:'$'+avgPerCall.toFixed(4),col:'var(--text)'},
+    {label:'Tokens (in+out)',value:(inTok+outTok).toLocaleString(),col:'var(--text3)'},
   ];
   tiles.forEach(function(t){
     h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px">';
@@ -4455,13 +4508,81 @@ function renderCostsSummary(s){
   E('costs-summary').innerHTML=h;
 }
 
+function renderCostsBuckets(u){
+  var buckets=(u&&u.by_bucket)||{};
+  var keys=Object.keys(buckets);
+  if(!keys.length){E('costs-bucket').innerHTML='';return;}
+  // Sort by cost desc
+  keys.sort(function(a,b){return (buckets[b].cost_usd||0)-(buckets[a].cost_usd||0);});
+  var total=keys.reduce(function(s,k){return s+(buckets[k].cost_usd||0);},0);
+  var colours={extraction:'var(--gold)',agents:'var(--blue)',document_analysis:'var(--green)',other:'var(--text3)'};
+  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">By bucket</div>';
+  h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">';
+  // Stacked bar
+  h+='<div style="display:flex;width:100%;height:18px;border-radius:6px;overflow:hidden;margin-bottom:14px;background:var(--bg3)">';
+  keys.forEach(function(k){
+    var pct=total>0?((buckets[k].cost_usd||0)/total*100):0;
+    var col=colours[k]||'var(--text4)';
+    h+='<div title="'+esc(k)+': $'+Number(buckets[k].cost_usd||0).toFixed(4)+' ('+pct.toFixed(1)+'%)" style="width:'+pct.toFixed(2)+'%;background:'+col+'"></div>';
+  });
+  h+='</div>';
+  // Legend
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;font-family:var(--sans);font-size:12px">';
+  keys.forEach(function(k){
+    var cost=Number(buckets[k].cost_usd||0);
+    var calls=Number(buckets[k].calls||0);
+    var pct=total>0?(cost/total*100):0;
+    var col=colours[k]||'var(--text4)';
+    h+='<div style="display:flex;align-items:center;gap:8px">';
+    h+='<span style="width:10px;height:10px;border-radius:2px;background:'+col+';flex-shrink:0"></span>';
+    h+='<div><div style="color:var(--text);font-weight:600;text-transform:capitalize">'+esc(k.replace(/_/g,' '))+'</div>';
+    h+='<div style="color:var(--text3);font-size:11px;font-family:var(--mono)">$'+cost.toFixed(4)+' · '+calls+' calls · '+pct.toFixed(1)+'%</div></div>';
+    h+='</div>';
+  });
+  h+='</div></div>';
+  E('costs-bucket').innerHTML=h;
+}
+
 function renderCostsTable(rows){
-  if(!rows.length){E('costs-table').innerHTML='<div style="color:var(--text3);font-family:var(--sans);font-size:13px;padding:20px;text-align:center">No pipeline runs recorded yet.</div>';return;}
-  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">Spend by company × month</div>';
+  // Now renders llm-usage by-feature data: one row per (feature, model)
+  if(!rows||!rows.length){E('costs-table').innerHTML='<div style="color:var(--text3);font-family:var(--sans);font-size:13px;padding:20px;text-align:center">No LLM calls recorded yet for this filter.</div>';return;}
+  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">Spend by feature × model</div>';
   h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">';
   h+='<table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
   h+='<thead><tr style="background:var(--bg3);border-bottom:1px solid var(--border)">';
-  ['Ticker','Company','Month','Runs','Input tok','Output tok','LLM calls','Avg $/run','Total $'].forEach(function(c,i){
+  ['Feature','Model','Calls','Input tok','Output tok','Total $'].forEach(function(c,i){
+    var align=i>=2?'right':'left';
+    h+='<th style="padding:10px 14px;text-align:'+align+';font-weight:600;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">'+c+'</th>';
+  });
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
+    var col=_costColour(r.cost_usd||0);
+    // Shorten model names for display
+    var modelShort=String(r.model||'?').replace('claude-','').replace('-20251001','').replace('-2025','');
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:11px">'+esc(r.feature||'unknown')+'</td>';
+    h+='<td style="padding:10px 14px;color:var(--text3);font-family:var(--mono);font-size:11px">'+esc(modelShort)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text2)">'+(r.calls||0)+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.input_tokens||0).toLocaleString()+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.output_tokens||0).toLocaleString()+'</td>';
+    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);font-weight:600;color:'+col+'">$'+Number(r.cost_usd||0).toFixed(4)+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  E('costs-table').innerHTML=h;
+}
+
+function renderCostsMonthly(rows){
+  // The old by-company-month rollup, kept because it covers historical
+  // pipeline_runs data that pre-dates proper llm_usage_log tagging.
+  var el=E('costs-monthly');
+  if(!el)return;
+  if(!rows||!rows.length){el.innerHTML='';return;}
+  var h='<div style="font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--text4);margin-bottom:10px">Agent runs by company × month (from pipeline_runs)</div>';
+  h+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">';
+  h+='<table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
+  h+='<thead><tr style="background:var(--bg3);border-bottom:1px solid var(--border)">';
+  ['Ticker','Company','Month','Runs','LLM calls','Avg $/run','Total $'].forEach(function(c,i){
     var align=i>=3?'right':'left';
     h+='<th style="padding:10px 14px;text-align:'+align+';font-weight:600;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3)">'+c+'</th>';
   });
@@ -4474,15 +4595,13 @@ function renderCostsTable(rows){
     h+='<td style="padding:10px 14px;color:var(--text2)">'+esc(r.company_name||'')+'</td>';
     h+='<td style="padding:10px 14px;color:var(--text2);font-family:var(--mono);font-size:11px">'+esc(mo)+'</td>';
     h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text2)">'+(r.run_count||0)+'</td>';
-    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.total_input_tokens||0).toLocaleString()+'</td>';
-    h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+Number(r.total_output_tokens||0).toLocaleString()+'</td>';
     h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3);font-size:11px">'+(r.total_llm_calls||0)+'</td>';
     h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);color:var(--text3)">$'+Number(r.avg_cost_per_run||0).toFixed(4)+'</td>';
     h+='<td style="padding:10px 14px;text-align:right;font-family:var(--mono);font-weight:600;color:'+col+'">$'+Number(r.total_cost_usd||0).toFixed(4)+'</td>';
     h+='</tr>';
   });
   h+='</tbody></table></div>';
-  E('costs-table').innerHTML=h;
+  el.innerHTML=h;
 }
 
 function renderCostsRecent(runs){

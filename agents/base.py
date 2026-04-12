@@ -178,9 +178,27 @@ class BaseAgent(ABC):
         return _TIER_LAYERS.get(self.tier, 0)
 
     def get_model(self) -> str:
+        """Resolve the model string for this agent.
+
+        Resolution order (first non-empty wins):
+          1. settings.agent_model_overrides[agent_id]  — env-controlled
+             dict, highest priority so you can toggle any agent to any
+             model without touching code (set via AGENT_MODEL_OVERRIDES
+             as a JSON env var, e.g. '{"debate_agent": "claude-opus-4-6"}')
+          2. self.model_override — class-level override on the agent
+             subclass (our current mechanism for pinning reasoning
+             agents to Sonnet, QC to Haiku, etc.)
+          3. Tier default — fast model for TASK/DOCUMENT/META tiers,
+             default (quality) model for everything else.
+        """
+        from configs.settings import settings
+        overrides = getattr(settings, "agent_model_overrides", None) or {}
+        if isinstance(overrides, dict):
+            env_override = overrides.get(self.agent_id)
+            if env_override:
+                return env_override
         if self.model_override:
             return self.model_override
-        from configs.settings import settings
         if self.tier in _FAST_TIERS:
             return settings.agent_fast_model
         return settings.agent_default_model
@@ -198,19 +216,17 @@ class BaseAgent(ABC):
         Returns (prompt_text, prompt_variant_id).
 
         Priority:
-          1. DB prompt variant (A/B experiment override)
-          2. Subclass inline prompt_template
-          3. File: prompts/agents/{agent_id}.txt
+          1. Subclass inline prompt_template (rarely used — agents own
+             their prompts as .txt files under prompts/agents/)
+          2. File: prompts/agents/{agent_id}.txt
+
+        A/B prompt variant lookup (previously attempted via
+        services.prompt_registry.get_active_variant) was never wired
+        for agents — that function never existed in prompt_registry,
+        only get_active_prompt for extraction prompts. It produced a
+        noisy warning on every agent run and was removed.
         """
         variant_id: str | None = None
-
-        try:
-            from services.prompt_registry import get_active_variant
-            variant = get_active_variant(self.agent_id)
-            if variant:
-                return self._render_template(variant.prompt_text, inputs), str(variant.id)
-        except Exception as exc:
-            self.logger.warning("prompt_registry lookup failed, falling back: %s", exc)
 
         if self.prompt_template:
             return self._render_template(self.prompt_template, inputs), variant_id
