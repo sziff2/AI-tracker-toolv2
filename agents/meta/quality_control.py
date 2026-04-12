@@ -58,12 +58,9 @@ class QualityControlAgent(BaseAgent):
     agent_name = "Quality Control"
     tier       = AgentTier.META
 
-    # Depends on everything — runs last
-    # depends_on is intentionally empty here: the orchestrator passes
-    # all_outputs explicitly via inputs["all_outputs"] rather than
-    # wiring individual dependencies. This avoids circular deps and
-    # ensures QC always sees the full picture regardless of what ran.
-    depends_on = []
+    # QC must run AFTER all other agents. Depends on debate_agent
+    # to ensure it's placed in the final layer.
+    depends_on = ["debate_agent"]
     feeds_into = []
 
     cache_ttl_hours = 0  # Never cache QC — always re-evaluate fresh
