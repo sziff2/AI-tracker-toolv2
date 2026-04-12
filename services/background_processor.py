@@ -718,6 +718,14 @@ async def run_batch_pipeline(
                 await _update_job(job_id, status="failed", error_message="No documents processed successfully")
                 return
 
+            # ── Legacy synthesis (feature-flagged) ──────────────────
+            if not settings.run_legacy_synthesis:
+                logger.info("[BATCH] %s skipping legacy synthesis (run_legacy_synthesis=False)", ticker)
+                await _update_step(job_id, "done", 100, completed)
+                await _update_job(job_id, status="completed")
+                await _add_log(job_id, "Document processing complete (legacy synthesis disabled).")
+                return
+
             # ── Thesis comparison + Surprises (parallel) ─────────
             await _update_step(job_id, "comparing thesis", 60, completed)
             await _add_log(job_id, "Running thesis comparison and surprise detection...")

@@ -1930,14 +1930,25 @@ function pollPhaseA(ticker,period,btn,jobId){
 function startPipelineRun(ticker,period,btn){
   if(btn){btn.disabled=true;btn.textContent='Queuing...';}
   showPipelineStatus(period,'queued',[],{});
-  fetch('/api/v1/companies/'+enc(ticker)+'/run-pipeline/'+enc(period),{method:'POST'})
-    .then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error(d.detail||'Failed')});return r.json();})
-    .then(function(){pollPipelineStatus(ticker,period,btn);})
+  // Capture the latest pipeline_run_id BEFORE triggering — anything older than this is stale
+  fetch('/api/v1/pipeline-runs/latest/'+enc(ticker)+'/'+enc(period))
+    .then(function(r){return r.ok?r.json():{};})
+    .then(function(prev){
+      var priorRunId=prev.pipeline_run_id||null;
+      return fetch('/api/v1/companies/'+enc(ticker)+'/run-pipeline/'+enc(period),{method:'POST'})
+        .then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error(d.detail||'Failed')});return r.json();})
+        .then(function(data){
+          // The triggered task_id isn't the pipeline_run_id, but we know the new run will have
+          // id != priorRunId. Poll until we see a new run with terminal state.
+          pollPipelineStatus(ticker,period,btn,priorRunId);
+        });
+    })
     .catch(function(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent='Run Analysis';}});
 }
 
-function pollPipelineStatus(ticker,period,btn){
+function pollPipelineStatus(ticker,period,btn,priorRunId){
   var attempts=0;
+  var TERMINAL=['completed','failed','aborted','budget_exceeded'];
   function poll(){
     attempts++;
     if(attempts>120){toast('Pipeline timed out.');if(btn){btn.disabled=false;btn.textContent='Run Analysis';}return;}
@@ -1945,8 +1956,15 @@ function pollPipelineStatus(ticker,period,btn){
       .then(function(r){if(!r.ok)throw new Error();return r.json();})
       .then(function(data){
         showPipelineStatus(period,data.status,data.agent_execution_log||[],data);
-        if(data.status==='running'||data.status==='queued'||data.status==='not_started'){setTimeout(poll,3000);}
-        else{if(btn){btn.disabled=false;btn.textContent='Run Analysis';}if(data.status==='completed'){var t=E('ck-company');if(t)loadAgentOutputs(t.value,period);}}
+        var isNewRun=data.pipeline_run_id&&data.pipeline_run_id!==priorRunId;
+        var isTerminal=TERMINAL.indexOf(data.status)>=0;
+        // Only stop polling when we see a NEW run reach a terminal state
+        if(isNewRun&&isTerminal){
+          if(btn){btn.disabled=false;btn.textContent='Run Analysis';}
+          if(data.status==='completed'){var t=E('ck-company');if(t)loadAgentOutputs(t.value,period);}
+          return; // stop polling
+        }
+        setTimeout(poll,3000);
       })
       .catch(function(){setTimeout(poll,3000);});
   }

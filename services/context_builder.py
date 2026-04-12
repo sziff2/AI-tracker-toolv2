@@ -66,18 +66,48 @@ async def build_agent_context(
     Returns company identity, thesis, metrics, guidance, tracked KPIs,
     enriched extraction context, and the active context contract.
     """
-    company_meta = await _build_company_meta(db, company_id)
-    thesis = await build_thesis_context(db, company_id)
-    kpis = await build_kpi_summary(db, company_id, period)
-    guidance = await build_guidance_summary(db, company_id, period)
-    prior_period = await build_prior_period_context(db, company_id, period)
-    tracked_kpis = await build_tracked_kpi_context(db, company_id)
-    extraction_ctx = await build_extraction_context(db, company_id, period)
-    context_contract = await build_context_contract(db)
-    transcript_text = await _build_document_text(db, company_id, period, "transcript")
-    presentation_text = await _build_document_text(db, company_id, period, "presentation")
-    transcript_analysis = await _load_document_analysis(db, company_id, period, "transcript_analysis")
-    presentation_analysis = await _load_document_analysis(db, company_id, period, "presentation_analysis")
+    # Parallelise all independent queries using separate async sessions.
+    # SQLAlchemy AsyncSession serialises within a single session, so each
+    # parallel query needs its own session.
+    import asyncio
+    from apps.api.database import AsyncSessionLocal
+
+    async def _with_session(fn, *args, **kwargs):
+        async with AsyncSessionLocal() as s:
+            return await fn(s, *args, **kwargs)
+
+    (
+        company_meta,
+        thesis,
+        kpis,
+        guidance,
+        prior_period,
+        tracked_kpis,
+        extraction_ctx,
+        context_contract,
+        transcript_analysis,
+        presentation_analysis,
+    ) = await asyncio.gather(
+        _with_session(_build_company_meta, company_id),
+        _with_session(build_thesis_context, company_id),
+        _with_session(build_kpi_summary, company_id, period),
+        _with_session(build_guidance_summary, company_id, period),
+        _with_session(build_prior_period_context, company_id, period),
+        _with_session(build_tracked_kpi_context, company_id),
+        _with_session(build_extraction_context, company_id, period),
+        _with_session(build_context_contract),
+        _with_session(_load_document_analysis, company_id, period, "transcript_analysis"),
+        _with_session(_load_document_analysis, company_id, period, "presentation_analysis"),
+    )
+
+    # Fix 2a — only load raw transcript/presentation text as fallback
+    # when pre-built analysis is missing. Saves ~40% tokens per run.
+    transcript_text = ""
+    presentation_text = ""
+    if not transcript_analysis:
+        transcript_text = await _with_session(_build_document_text, company_id, period, "transcript")
+    if not presentation_analysis:
+        presentation_text = await _with_session(_build_document_text, company_id, period, "presentation")
 
     return {
         # Identity
