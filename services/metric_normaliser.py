@@ -450,19 +450,51 @@ _MONTH_NAME_TO_NUM = {
 }
 
 
+def _fold_half_and_fy_to_quarters(label: str) -> str:
+    """Fold H1/HY → Q2 and FY → Q4 at the storage-convention level.
+
+    European half-year filers publish H1 interim reports and FY annual
+    reports; US filers publish Q1/Q2/Q3 interim and Q4/10-K annual. To
+    let the UI, agent pipeline, and comparisons treat both filing
+    cadences uniformly, we store H1 metrics under the Q2 bucket and
+    FY metrics under the Q4 bucket — half-year = 2 quarters in,
+    full-year = 4 quarters in. H2 (second-half-only) is distinct from
+    FY and is left as-is.
+
+    Applied as the last step of normalise_period() so every code path
+    produces the same folded result.
+    """
+    import re
+    m = re.match(r"^(\d{4})_(H1|FY)$", label)
+    if not m:
+        return label
+    yr, tag = m.group(1), m.group(2)
+    if tag == "H1":
+        return f"{yr}_Q2"
+    return f"{yr}_Q4"
+
+
 def normalise_period(raw_period: str) -> str:
     """
-    Canonicalise period labels to `YYYY_QN` / `YYYY_H1` / `YYYY_FY` format.
+    Canonicalise period labels to `YYYY_QN` format.
 
-    Conservative: if the input looks like a description rather than a period
-    label (contains ; or /, has multiple 4-digit years, or is very long), it
-    is returned unchanged. We prefer to leave messy labels alone than risk
-    rewriting them to the wrong canonical period.
+    Storage convention (important):
+      H1 / HY → Q2 (half-year filers land in the Q2 bucket)
+      FY → Q4       (annual filers land in the Q4 bucket)
+      H2 is left as H2 (distinct from FY, not quarter-equivalent)
+    This lets half-year and full-year reports coexist with quarterly
+    reports in the same UI and agent queries without a separate lookup.
+
+    Conservative: if the input looks like a description rather than a
+    period label (contains ; or /, has multiple 4-digit years, or is
+    very long), it is returned unchanged. We prefer to leave messy
+    labels alone than risk rewriting them to the wrong canonical period.
 
     Handles cleanly:
       - "Q2 2025", "Q2'25", "2Q25", "2025 Q2" → "2025_Q2"
-      - "H1 2025", "HY 2025" → "2025_H1"
-      - "FY 2025", "FY25" → "2025_FY"
+      - "H1 2025", "HY 2025" → "2025_Q2"   (folded)
+      - "FY 2025", "FY25" → "2025_Q4"       (folded)
+      - "2025_H1", "2025_FY" → "2025_Q2" / "2025_Q4"  (already-canonical folded)
       - "2025-06-30", "2025/06/30" → "2025_Q2" (quarter-end date)
       - "JUNE 30, 2025", "June 2025" → "2025_Q2"
       - "THREE MONTHS ENDED JUNE 30, 2025" → "2025_Q2"
@@ -474,104 +506,101 @@ def normalise_period(raw_period: str) -> str:
     if not raw_period or not str(raw_period).strip():
         return raw_period or ""
 
-    original = str(raw_period).strip()
-    s = original.upper()
+    def _raw_to_canonical(original: str) -> str:
+        s = original.upper()
 
-    # Already canonical: 2025_Q2, 2025_H1, 2025_FY
-    m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY)$", s)
-    if m:
-        return f"{m.group(1)}_{m.group(2)}"
+        # Already canonical: 2025_Q2, 2025_H1, 2025_FY
+        m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY)$", s)
+        if m:
+            return f"{m.group(1)}_{m.group(2)}"
 
-    # Conservative guardrail: refuse to rewrite obvious descriptions.
-    # Exception: still try the explicit "Q[1-4] YYYY" anchored search below.
-    looks_descriptive = (
-        ";" in s
-        or len(s) > 60
-        or len(re.findall(r"\b\d{4}\b", s)) >= 2
-    )
+        # Conservative guardrail: refuse to rewrite obvious descriptions.
+        # Exception: still try the explicit "Q[1-4] YYYY" anchored search below.
+        looks_descriptive = (
+            ";" in s
+            or len(s) > 60
+            or len(re.findall(r"\b\d{4}\b", s)) >= 2
+        )
 
-    # Strong, unambiguous signal: find "Q[1-4] YYYY" anywhere. If the string
-    # contains exactly one such token, trust it even in descriptive inputs.
-    qy_matches = re.findall(r"\bQ([1-4])\s+(\d{4})\b", s)
-    if len(qy_matches) == 1:
-        q, yr = qy_matches[0]
-        return f"{yr}_Q{q}"
+        # Strong, unambiguous signal: find "Q[1-4] YYYY" anywhere. If the
+        # string contains exactly one such token, trust it even in
+        # descriptive inputs.
+        qy_matches = re.findall(r"\bQ([1-4])\s+(\d{4})\b", s)
+        if len(qy_matches) == 1:
+            q, yr = qy_matches[0]
+            return f"{yr}_Q{q}"
 
-    # Similarly: exactly one H1/H2/FY YYYY token.
-    hy_matches = re.findall(r"\b(H[12]|FY|HY)\s+(\d{4})\b", s)
-    if len(hy_matches) == 1:
-        tag, yr = hy_matches[0]
-        tag = tag.replace("HY", "H1")
-        return f"{yr}_{tag}"
+        # Similarly: exactly one H1/H2/FY YYYY token.
+        hy_matches = re.findall(r"\b(H[12]|FY|HY)\s+(\d{4})\b", s)
+        if len(hy_matches) == 1:
+            tag, yr = hy_matches[0]
+            tag = tag.replace("HY", "H1")
+            return f"{yr}_{tag}"
 
-    if looks_descriptive:
-        return original  # leave alone — too risky to guess
+        if looks_descriptive:
+            return original  # leave alone — too risky to guess
 
-    # From here on we work on a simplified copy (commas → spaces).
-    s2 = re.sub(r"\s+", " ", s.replace(",", " "))
+        # From here on we work on a simplified copy (commas → spaces).
+        s2 = re.sub(r"\s+", " ", s.replace(",", " "))
 
-    # Q2 2025 / FY 2025 / H1 2025
-    m = re.match(r"^(Q[1-4]|H[12]|HY|FY)\s+(\d{4})$", s2)
-    if m:
-        q = m.group(1).replace("HY", "H1")
-        return f"{m.group(2)}_{q}"
+        # Q2 2025 / FY 2025 / H1 2025
+        m = re.match(r"^(Q[1-4]|H[12]|HY|FY)\s+(\d{4})$", s2)
+        if m:
+            q = m.group(1).replace("HY", "H1")
+            return f"{m.group(2)}_{q}"
 
-    # 2025 Q2
-    m = re.match(r"^(\d{4})\s+(Q[1-4]|H[12]|FY)$", s2)
-    if m:
-        return f"{m.group(1)}_{m.group(2)}"
+        # 2025 Q2
+        m = re.match(r"^(\d{4})\s+(Q[1-4]|H[12]|FY)$", s2)
+        if m:
+            return f"{m.group(1)}_{m.group(2)}"
 
-    # 2Q25 / 2Q2025
-    m = re.match(r"^([1-4])Q(\d{2}|\d{4})$", s2)
-    if m:
-        yr = m.group(2)
-        if len(yr) == 2:
-            yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
-        return f"{yr}_Q{m.group(1)}"
+        # 2Q25 / 2Q2025
+        m = re.match(r"^([1-4])Q(\d{2}|\d{4})$", s2)
+        if m:
+            yr = m.group(2)
+            if len(yr) == 2:
+                yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
+            return f"{yr}_Q{m.group(1)}"
 
-    # Q2'25
-    m = re.match(r"^Q([1-4])['`](\d{2})$", s2)
-    if m:
-        yr = ("20" + m.group(2)) if int(m.group(2)) < 80 else ("19" + m.group(2))
-        return f"{yr}_Q{m.group(1)}"
+        # Q2'25
+        m = re.match(r"^Q([1-4])['`](\d{2})$", s2)
+        if m:
+            yr = ("20" + m.group(2)) if int(m.group(2)) < 80 else ("19" + m.group(2))
+            return f"{yr}_Q{m.group(1)}"
 
-    # FY25
-    m = re.match(r"^FY(\d{2}|\d{4})$", s2)
-    if m:
-        yr = m.group(1)
-        if len(yr) == 2:
-            yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
-        return f"{yr}_FY"
+        # FY25
+        m = re.match(r"^FY(\d{2}|\d{4})$", s2)
+        if m:
+            yr = m.group(1)
+            if len(yr) == 2:
+                yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
+            return f"{yr}_FY"
 
-    # ISO date: 2025-06-30, 2025/06/30
-    m = re.match(r"^(\d{4})[\-/](\d{1,2})[\-/](\d{1,2})$", s2)
-    if m:
-        year, month = m.group(1), int(m.group(2))
-        q = _MONTH_END_TO_QUARTER.get(month)
-        if q:
-            return f"{year}_{q}"
+        # ISO date: 2025-06-30, 2025/06/30
+        m = re.match(r"^(\d{4})[\-/](\d{1,2})[\-/](\d{1,2})$", s2)
+        if m:
+            year, month = m.group(1), int(m.group(2))
+            q = _MONTH_END_TO_QUARTER.get(month)
+            if q:
+                return f"{year}_{q}"
 
-    # "JUNE 30 2025" / "JUNE 2025" / "30 JUNE 2025" — only when simple enough.
-    # Require exactly one year and one month token to avoid guessing.
-    tokens = s2.split()
-    year_toks = [t for t in tokens if re.match(r"^\d{4}$", t)]
-    month_toks = [t for t in tokens if t.lower() in _MONTH_NAME_TO_NUM]
-    if len(year_toks) == 1 and len(month_toks) == 1:
-        month = _MONTH_NAME_TO_NUM[month_toks[0].lower()]
-        q = _MONTH_END_TO_QUARTER.get(month)
-        if q:
-            return f"{year_toks[0]}_{q}"
+        # "JUNE 30 2025" / "JUNE 2025" / "30 JUNE 2025" — only when simple
+        # enough. Require exactly one year and one month token.
+        tokens = s2.split()
+        year_toks = [t for t in tokens if re.match(r"^\d{4}$", t)]
+        month_toks = [t for t in tokens if t.lower() in _MONTH_NAME_TO_NUM]
+        if len(year_toks) == 1 and len(month_toks) == 1:
+            month = _MONTH_NAME_TO_NUM[month_toks[0].lower()]
+            q = _MONTH_END_TO_QUARTER.get(month)
+            if q:
+                return f"{year_toks[0]}_{q}"
 
-    # "THREE MONTHS ENDED JUNE 30 2025" etc. — phrase-based.
-    # Require exactly one year and one month in the whole string.
-    if len(year_toks) == 1 and len(month_toks) == 1:
-        month = _MONTH_NAME_TO_NUM[month_toks[0].lower()]
-        q = _MONTH_END_TO_QUARTER.get(month)
-        if q:
-            return f"{year_toks[0]}_{q}"
+        # No safe match — leave the original alone.
+        return original
 
-    # No safe match — leave the original alone.
-    return original
+    canonical = _raw_to_canonical(str(raw_period).strip())
+    # Apply the H1→Q2 / FY→Q4 storage convention as the final step.
+    return _fold_half_and_fy_to_quarters(canonical)
 
 
 # ─────────────────────────────────────────────────────────────────

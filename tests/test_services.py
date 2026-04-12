@@ -77,16 +77,28 @@ class TestNormalisePeriod:
     def test_q4_2025(self):
         assert normalise_period("Q4 2025") == "2025_Q4"
 
-    def test_fy_2025(self):
-        assert normalise_period("FY 2025") == "2025_FY"
+    def test_fy_folds_to_q4(self):
+        # Storage convention: FY folds to the Q4 bucket so annual-report
+        # metrics coexist with quarterly metrics in the same period slice.
+        assert normalise_period("FY 2025") == "2025_Q4"
+        assert normalise_period("2025_FY") == "2025_Q4"
+        assert normalise_period("FY25") == "2025_Q4"
 
     def test_2025_q4(self):
         assert normalise_period("2025 Q4") == "2025_Q4"
 
-    def test_hy(self):
-        # HY collapses to H1 — "2025_HY" was never a valid canonical form
-        assert normalise_period("HY 2025") == "2025_H1"
-        assert normalise_period("H1 2025") == "2025_H1"
+    def test_h1_folds_to_q2(self):
+        # Storage convention: H1/HY folds to the Q2 bucket so half-year
+        # interim reports (European filers) land alongside quarterly data.
+        assert normalise_period("HY 2025") == "2025_Q2"
+        assert normalise_period("H1 2025") == "2025_Q2"
+        assert normalise_period("2025_H1") == "2025_Q2"
+
+    def test_h2_not_folded(self):
+        # H2 is distinct from FY (second-half-only, not full year) and
+        # stays as-is.
+        assert normalise_period("H2 2025") == "2025_H2"
+        assert normalise_period("2025_H2") == "2025_H2"
 
     def test_empty(self):
         assert normalise_period("") == ""
