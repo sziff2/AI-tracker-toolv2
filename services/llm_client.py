@@ -280,18 +280,59 @@ def _repair_truncated_json(raw: str) -> Any:
 
 
 def _clean_json_string(raw: str) -> str:
-    """Clean up common LLM JSON formatting issues."""
+    """Clean up common LLM JSON formatting issues.
+
+    Handles, in order:
+      1. Markdown code fences (```json ... ```)
+      2. Smart/curly quotes → ASCII quotes (Sonnet occasionally emits
+         these in property names and string values on long outputs)
+      3. JavaScript-style line comments (// ...) and block comments
+         (/* ... */) — the LLM sometimes adds these in long responses
+      4. Trailing commas before } or ]
+      5. Unquoted property names (both right after { and after ,),
+         including names with hyphens (e.g. risk-level)
+    """
     import re
     cleaned = raw
+    # 1. Strip markdown fences
     if cleaned.startswith("```"):
         first_line_end = cleaned.find("\n")
         cleaned = cleaned[first_line_end + 1:] if first_line_end > 0 else cleaned[3:]
     if cleaned.endswith("```"):
         cleaned = cleaned.rsplit("```", 1)[0]
     cleaned = cleaned.strip()
+
+    # 2. Normalise smart quotes. These are legal in English but illegal
+    # in JSON strings and property names — Sonnet occasionally emits them
+    # mid-output when the response gets long. We only replace the outer
+    # curly quote characters, not anything inside properly-escaped strings
+    # (which we can't reliably distinguish without a parser, so we do a
+    # straight character replacement — losing curly quotes inside actual
+    # prose is an acceptable trade for being able to parse at all).
+    cleaned = (
+        cleaned
+        .replace("\u201c", '"').replace("\u201d", '"')  # double smart quotes
+        .replace("\u2018", "'").replace("\u2019", "'")  # single smart quotes
+        .replace("\u201e", '"').replace("\u201a", "'")  # low quotes
+    )
+
+    # 3. Strip JS comments. Block comments first, then line comments.
+    # This is lossy inside strings — a // inside a JSON string value
+    # would get stripped — but that's rare and better than failing.
+    cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r"(^|[\s,\[{])//[^\n]*", r"\1", cleaned)
+
+    # 4. Drop trailing commas before a closing bracket
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-    cleaned = re.sub(r"{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'{"\1":', cleaned)
-    cleaned = re.sub(r",\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r',"\1":', cleaned)
+
+    # 5. Quote unquoted property names. Accept hyphens in addition to
+    # word chars (risk-level, thesis-direction, etc.). Match either
+    # position: directly after { or after ,
+    cleaned = re.sub(
+        r"([{,]\s*)([a-zA-Z_][a-zA-Z0-9_-]*)(\s*:)",
+        r'\1"\2"\3',
+        cleaned,
+    )
     return cleaned
 
 

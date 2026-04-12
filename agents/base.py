@@ -277,7 +277,45 @@ class BaseAgent(ABC):
             output_tokens = llm_result.get("output_tokens", 0)
             cost = _estimate_cost(model, input_tokens, output_tokens)
 
-            output = self.validate_output(raw_text)
+            # Validate. If the LLM returned malformed JSON (or failed
+            # the agent's own schema check), give it ONE retry with an
+            # explicit "your previous response was not valid JSON"
+            # instruction. This rescues Sonnet runs that occasionally
+            # emit a single malformed property name ~15k chars deep.
+            try:
+                output = self.validate_output(raw_text)
+            except Exception as first_err:
+                self.logger.warning(
+                    "validate_output failed on first attempt (%s: %s) — retrying with correction instruction",
+                    type(first_err).__name__, str(first_err)[:200],
+                )
+                correction_prompt = (
+                    prompt
+                    + "\n\n---\n"
+                    + "Your previous response could not be parsed as valid JSON. "
+                    + f"The error was: {str(first_err)[:300]}\n"
+                    + "Return ONLY a single valid JSON object. No comments, no markdown "
+                    + "fences, no trailing commas, all property names in double quotes, "
+                    + "all string values in double quotes (ASCII, not smart/curly quotes), "
+                    + "and make sure every string is properly terminated."
+                )
+                retry_result = await call_llm_native_async(
+                    correction_prompt,
+                    model=model,
+                    max_tokens=self.max_tokens,
+                    feature=f"agent_{self.agent_id}_retry",
+                    ticker=inputs.get("ticker"),
+                    period=inputs.get("period_label"),
+                )
+                raw_text = retry_result["text"]
+                input_tokens += retry_result.get("input_tokens", 0)
+                output_tokens += retry_result.get("output_tokens", 0)
+                cost = _estimate_cost(model, input_tokens, output_tokens)
+                # Second attempt. If this also fails, the exception
+                # propagates out and the outer handler records the
+                # failed AgentResult.
+                output = self.validate_output(raw_text)
+
             predictions = self.extract_predictions(output) if self.tracks_predictions else []
             duration = int((time.time() - t0) * 1000)
 
