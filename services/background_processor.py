@@ -388,6 +388,16 @@ async def run_batch_pipeline(
     completed = []
     output = {}
 
+    # Set the LLM usage context so every downstream call (parsing
+    # classification, section extraction, two-pass, table extraction,
+    # statement extraction, transcript/presentation analysis, etc.)
+    # gets tagged with the ticker and period in llm_usage_log. Without
+    # this the cost dashboard can't attribute extraction spend to a
+    # specific (company, period). All docs in one batch share the
+    # same ticker+period so setting once at the top is sufficient.
+    from services.llm_client import set_llm_context
+    set_llm_context(feature="batch_pipeline", ticker=ticker, period=period_label)
+
     try:
         await _update_job(job_id, status="processing", current_step="processing_documents", progress_pct=5)
         await _add_log(job_id, f"Starting analysis for {ticker} / {period_label}")
