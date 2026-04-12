@@ -84,7 +84,9 @@ class TestNormalisePeriod:
         assert normalise_period("2025 Q4") == "2025_Q4"
 
     def test_hy(self):
-        assert normalise_period("HY 2025") == "2025_HY"
+        # HY collapses to H1 — "2025_HY" was never a valid canonical form
+        assert normalise_period("HY 2025") == "2025_H1"
+        assert normalise_period("H1 2025") == "2025_H1"
 
     def test_empty(self):
         assert normalise_period("") == ""

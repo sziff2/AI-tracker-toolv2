@@ -100,11 +100,16 @@ async def get_phase_a_status(
 async def trigger_pipeline(
     ticker: str,
     period: str,
+    force_rerun: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Trigger Phase B agent pipeline. Phase A must be complete.
     Returns immediately — UI polls for status.
+
+    If a completed pipeline run already exists for this (company, period)
+    the orchestrator returns its id without re-running any agents. Pass
+    `?force_rerun=true` to bypass this cache and run the pipeline fresh.
     """
     from apps.worker.tasks import run_document_pipeline_task
     from agents.orchestrator import AgentOrchestrator
@@ -138,12 +143,30 @@ async def trigger_pipeline(
             )
         raise HTTPException(status_code=400, detail=msg)
 
-    task = run_document_pipeline_task.delay(str(company.id), period)
+    # Cache short-circuit: if a completed run already exists and the
+    # caller didn't force a re-run, return its id immediately without
+    # dispatching a Celery task. UI treats this as instant success.
+    if not force_rerun:
+        cached = await orch._find_cached_run(db, str(company.id), period)
+        if cached is not None:
+            return {
+                "status": "cached",
+                "pipeline_run_id": str(cached.id),
+                "ticker": ticker,
+                "period": period,
+                "cached_run_completed_at": (
+                    cached.completed_at.isoformat() if cached.completed_at else None
+                ),
+                "cached_run_cost_usd": float(cached.total_cost_usd or 0),
+            }
+
+    task = run_document_pipeline_task.delay(str(company.id), period, None, force_rerun)
     return {
         "status": "queued",
         "task_id": task.id,
         "ticker": ticker,
         "period": period,
+        "force_rerun": force_rerun,
     }
 
 

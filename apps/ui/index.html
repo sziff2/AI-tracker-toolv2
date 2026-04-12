@@ -1920,8 +1920,12 @@ async function renderPeriodActions(ticker,period,containerEl){
     // No extraction yet — button triggers Phase A first, then Phase B
     html='<button class="btn" style="font-size:12px;padding:8px 18px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none" onclick="analyseFullPeriod(\''+esc(ticker)+'\',\''+esc(period)+'\',this)">Analyse Period</button>';
   }else{
-    // Extraction exists — button triggers Phase B (agents) directly
-    html='<button class="btn" style="font-size:12px;padding:8px 18px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none" onclick="startPipelineRun(\''+esc(ticker)+'\',\''+esc(period)+'\',this)">Analyse Period</button>';
+    // Extraction exists — primary button uses the cache (instant if a clean
+    // completed run exists). Re-run button forces a fresh agent pipeline.
+    html='<div style="display:flex;gap:8px">';
+    html+='<button class="btn" style="font-size:12px;padding:8px 18px;background:linear-gradient(135deg,#c9a960,#a88932);color:#0f1117;border:none" onclick="startPipelineRun(\''+esc(ticker)+'\',\''+esc(period)+'\',this,false)">Analyse Period</button>';
+    html+='<button class="btn2" style="font-size:12px;padding:8px 14px" title="Force a fresh agent run (bypasses cache)" onclick="startPipelineRun(\''+esc(ticker)+'\',\''+esc(period)+'\',this,true)">↻ Re-run</button>';
+    html+='</div>';
   }
   containerEl.innerHTML=html;
 }
@@ -1947,9 +1951,11 @@ function pollPhaseA(ticker,period,btn,jobId){
     if(attempts>200){toast('Document processing timed out.');if(btn){btn.disabled=false;btn.textContent='Analyse Period';}return;}
     checkPhaseAStatus(ticker,period).then(function(status){
       if(status.phase_a_complete){
-        // Phase A done — now trigger Phase B (agents)
+        // Phase A done — now trigger Phase B (agents). Force a fresh run
+        // because documents have just been re-parsed; any cached pipeline
+        // result would reflect the old document set and be stale.
         if(btn)btn.textContent='Running agents...';
-        startPipelineRun(ticker,period,btn);
+        startPipelineRun(ticker,period,btn,true);
       }else{
         setTimeout(poll,3000);
       }
@@ -1958,16 +1964,31 @@ function pollPhaseA(ticker,period,btn,jobId){
   poll(); // Start polling immediately
 }
 
-function startPipelineRun(ticker,period,btn){
+function startPipelineRun(ticker,period,btn,forceRerun){
   window._ckActiveResPeriod=period; // stick to this period after reload
-  if(btn){btn.disabled=true;btn.textContent='Queuing...';}
+  if(btn){btn.disabled=true;btn.textContent=forceRerun?'Re-running...':'Queuing...';}
   showPipelineStatus(period,'queued',[],{});
   // Use launch timestamp as the "newer than" marker — simpler than a DB round-trip.
   var launchTs=Date.now();
-  fetch('/api/v1/companies/'+enc(ticker)+'/run-pipeline/'+enc(period),{method:'POST'})
+  var url='/api/v1/companies/'+enc(ticker)+'/run-pipeline/'+enc(period);
+  if(forceRerun)url+='?force_rerun=true';
+  fetch(url,{method:'POST'})
     .then(function(r){if(!r.ok)return r.json().then(function(d){throw new Error(d.detail||'Failed')});return r.json();})
-    .then(function(data){pollPipelineStatus(ticker,period,btn,launchTs);})
-    .catch(function(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent='Run Analysis';}});
+    .then(function(data){
+      if(data.status==='cached'){
+        // Orchestrator returned an existing run — no polling needed.
+        toast('Using cached result from '+(data.cached_run_completed_at||'earlier').substring(0,19).replace('T',' ')+' ($'+Number(data.cached_run_cost_usd||0).toFixed(4)+'). Click Re-run to regenerate.');
+        if(btn){btn.disabled=false;btn.textContent='Analyse Period';}
+        loadAgentOutputs(ticker,period);
+        // Update the pipeline panel with the cached run's contents
+        fetch('/api/v1/pipeline-runs/latest/'+enc(ticker)+'/'+enc(period))
+          .then(function(r){return r.json();})
+          .then(function(rd){showPipelineStatus(period,rd.status,rd.agent_execution_log||[],rd);});
+        return;
+      }
+      pollPipelineStatus(ticker,period,btn,launchTs);
+    })
+    .catch(function(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent='Analyse Period';}});
 }
 
 function pollPipelineStatus(ticker,period,btn,launchTs){

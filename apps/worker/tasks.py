@@ -198,14 +198,17 @@ def run_document_pipeline_task(
     company_id: str,
     period_label: str,
     agent_ids: list[str] | None = None,
+    force_rerun: bool = False,
 ) -> dict:
     """Phase B: agent pipeline after document extraction."""
     import asyncio
     from agents.orchestrator import AgentOrchestrator
-    logger.info("run_document_pipeline: %s %s", company_id, period_label)
+    logger.info("run_document_pipeline: %s %s (force_rerun=%s)", company_id, period_label, force_rerun)
     try:
         result = asyncio.run(
-            AgentOrchestrator().run_document_pipeline(company_id, period_label, agent_ids)
+            AgentOrchestrator().run_document_pipeline(
+                company_id, period_label, agent_ids, force_rerun=force_rerun,
+            )
         )
         return {
             "pipeline_run_id":  result.pipeline_run_id,

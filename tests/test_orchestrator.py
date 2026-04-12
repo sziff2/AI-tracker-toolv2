@@ -86,6 +86,7 @@ async def test_successful_pipeline():
     orch.cache_enabled = False
     mock_db = AsyncMock()
     with patch.object(orch, "_is_phase_a_complete", return_value=True), \
+         patch.object(orch, "_find_cached_run", new_callable=AsyncMock, return_value=None), \
          patch("agents.orchestrator.build_agent_context",
                new_callable=AsyncMock,
                return_value={"ticker": "TEST", "period_label": "2025_Q1"}), \
@@ -107,6 +108,7 @@ async def test_critical_agent_failure_aborts():
     orch.cache_enabled = False
     mock_db = AsyncMock()
     with patch.object(orch, "_is_phase_a_complete", return_value=True), \
+         patch.object(orch, "_find_cached_run", new_callable=AsyncMock, return_value=None), \
          patch("agents.orchestrator.build_agent_context",
                new_callable=AsyncMock,
                return_value={"ticker": "TEST", "period_label": "2025_Q1"}), \
@@ -128,6 +130,7 @@ async def test_output_merging():
     orch.cache_enabled = False
     mock_db = AsyncMock()
     with patch.object(orch, "_is_phase_a_complete", return_value=True), \
+         patch.object(orch, "_find_cached_run", new_callable=AsyncMock, return_value=None), \
          patch("agents.orchestrator.build_agent_context",
                new_callable=AsyncMock,
                return_value={"ticker": "TEST", "period_label": "2025_Q1"}), \

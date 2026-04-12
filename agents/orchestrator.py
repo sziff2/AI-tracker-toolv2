@@ -79,10 +79,15 @@ class AgentOrchestrator:
         period_label: str,
         agent_ids: list[str] | None = None,
         db: AsyncSession | None = None,
+        force_rerun: bool = False,
     ) -> PipelineRunResult:
         """
         Triggered when analyst clicks "Run Analysis" on a period.
         Phase A (extraction) must already be complete.
+
+        If `force_rerun=False` and a completed pipeline run already exists
+        for this (company, period), return its id immediately instead of
+        re-running all agents. Pass `force_rerun=True` to bypass the cache.
         """
         t0 = time.time()
         own_session = db is None
@@ -100,6 +105,28 @@ class AgentOrchestrator:
                     "Process the document first, then run analysis."
                 ),
             )
+
+        # Cache short-circuit: reuse a recent completed run unless the
+        # analyst explicitly forced a re-run.
+        if not force_rerun:
+            cached = await self._find_cached_run(db, company_id, period_label)
+            if cached is not None:
+                logger.info(
+                    "Returning cached pipeline run %s for %s %s (use force_rerun=true to override)",
+                    cached.id, company_id, period_label,
+                )
+                if own_session:
+                    await db.close()
+                return PipelineRunResult(
+                    pipeline_run_id=str(cached.id),
+                    status="cached",
+                    total_cost_usd=float(cached.total_cost_usd or 0),
+                    duration_ms=cached.duration_ms or 0,
+                    overall_qc_score=(
+                        float(cached.overall_qc_score)
+                        if cached.overall_qc_score is not None else None
+                    ),
+                )
 
         pipeline_run = await self._create_pipeline_run(
             db, company_id, period_label, trigger="manual"
@@ -472,6 +499,27 @@ class AgentOrchestrator:
     # ─────────────────────────────────────────────────────────────
     # Helpers
     # ─────────────────────────────────────────────────────────────
+
+    async def _find_cached_run(
+        self, db: AsyncSession, company_id: str, period_label: str
+    ):
+        """Return the most recent completed PipelineRun for this
+        (company, period) if one exists, else None. Used by
+        run_document_pipeline to short-circuit repeat requests."""
+        try:
+            from apps.api.models import PipelineRun
+            q = await db.execute(
+                select(PipelineRun)
+                .where(PipelineRun.company_id == company_id)
+                .where(PipelineRun.period_label == period_label)
+                .where(PipelineRun.status == "completed")
+                .order_by(desc(PipelineRun.completed_at))
+                .limit(1)
+            )
+            return q.scalar_one_or_none()
+        except Exception as e:
+            logger.warning("Cache lookup failed: %s", str(e)[:200])
+            return None
 
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str
