@@ -681,6 +681,7 @@ async def extract_by_document_type(
 # ─────────────────────────────────────────────────────────────────
 
 async def _persist_earnings_metrics(db, document, raw_items):
+    from services.metric_normaliser import normalise_period
     for item in raw_items:
         if not isinstance(item, dict):
             continue
@@ -696,11 +697,14 @@ async def _persist_earnings_metrics(db, document, raw_items):
             qualifiers = item.get("_qualifiers")
             is_one_off = bool(item.get("_is_one_off", False))
 
+            raw_period = item.get("period") or document.period_label or ""
+            canonical_period = normalise_period(raw_period) or document.period_label
+
             metric = ExtractedMetric(
                 id=uuid.uuid4(),
                 company_id=document.company_id,
                 document_id=document.id,
-                period_label=item.get("period", document.period_label),
+                period_label=canonical_period,
                 metric_name=item.get("metric_name", ""),
                 metric_value=val,
                 metric_text=item.get("metric_text", ""),

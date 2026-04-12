@@ -342,6 +342,78 @@ async def save_context_contract(request: Request, db: AsyncSession = Depends(get
     return {"status": "saved", "version": next_version}
 
 
+@router.post("/admin/normalise-period-labels")
+async def normalise_period_labels(
+    ticker: str | None = None,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """One-shot backfill: rewrite extracted_metrics.period_label to canonical YYYY_QN.
+
+    Query params:
+      - ticker: optional, limit to one company (e.g. 'ALLY US'). Omit for all.
+      - dry_run: if true, report what would change without writing.
+    """
+    from sqlalchemy import text
+    from services.metric_normaliser import normalise_period
+
+    where = ""
+    params: dict = {}
+    if ticker:
+        q = await db.execute(select(Company.id).where(Company.ticker == ticker.upper()))
+        row = q.first()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+        where = "WHERE company_id = :cid"
+        params["cid"] = str(row[0])
+
+    rows = await db.execute(
+        text(f"SELECT DISTINCT period_label FROM extracted_metrics {where}"), params
+    )
+    labels = [r[0] for r in rows.fetchall() if r[0]]
+
+    changes: list[dict] = []
+    total_updated = 0
+    for lbl in labels:
+        canon = normalise_period(lbl)
+        if canon == lbl:
+            continue
+        if dry_run:
+            count_row = await db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM extracted_metrics {where}"
+                    + (" AND " if where else " WHERE ")
+                    + "period_label = :old"
+                ),
+                {**params, "old": lbl},
+            )
+            n = count_row.scalar() or 0
+        else:
+            upd = await db.execute(
+                text(
+                    f"UPDATE extracted_metrics SET period_label = :new {where}"
+                    + (" AND " if where else " WHERE ")
+                    + "period_label = :old"
+                ),
+                {**params, "old": lbl, "new": canon},
+            )
+            n = upd.rowcount or 0
+        total_updated += n
+        changes.append({"from": lbl, "to": canon, "rows": n})
+
+    if not dry_run:
+        await db.commit()
+
+    return {
+        "ticker": ticker,
+        "dry_run": dry_run,
+        "distinct_labels_seen": len(labels),
+        "labels_rewritten": len(changes),
+        "rows_updated": total_updated,
+        "changes": changes,
+    }
+
+
 @router.get("/context-contract/history")
 async def get_contract_history(
     limit: int = 10,

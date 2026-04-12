@@ -428,20 +428,106 @@ async def extract_from_tables(
 # 5. Period Normalisation
 # ─────────────────────────────────────────────────────────────────
 
+_MONTH_TO_QUARTER = {
+    1: "Q4", 2: "Q4", 3: "Q1",
+    4: "Q1", 5: "Q1", 6: "Q2",
+    7: "Q2", 8: "Q2", 9: "Q3",
+    10: "Q3", 11: "Q3", 12: "Q4",
+}
+# For quarter-end dates, month → quarter using calendar-quarter convention
+_MONTH_END_TO_QUARTER = {
+    3: "Q1", 6: "Q2", 9: "Q3", 12: "Q4",
+    # Fiscal year variants
+    1: "Q4", 2: "Q4", 4: "Q1", 5: "Q1",
+    7: "Q2", 8: "Q2", 10: "Q3", 11: "Q3",
+}
+_MONTH_NAME_TO_NUM = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6,
+    "july": 7, "jul": 7, "august": 8, "aug": 8,
+    "september": 9, "sept": 9, "sep": 9, "october": 10, "oct": 10,
+    "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+
+
 def normalise_period(raw_period: str) -> str:
     """
-    Normalise period format: "Q4 2025" -> "2025_Q4", "FY 2025" -> "2025_FY".
-    Returns underscore-joined format suitable for period_label fields.
+    Canonicalise period labels to `YYYY_QN` / `YYYY_H1` / `YYYY_FY` format.
+
+    Handles:
+      - "Q2 2025", "Q2'25", "2Q25", "2025 Q2" → "2025_Q2"
+      - "H1 2025", "HY 2025" → "2025_H1"
+      - "FY 2025", "FY25" → "2025_FY"
+      - "2025-06-30", "2025/06/30" → "2025_Q2" (quarter-end date)
+      - "JUNE 30, 2025", "June 2025" → "2025_Q2"
+      - Already-canonical "2025_Q2" → unchanged
     """
-    if not raw_period or not raw_period.strip():
+    import re
+
+    if not raw_period or not str(raw_period).strip():
         return raw_period or ""
 
-    parts = raw_period.strip().split()
-    if len(parts) == 2:
-        if parts[0] in ("Q1", "Q2", "Q3", "Q4", "FY", "HY"):
-            return f"{parts[1]}_{parts[0]}"
-        return f"{parts[0]}_{parts[1]}"
-    return raw_period.strip().replace(" ", "_")
+    s = str(raw_period).strip().upper().replace(",", " ")
+    s = re.sub(r"\s+", " ", s)
+
+    # Already canonical: 2025_Q2, 2025_H1, 2025_FY
+    m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY)$", s)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+
+    # Q2 2025 / FY 2025 / H1 2025
+    m = re.match(r"^(Q[1-4]|H[12]|HY|FY)\s+(\d{4})$", s)
+    if m:
+        q = m.group(1).replace("HY", "H1")
+        return f"{m.group(2)}_{q}"
+
+    # 2025 Q2
+    m = re.match(r"^(\d{4})\s+(Q[1-4]|H[12]|FY)$", s)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+
+    # 2Q25 / 2Q2025
+    m = re.match(r"^([1-4])Q(\d{2}|\d{4})$", s)
+    if m:
+        yr = m.group(2)
+        if len(yr) == 2:
+            yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
+        return f"{yr}_Q{m.group(1)}"
+
+    # Q2'25
+    m = re.match(r"^Q([1-4])['`](\d{2})$", s)
+    if m:
+        yr = ("20" + m.group(2)) if int(m.group(2)) < 80 else ("19" + m.group(2))
+        return f"{yr}_Q{m.group(1)}"
+
+    # FY25
+    m = re.match(r"^FY(\d{2}|\d{4})$", s)
+    if m:
+        yr = m.group(1)
+        if len(yr) == 2:
+            yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
+        return f"{yr}_FY"
+
+    # ISO date: 2025-06-30, 2025/06/30
+    m = re.match(r"^(\d{4})[\-/](\d{1,2})[\-/](\d{1,2})$", s)
+    if m:
+        year, month = m.group(1), int(m.group(2))
+        q = _MONTH_END_TO_QUARTER.get(month)
+        if q:
+            return f"{year}_{q}"
+
+    # "JUNE 30 2025" / "JUNE 2025" / "30 JUNE 2025"
+    tokens = s.split()
+    year_tok = next((t for t in tokens if re.match(r"^\d{4}$", t)), None)
+    month_tok = next((t for t in tokens if t.lower() in _MONTH_NAME_TO_NUM), None)
+    if year_tok and month_tok:
+        month = _MONTH_NAME_TO_NUM[month_tok.lower()]
+        q = _MONTH_END_TO_QUARTER.get(month)
+        if q:
+            return f"{year_tok}_{q}"
+
+    # Fallback: collapse whitespace with underscore
+    return s.replace(" ", "_")
 
 
 # ─────────────────────────────────────────────────────────────────
