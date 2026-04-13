@@ -72,6 +72,11 @@ _HEADERS = {
 # Period inference from headline text
 # ─────────────────────────────────────────────────────────────────
 _PERIOD_PATTERNS = [
+    # German half-year report — placed first so it beats the bare-year fallback
+    (r"halbjahres?(?:finanz)?bericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q2"),
+    (r"halbjahr.{0,40}(\d{4})",      lambda m: f"{m.group(1)}_Q2"),
+    # German annual report
+    (r"gesch(?:ä|ae)ftsbericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q4"),
     # Q3 2025, Q1 2026
     (r"Q([1-4])\s*[\-&]?\s*(\d{4})", lambda m: f"{m.group(2)}_Q{m.group(1)}"),
     # 4Q25, 1Q26

@@ -70,15 +70,31 @@ _RESULTS_PDF_PATTERNS = [
 ]
 
 _PERIOD_PATTERNS = [
-    # Full year — both word orders
+    # ── German ─────────────────────────────────────────────────
+    # German half-year report: "Halbjahresfinanzbericht 2024",
+    # "Halbjahresbericht 2024", "Halbjahr 2024". Loose wildcard
+    # between keyword and year to handle intervening words. Placed
+    # first so it wins before the looser English/fallback patterns.
+    (r"halbjahres?(?:finanz)?bericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q2"),
+    (r"halbjahr.{0,40}(\d{4})",               lambda m: f"{m.group(1)}_Q2"),
+    # German annual report: "Geschäftsbericht 2024", "Geschaeftsbericht 2024"
+    (r"gesch(?:ä|ae)ftsbericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q4"),
+    # German quarterly statement: "Quartalsmitteilung Q3 2024" —
+    # already caught by the Q([1-4]) pattern below, but leave a
+    # German keyword pass that falls through to those.
+
+    # ── Full year — both word orders ──────────────────────────
     (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q4"),
     (r"(\d{4})[- ]full[- ]?year",             lambda m: f"{m.group(1)}_Q4"),
     (r"annual\s+report\s+(\d{4})",            lambda m: f"{m.group(1)}_Q4"),
     (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_Q4"),
     (r"FY\s*(\d{4})",                         lambda m: f"{m.group(1)}_Q4"),
     (r"(\d{4})[- ]FY",                        lambda m: f"{m.group(1)}_Q4"),
-    # Half year — HY/H1/interim all map to Q2 (first half = ends Q2)
-    (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q2"),
+    # ── Half year — HY/H1/interim all map to Q2 ───────────────
+    # Loose wildcard (up to 40 chars) between keyword and year to
+    # handle titles like "Half-year financial report 2023" where
+    # "financial report" sits between "half-year" and the year.
+    (r"half[- ]?year.{0,40}(\d{4})",          lambda m: f"{m.group(1)}_Q2"),
     (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_Q2"),
     (r"interim\s+(?:results?\s+)?(\d{4})",    lambda m: f"{m.group(1)}_Q2"),
     (r"H1\s+(\d{4})",                         lambda m: f"{m.group(1)}_Q2"),

@@ -108,14 +108,24 @@ async def _get_or_discover_source(db: AsyncSession, company: Company) -> Optiona
 # ─────────────────────────────────────────────────────────────────
 
 _PERIOD_PATTERNS = [
-    (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})\s+full[- ]?year",              lambda m: f"{m.group(1)}_FY"),
-    (r"annual\s+(?:results\s+)?(\d{4})",      lambda m: f"{m.group(1)}_FY"),
-    (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_FY"),
-    (r"half[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_H1"),
-    (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_H1"),
-    (r"interim\s+(?:results\s+)?(\d{4})",     lambda m: f"{m.group(1)}_H1"),
-    (r"H1\s+(\d{4})",                         lambda m: f"{m.group(1)}_H1"),
+    # German half-year and annual report (placed first so they win before
+    # the bare-year / English patterns below)
+    (r"halbjahres?(?:finanz)?bericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q2"),
+    (r"halbjahr.{0,40}(\d{4})",               lambda m: f"{m.group(1)}_Q2"),
+    (r"gesch(?:ä|ae)ftsbericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q4"),
+    # Full year — fold FY → Q4 at emission (matches storage convention)
+    (r"full[- ]?year\s+(\d{4})",              lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})\s+full[- ]?year",              lambda m: f"{m.group(1)}_Q4"),
+    (r"annual\s+(?:results\s+)?(\d{4})",      lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})\s+annual",                     lambda m: f"{m.group(1)}_Q4"),
+    # Half year — fold H1/HY → Q2 at emission. Loose wildcard lets the
+    # year be separated from the keyword (e.g. "Half-year financial
+    # report 2023").
+    (r"half[- ]?year.{0,40}(\d{4})",          lambda m: f"{m.group(1)}_Q2"),
+    (r"(\d{4})\s+half[- ]?year",              lambda m: f"{m.group(1)}_Q2"),
+    (r"interim\s+(?:results\s+)?(\d{4})",     lambda m: f"{m.group(1)}_Q2"),
+    (r"H1\s+(\d{4})",                         lambda m: f"{m.group(1)}_Q2"),
+    # H2 left as H2 — distinct from FY (second-half-only, not folded)
     (r"H2\s+(\d{4})",                         lambda m: f"{m.group(1)}_H2"),
     (r"Q([1-4])\s+(\d{4})",                   lambda m: f"{m.group(2)}_Q{m.group(1)}"),
     (r"(\d{4})\s+Q([1-4])",                   lambda m: f"{m.group(1)}_Q{m.group(2)}"),
