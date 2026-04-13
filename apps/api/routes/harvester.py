@@ -553,9 +553,25 @@ def _infer_period(headline: str, source_url: str) -> Optional[str]:
 # ── DELETE /harvester/log — clear harvest log for a company ────────
 
 @router.delete("/harvester/log")
-async def clear_harvest_log(ticker: str, source: Optional[str] = None, db: AsyncSession = Depends(get_db)):
-    """Clear harvested document entries for a company. Optionally filter by source."""
-    from sqlalchemy import delete as sa_delete
+async def clear_harvest_log(
+    ticker: str,
+    source: Optional[str] = None,
+    url_contains: Optional[str] = None,
+    headline_contains: Optional[str] = None,
+    orphans_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear harvested document entries for a company.
+
+    Filters (all combine with AND):
+      source: only rows from this harvester source ("ir_scrape", "sec_edgar", ...)
+      url_contains: substring match against source_url
+      headline_contains: substring match against headline (case-insensitive)
+      orphans_only: only rows where ingested=False and document_id IS NULL
+                    (useful for removing stuck candidates without touching
+                    successfully-ingested rows)
+    """
+    from sqlalchemy import delete as sa_delete, and_
     comp_q = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = comp_q.scalar_one_or_none()
     if not company:
@@ -563,9 +579,26 @@ async def clear_harvest_log(ticker: str, source: Optional[str] = None, db: Async
     q = sa_delete(HarvestedDocument).where(HarvestedDocument.company_id == company.id)
     if source:
         q = q.where(HarvestedDocument.source == source)
+    if url_contains:
+        q = q.where(HarvestedDocument.source_url.ilike(f"%{url_contains}%"))
+    if headline_contains:
+        q = q.where(HarvestedDocument.headline.ilike(f"%{headline_contains}%"))
+    if orphans_only:
+        q = q.where(and_(
+            HarvestedDocument.ingested == False,  # noqa: E712
+            HarvestedDocument.document_id.is_(None),
+        ))
     result = await db.execute(q)
     await db.commit()
-    return {"status": "cleared", "ticker": ticker, "deleted": result.rowcount}
+    return {
+        "status": "cleared", "ticker": ticker, "deleted": result.rowcount,
+        "filters": {
+            "source": source,
+            "url_contains": url_contains,
+            "headline_contains": headline_contains,
+            "orphans_only": orphans_only,
+        },
+    }
 
 
 # ── GET /harvester/log ────────────────────────────────────────────
