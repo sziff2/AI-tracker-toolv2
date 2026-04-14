@@ -1154,8 +1154,20 @@ async def ingest_from_url(
     # Determine source from URL
     source = "edgar" if "sec.gov" in doc_url else "ir_scrape"
 
-    # Download the document
-    headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    # Download the document. SEC EDGAR requires a descriptive UA; most IR CDNs
+    # (e.g. Heineken) block non-browser UAs with 403, so match the scraper's headers.
+    if "sec.gov" in doc_url:
+        headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
+    else:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+        }
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
             resp = await client.get(doc_url, headers=headers)
