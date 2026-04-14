@@ -63,10 +63,10 @@ GAAP VS ADJUSTED RECONCILIATION:
 SEGMENT BREAKDOWN:
 {segment_data}
 
-TRANSCRIPT ANALYSIS (from Transcript Agent — if available):
+TRANSCRIPT ANALYSIS (pre-computed from the earnings call transcript — if available):
 {transcript_deep_dive}
 
-PRESENTATION ANALYSIS (from Presentation Agent — if available):
+PRESENTATION ANALYSIS (pre-computed from the investor presentation — if available):
 {presentation_analysis}
 
 MACRO ASSUMPTIONS (Context Contract — DO NOT CONTRADICT):
