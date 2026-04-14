@@ -498,6 +498,104 @@ async def normalise_period_labels(
     }
 
 
+@router.post("/admin/sync-profile-periods")
+async def sync_profile_periods(
+    ticker: str | None = None,
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Backfill extraction_profiles.period_label to match the period_label
+    on the associated Document row.
+
+    Fixes cases where ExtractionProfile rows were written before canonical
+    period labels were standardised (e.g. "Q2 2025" or "FY 2025" instead of
+    "2025_Q2" / "2025_Q4"), leaving them out of sync with the Document they
+    belong to. This matters because the Phase A completion gate joins
+    Document.period_label against ExtractionProfile.period_label — orphaned
+    profiles make docs look "not yet extracted" and hide the Re-run button.
+
+    Query params:
+      ticker   — limit to one company (Bloomberg format, e.g. "ALLY US"),
+                 defaults to all companies
+      dry_run  — if true, return the mismatches without touching the DB
+    """
+    from sqlalchemy import text as sa_text
+    from apps.api.models import ExtractionProfile, Document
+
+    where_ticker = ""
+    params: dict = {}
+    if ticker:
+        co_q = await db.execute(select(Company.id).where(Company.ticker == ticker.upper()))
+        row = co_q.first()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+        where_ticker = "AND ep.company_id = :cid"
+        params["cid"] = str(row[0])
+
+    # Find all mismatched rows: profile's period_label doesn't match the
+    # document it points at. IS DISTINCT FROM handles NULLs safely.
+    preview_sql = sa_text(f"""
+        SELECT
+            ep.id            AS profile_id,
+            ep.document_id   AS document_id,
+            ep.period_label  AS profile_period,
+            d.period_label   AS document_period,
+            c.ticker         AS ticker
+        FROM extraction_profiles ep
+        JOIN documents d ON ep.document_id = d.id
+        LEFT JOIN companies c ON ep.company_id = c.id
+        WHERE ep.period_label IS DISTINCT FROM d.period_label
+          {where_ticker}
+        ORDER BY c.ticker, d.period_label
+    """)
+    preview = await db.execute(preview_sql, params)
+    mismatches = [
+        {
+            "profile_id":      str(r.profile_id),
+            "document_id":     str(r.document_id),
+            "ticker":          r.ticker,
+            "profile_period":  r.profile_period,
+            "document_period": r.document_period,
+        }
+        for r in preview.all()
+    ]
+
+    if dry_run:
+        # Group by (from, to) for a concise summary
+        from collections import Counter
+        counts = Counter(
+            (m["profile_period"], m["document_period"]) for m in mismatches
+        )
+        return {
+            "ticker": ticker,
+            "dry_run": True,
+            "mismatches_found": len(mismatches),
+            "summary": [
+                {"from": f, "to": t, "rows": n}
+                for (f, t), n in sorted(counts.items(), key=lambda x: -x[1])
+            ],
+            "examples": mismatches[:20],
+        }
+
+    # Real run: UPDATE ... FROM ... WHERE IS DISTINCT FROM
+    update_sql = sa_text(f"""
+        UPDATE extraction_profiles ep
+        SET period_label = d.period_label
+        FROM documents d
+        WHERE ep.document_id = d.id
+          AND ep.period_label IS DISTINCT FROM d.period_label
+          {where_ticker}
+    """)
+    result = await db.execute(update_sql, params)
+    await db.commit()
+    return {
+        "ticker": ticker,
+        "dry_run": False,
+        "rows_updated": result.rowcount or 0,
+        "mismatches_before": len(mismatches),
+    }
+
+
 @router.get("/context-contract/history")
 async def get_contract_history(
     limit: int = 10,
