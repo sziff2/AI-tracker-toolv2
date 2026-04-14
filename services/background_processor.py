@@ -190,6 +190,7 @@ async def _persist_extraction_profile(db: AsyncSession, doc, extraction: dict):
         non_gaap_comparison=extraction.get("non_gaap_comparison"),
         mda_narrative=(extraction.get("mda_narrative") or "")[:20000],
         detected_period=extraction.get("detected_period"),
+        reconciliation=extraction.get("reconciliation"),
     )
     db.add(profile)
 

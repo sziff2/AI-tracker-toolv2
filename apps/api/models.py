@@ -837,6 +837,10 @@ class ExtractionProfile(Base, TimestampMixin):
     # MD&A narrative text (capped, for synthesis context)
     mda_narrative = Column(Text)
     detected_period = Column(Text)
+    # Reconciliation report from extraction_reconciler — Q-sum vs FY,
+    # segment vs consolidated, BS equation, P&L vs CF cross-checks.
+    # Shape: {passed: bool, checks_run: int, checks_passed: int, issues: [...]}
+    reconciliation = Column(JSONB)
 
     company = relationship("Company")
     document = relationship("Document")

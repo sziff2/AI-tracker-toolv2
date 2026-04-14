@@ -520,3 +520,82 @@ class TestGetMetric:
         }
         segs = get_all_segment_metrics(results, "revenue")
         assert segs == {"Europe": 12000.0, "Americas": 10000.0}
+
+
+# ─────────────────────────────────────────────────────────────────
+# _build_reconciler_input — wiring between two-pass output and reconciler
+# ─────────────────────────────────────────────────────────────────
+
+class TestBuildReconcilerInput:
+    def _mk_table(self, stmt_type, period, segment=None):
+        return FinancialTable(
+            statement_type=stmt_type,
+            period=period,
+            period_type="quarter" if period.startswith("Q") else "annual",
+            segment=segment,
+            currency="USD",
+            unit_scale="millions",
+            rows=[],
+        )
+
+    def test_groups_by_statement_type(self):
+        from services.metric_extractor import _build_reconciler_input
+
+        structure = FinancialDocumentStructure(tables=[
+            self._mk_table(StatementType.INCOME_STATEMENT, "FY 2025"),
+            self._mk_table(StatementType.BALANCE_SHEET, "Dec 2025"),
+            self._mk_table(StatementType.CASH_FLOW, "FY 2025"),
+        ])
+        results = [
+            [{"metric": "Revenue", "value": 1000.0, "original_label": "Revenue"},
+             {"metric": "Net Income", "value": 100.0, "original_label": "Net Income"}],
+            [{"metric": "Total Assets", "value": 5000.0, "original_label": "Total Assets"},
+             {"metric": "Total Liabilities", "value": 3000.0, "original_label": "Total Liabilities"},
+             {"metric": "Shareholders Equity", "value": 2000.0, "original_label": "Shareholders Equity"}],
+            [{"metric": "Net Income", "value": 100.0, "original_label": "Net Income"}],
+        ]
+        out = _build_reconciler_input(structure, results)
+        assert len(out["income_statements"]) == 1
+        assert out["income_statements"][0]["period"] == "FY 2025"
+        assert out["income_statements"][0]["data"]["Revenue"] == 1000.0
+        assert len(out["balance_sheets"]) == 1
+        assert out["balance_sheets"][0]["data"]["Total Assets"] == 5000.0
+        assert len(out["cash_flows"]) == 1
+
+    def test_balance_sheet_mismatch_flagged(self):
+        """End-to-end: build reconciler input from two-pass shape, run reconciler,
+        confirm BS equation failure is flagged."""
+        from services.metric_extractor import _build_reconciler_input
+
+        structure = FinancialDocumentStructure(tables=[
+            self._mk_table(StatementType.BALANCE_SHEET, "Dec 2025"),
+        ])
+        # 5000 ≠ 3000 + 1500 (off by 500 = 10%)
+        results = [
+            [
+                {"metric": "Total Assets", "value": 5000.0, "original_label": "Total Assets"},
+                {"metric": "Total Liabilities", "value": 3000.0, "original_label": "Total Liabilities"},
+                {"metric": "Shareholders Equity", "value": 1500.0, "original_label": "Equity"},
+            ],
+        ]
+        recon_input = _build_reconciler_input(structure, results)
+        report = reconcile_extractions(recon_input)
+        assert report["passed"] is False
+        bs_issues = [i for i in report["issues"] if "balance_sheet" in i.get("check", "")]
+        assert bs_issues, "expected balance sheet equation failure to be flagged"
+
+    def test_segment_tables_populate_segments_bucket(self):
+        from services.metric_extractor import _build_reconciler_input
+
+        structure = FinancialDocumentStructure(tables=[
+            self._mk_table(StatementType.SEGMENT_BREAKDOWN, "FY 2025", segment="Europe"),
+            self._mk_table(StatementType.SEGMENT_BREAKDOWN, "FY 2025", segment="Americas"),
+        ])
+        results = [
+            [{"metric": "Revenue", "value": 600.0, "original_label": "Revenue"}],
+            [{"metric": "Revenue", "value": 400.0, "original_label": "Revenue"}],
+        ]
+        out = _build_reconciler_input(structure, results)
+        assert len(out["segments"]) == 2
+        segs = {e["segment"]: e["data"]["Revenue"] for e in out["segments"]}
+        assert segs == {"Europe": 600.0, "Americas": 400.0}

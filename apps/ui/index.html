@@ -976,6 +976,7 @@ function renderCockpit(ticker,d){
     renderPeriodActions(ticker,visiblePeriod,document.getElementById('period-actions-'+visiblePeriod));
     restorePipelineStatus(ticker,visiblePeriod);
     loadAgentOutputs(ticker,visiblePeriod);
+    loadReconciliationBanner(ticker,visiblePeriod,(d.docs_by_period||{})[visiblePeriod]||[]);
   }
 }
 
@@ -984,6 +985,13 @@ function loadPeriodData(ticker,period){
   renderPeriodActions(ticker,period,document.getElementById('period-actions-'+period));
   restorePipelineStatus(ticker,period);
   loadAgentOutputs(ticker,period);
+  // Re-fetch docs for this period to drive the banner
+  fetch('/api/v1/companies/'+enc(ticker)+'/documents')
+    .then(function(r){return r.ok?r.json():[];})
+    .then(function(all){
+      var docs=(all||[]).filter(function(d){return (d.period_label||'')===period;});
+      loadReconciliationBanner(ticker,period,docs);
+    }).catch(function(){});
 }
 function ckTab(t,btn){window._ckActiveTab=t;['thesis','results','kpis','guidance','moat','execution','decisions','esg','documents'].forEach(x=>{const el=E('ck-'+x);if(el)el.style.display=x===t?'block':'none';});btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));btn.classList.add('on');try{var u=new URL(location.href);u.searchParams.set('tab',t);history.replaceState({},'',u.toString());}catch(e){}if(t==='esg'){const ticker=E('ck-company').value;if(ticker)loadESG(ticker);}if(t==='execution'){const ticker=E('ck-company').value;if(ticker)loadExecution(ticker);}if(t==='moat'){const ticker=E('ck-company').value;if(ticker)loadMoat(ticker);}if(t==='guidance'){const ticker=E('ck-company').value;if(ticker)loadGuidance(ticker);}if(t==='documents'){const ticker=E('ck-company').value;if(ticker)loadCkDocuments(ticker);}if(t==='decisions'){const ticker=E('ck-company').value;if(ticker)loadScenarioForm(ticker);}}
 
@@ -1308,6 +1316,7 @@ function renderCkResults(ticker,d){
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(p===activePeriod?'':'display:none')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px"><div id="period-actions-'+esc(p)+'"></div><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     h+='<div id="pipeline-panel-'+esc(p)+'" style="display:none;margin-bottom:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px"></div>';
+    h+='<div id="recon-banner-'+esc(p)+'" style="margin-bottom:12px"></div>';
     h+='<div id="agent-outputs-'+esc(p)+'" style="margin-bottom:16px"></div>';
     // Ask a Question
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
@@ -2055,6 +2064,54 @@ function showPipelineStatus(period,status,executionLog,runData){
 }
 
 // ── Agent Output Rendering ───────────────────────────────────────
+
+// Fetch extraction profiles for every doc in the period and render a
+// compact banner listing any high/critical reconciliation issues
+// (Q-sum vs FY, segment vs consolidated, BS equation, P&L vs CF).
+async function loadReconciliationBanner(ticker,period,docs){
+  var container=document.getElementById('recon-banner-'+period);
+  if(!container)return;
+  container.innerHTML='';
+  if(!docs||!docs.length)return;
+  try{
+    var profiles=await Promise.all(docs.map(function(d){
+      return fetch('/api/v1/documents/'+encodeURIComponent(d.id)+'/extraction-profile')
+        .then(function(r){return r.ok?r.json():null;})
+        .catch(function(){return null;});
+    }));
+    var issuesByDoc=[];
+    profiles.forEach(function(p,i){
+      if(!p||!p.profile||!p.profile.reconciliation)return;
+      var rec=p.profile.reconciliation;
+      if(rec.passed)return;
+      var bad=(rec.issues||[]).filter(function(iss){return iss.severity==='high'||iss.severity==='critical';});
+      if(bad.length)issuesByDoc.push({doc:docs[i],issues:bad,rec:rec});
+    });
+    if(!issuesByDoc.length)return;
+    var h='<details style="padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:8px;font-family:var(--sans);font-size:12px" open>';
+    var totalIssues=issuesByDoc.reduce(function(a,d){return a+d.issues.length;},0);
+    h+='<summary style="cursor:pointer;color:#f59e0b;font-weight:600">⚠ Extraction reconciliation flagged '+totalIssues+' issue'+(totalIssues>1?'s':'')+' across '+issuesByDoc.length+' document'+(issuesByDoc.length>1?'s':'')+'</summary>';
+    h+='<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">';
+    issuesByDoc.forEach(function(dx){
+      h+='<div style="padding:8px 10px;background:var(--bg2);border-radius:6px">';
+      h+='<div style="color:var(--text2);font-weight:600;margin-bottom:6px">'+esc(dx.doc.title||'Untitled')+'</div>';
+      dx.issues.forEach(function(iss){
+        var col=iss.severity==='critical'?'#ef4444':'#f59e0b';
+        var det=iss.detail||{};
+        var parts=[];
+        if(det.metric)parts.push(esc(det.metric));
+        if(det.year)parts.push(String(det.year));
+        if(det.fy_value!=null&&det.quarterly_sum!=null)parts.push('FY='+det.fy_value+' vs Qsum='+det.quarterly_sum);
+        if(det.consolidated!=null&&det.segment_sum!=null)parts.push('cons='+det.consolidated+' vs segsum='+det.segment_sum);
+        if(det.pct_diff!=null)parts.push('Δ '+det.pct_diff+'%');
+        h+='<div style="display:flex;gap:8px;align-items:baseline;padding:2px 0"><span style="color:'+col+';font-weight:600;text-transform:uppercase;font-size:10px;min-width:60px">'+esc(iss.severity||'')+'</span><span style="color:var(--text3);min-width:200px">'+esc(iss.check||'')+'</span><span style="color:var(--text4);font-family:var(--mono);font-size:11px">'+esc(parts.join(' · '))+'</span></div>';
+      });
+      h+='</div>';
+    });
+    h+='</div></details>';
+    container.innerHTML=h;
+  }catch(e){/* non-fatal */}
+}
 
 async function loadAgentOutputs(ticker,period){
   var container=document.getElementById('agent-outputs-'+period);

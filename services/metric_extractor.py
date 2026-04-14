@@ -283,12 +283,22 @@ async def _extract_with_sections(
             logger.info("Table-first extraction added %d items", len(table_result))
         idx += 1
 
-    # Two-pass structural extraction result
+    # Two-pass structural extraction result (now returns
+    # {"items": [...], "reconciliation": {...}})
+    reconciliation = None
     if two_pass_task is not None and len(section_results) > idx:
         tp_result = section_results[idx]
-        if isinstance(tp_result, list) and not isinstance(tp_result, Exception):
-            all_items.extend(tp_result)
-            logger.info("Two-pass structural extraction added %d items", len(tp_result))
+        if isinstance(tp_result, dict) and not isinstance(tp_result, Exception):
+            tp_items = tp_result.get("items") or []
+            all_items.extend(tp_items)
+            reconciliation = tp_result.get("reconciliation")
+            logger.info(
+                "Two-pass structural extraction added %d items (reconciliation: %s)",
+                len(tp_items),
+                "passed" if (reconciliation and reconciliation.get("passed")) else
+                ("issues=%d" % len(reconciliation["issues"])
+                 if reconciliation else "n/a"),
+            )
         elif isinstance(tp_result, Exception):
             logger.warning("Two-pass extraction failed: %s", str(tp_result)[:200])
 
@@ -419,10 +429,67 @@ async def _extract_with_sections(
         "disappearance_flags": disappearance_flags,
         "non_gaap_bridge": bridge_data.get("bridges", []),
         "non_gaap_comparison": bridge_comparison,
+        "reconciliation": reconciliation,
     }
 
 
-async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
+_RECONCILER_KEY_BY_STATEMENT = {
+    "income_statement": "income_statements",
+    "balance_sheet":    "balance_sheets",
+    "cash_flow":        "cash_flows",
+    "segment":          "segments",
+}
+
+
+def _build_reconciler_input(structure, per_table_results) -> dict:
+    """Group two-pass results by statement type into the dict shape
+    expected by services.extraction_reconciler.reconcile_extractions.
+
+    Shape produced:
+        {
+          "income_statements": [{period, segment, data: {metric: value}, items: [...]}, ...],
+          "balance_sheets":    [...],
+          "cash_flows":        [...],
+          "segments":          [...],
+        }
+    """
+    out: dict[str, list[dict]] = {
+        "income_statements": [], "balance_sheets": [], "cash_flows": [], "segments": [],
+    }
+    for table, result in zip(structure.tables, per_table_results):
+        if isinstance(result, Exception) or not isinstance(result, list):
+            continue
+        key = _RECONCILER_KEY_BY_STATEMENT.get(table.statement_type.value)
+        if key is None:
+            continue
+        data: dict[str, float] = {}
+        for item in result:
+            v = item.get("value")
+            if v is None:
+                continue
+            name = item.get("metric") or item.get("original_label") or ""
+            if not name:
+                continue
+            # Keep first occurrence (parser order ≈ statement order)
+            data.setdefault(name, v)
+        out[key].append({
+            "period":  table.period,
+            "segment": table.segment,
+            "data":    data,
+            "items":   result,
+        })
+        # Segment breakdowns also live as segment-tagged rows in `segments`
+        if key != "segments" and table.segment:
+            out["segments"].append({
+                "period":  table.period,
+                "segment": table.segment,
+                "data":    data,
+                "items":   result,
+            })
+    return out
+
+
+async def _extract_two_pass(db, document, tables_data, sector) -> dict:
     """Two-pass structural extraction of financial statement tables.
 
     Pass 1: LLM classifies row labels only (no numbers — can't hallucinate).
@@ -432,10 +499,15 @@ async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
     statements, which hits max_tokens on dense tables. Each table gets
     its own small LLM call (2048 tokens for label classification) so
     truncation is near-impossible.
+
+    Returns:
+        {"items": [...], "reconciliation": {passed, checks_run, checks_passed, issues}}
+        Empty dict on failure (caller treats as no-op).
     """
     try:
         from services.financial_statement_segmenter import segment_document, StatementType
         from services.two_pass_extractor import two_pass_extract
+        from services.extraction_reconciler import reconcile_extractions
         from apps.api.models import Company
         import sqlalchemy
 
@@ -444,7 +516,7 @@ async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
         )
         company = company_q.scalar_one_or_none()
         if not company:
-            return []
+            return {"items": [], "reconciliation": None}
 
         # Convert tables_data [{page, tables}] into segment_document format
         pages = []
@@ -461,7 +533,7 @@ async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
                     len(structure.tables), len(pages))
 
         if not structure.tables:
-            return []
+            return {"items": [], "reconciliation": None}
 
         # Run two_pass_extract on each table in parallel
         tasks = [
@@ -495,10 +567,29 @@ async def _extract_two_pass(db, document, tables_data, sector) -> list[dict]:
                     "confidence": 0.95,  # high — numbers from parser, labels from Haiku
                     "source": "two_pass",
                 })
-        return all_items
+
+        # Reconciliation cross-checks (Q-sum vs FY, segment vs consolidated,
+        # BS equation, P&L vs CF net income). Non-fatal — log on failure.
+        reconciliation = None
+        try:
+            recon_input = _build_reconciler_input(structure, results)
+            reconciliation = reconcile_extractions(recon_input)
+            if reconciliation and not reconciliation.get("passed", True):
+                high = [i for i in reconciliation.get("issues", [])
+                        if i.get("severity") in ("high", "critical")]
+                if high:
+                    logger.warning(
+                        "Reconciliation flagged %d high/critical issues for doc %s: %s",
+                        len(high), document.id,
+                        [i.get("check") for i in high],
+                    )
+        except Exception as e:
+            logger.warning("Reconciliation step failed: %s", str(e)[:200])
+
+        return {"items": all_items, "reconciliation": reconciliation}
     except Exception as e:
         logger.warning("Two-pass extraction failed: %s", str(e)[:200])
-        return []
+        return {"items": [], "reconciliation": None}
 
 
 async def _extract_from_tables(db, document, tables_data) -> list[dict]:

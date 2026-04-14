@@ -243,6 +243,11 @@ async def lifespan(app: FastAPI):
             col_name = col.split()[0]
             await conn.execute(sa_text(f"ALTER TABLE extracted_metrics ADD COLUMN IF NOT EXISTS {col}"))
 
+        # Reconciliation report column on extraction_profiles
+        await conn.execute(sa_text(
+            "ALTER TABLE extraction_profiles ADD COLUMN IF NOT EXISTS reconciliation JSONB"
+        ))
+
     # ── Agent registry autodiscovery ─────────────────────────────
     from agents.registry import AgentRegistry
     AgentRegistry.autodiscover()

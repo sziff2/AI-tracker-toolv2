@@ -16,7 +16,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import get_db, get_company_or_404
-from apps.api.models import Company, Document, DocumentSection, ExtractedMetric, EventAssessment, ResearchOutput, ReviewQueueItem
+from apps.api.models import Company, Document, DocumentSection, ExtractedMetric, EventAssessment, ExtractionProfile, ResearchOutput, ReviewQueueItem
 from configs.settings import settings
 from schemas import DocumentCreate, DocumentOut
 from services.document_ingestion import ingest_document
@@ -277,6 +277,129 @@ async def get_document(document_id: uuid.UUID, db: AsyncSession = Depends(get_db
     if not doc:
         raise HTTPException(404, "Document not found")
     return doc
+
+
+@router.post("/extraction/reconcile-backfill")
+async def reconcile_backfill(
+    limit: int = 500,
+    only_missing: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-run the extraction reconciler over historical ExtractionProfile rows
+    and persist the report.
+
+    Historical ExtractedMetric rows don't store statement_type, so this uses
+    the reconciler's alias-based lookup (Revenue, Net Income, Total Assets,
+    etc.) — every period's metrics are placed under each statement bucket,
+    and alias matching still finds the relevant values for each check.
+
+    Args:
+        limit: max profiles to process in one call (default 500)
+        only_missing: if True, skip profiles that already have reconciliation
+    """
+    from services.extraction_reconciler import reconcile_extractions
+
+    q = select(ExtractionProfile).order_by(ExtractionProfile.created_at.desc())
+    if only_missing:
+        q = q.where(ExtractionProfile.reconciliation.is_(None))
+    q = q.limit(limit)
+    profiles_result = await db.execute(q)
+    profiles = profiles_result.scalars().all()
+
+    processed = 0
+    flagged = 0
+    errors = 0
+    for prof in profiles:
+        try:
+            metrics_q = await db.execute(
+                select(ExtractedMetric).where(ExtractedMetric.document_id == prof.document_id)
+            )
+            metrics = metrics_q.scalars().all()
+            if not metrics:
+                continue
+
+            # Group by (period, segment). One entry per group, placed under
+            # every statement-type bucket so alias matching can find it.
+            by_key: dict[tuple, dict] = {}
+            for m in metrics:
+                if m.metric_value is None or not m.metric_name:
+                    continue
+                key = (m.period_label or prof.period_label or "", m.segment)
+                entry = by_key.setdefault(key, {
+                    "period": key[0], "segment": key[1],
+                    "data": {}, "items": [],
+                })
+                try:
+                    entry["data"].setdefault(m.metric_name, float(m.metric_value))
+                except (ValueError, TypeError):
+                    continue
+                entry["items"].append({
+                    "line_item": m.metric_name,
+                    "metric_name": m.metric_name,
+                    "value": float(m.metric_value) if m.metric_value is not None else None,
+                })
+
+            recon_input: dict[str, list[dict]] = {
+                "income_statements": [], "balance_sheets": [],
+                "cash_flows": [], "segments": [],
+            }
+            for entry in by_key.values():
+                if entry["segment"]:
+                    recon_input["segments"].append(entry)
+                else:
+                    recon_input["income_statements"].append(entry)
+                    recon_input["balance_sheets"].append(entry)
+                    recon_input["cash_flows"].append(entry)
+
+            report = reconcile_extractions(recon_input)
+            prof.reconciliation = report
+            if not report.get("passed", True):
+                flagged += 1
+            processed += 1
+        except Exception as e:
+            logger.warning("Backfill failed for profile %s: %s", prof.id, str(e)[:200])
+            errors += 1
+
+    await db.commit()
+    return {
+        "processed": processed,
+        "flagged": flagged,
+        "errors": errors,
+        "scanned": len(profiles),
+        "only_missing": only_missing,
+    }
+
+
+@router.get("/documents/{document_id}/extraction-profile")
+async def get_extraction_profile(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Latest ExtractionProfile row for a document, including the
+    reconciliation report (Q-sum vs FY, segment vs consolidated,
+    BS equation, P&L vs CF cross-checks)."""
+    result = await db.execute(
+        select(ExtractionProfile)
+        .where(ExtractionProfile.document_id == document_id)
+        .order_by(ExtractionProfile.created_at.desc())
+        .limit(1)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return {"document_id": str(document_id), "profile": None}
+    return {
+        "document_id": str(document_id),
+        "profile": {
+            "period_label":        profile.period_label,
+            "extraction_method":   profile.extraction_method,
+            "sections_found":      profile.sections_found,
+            "items_extracted":     profile.items_extracted,
+            "detected_period":     profile.detected_period,
+            "confidence_profile":  profile.confidence_profile,
+            "segment_data":        profile.segment_data,
+            "disappearance_flags": profile.disappearance_flags,
+            "non_gaap_comparison": profile.non_gaap_comparison,
+            "reconciliation":      profile.reconciliation,
+            "created_at":          profile.created_at.isoformat() if profile.created_at else None,
+        },
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
