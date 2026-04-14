@@ -502,22 +502,29 @@ async def normalise_period_labels(
 async def sync_profile_periods(
     ticker: str | None = None,
     dry_run: bool = False,
+    create_missing: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """Backfill extraction_profiles.period_label to match the period_label
-    on the associated Document row.
+    """Reconcile extraction_profiles with documents for Phase A gating.
 
-    Fixes cases where ExtractionProfile rows were written before canonical
-    period labels were standardised (e.g. "Q2 2025" or "FY 2025" instead of
-    "2025_Q2" / "2025_Q4"), leaving them out of sync with the Document they
-    belong to. This matters because the Phase A completion gate joins
-    Document.period_label against ExtractionProfile.period_label — orphaned
-    profiles make docs look "not yet extracted" and hide the Re-run button.
+    Phase A joins Document.period_label against
+    ExtractionProfile.period_label to decide when a period is "extracted".
+    Two classes of bug break this join:
+
+    1. Mismatched period labels — profile says "Q2 2025", document says
+       "2025_Q2". Rewrites profile to match.
+    2. Missing profiles — profile row doesn't exist at all, even though
+       metrics were extracted (silent failure in _persist_extraction_profile
+       during ingestion). Optional create_missing=true synthesises a stub
+       profile for any document that has at least one ExtractedMetric row
+       but no ExtractionProfile. The stub's period_label is set from the
+       document; all other fields are null.
 
     Query params:
-      ticker   — limit to one company (Bloomberg format, e.g. "ALLY US"),
-                 defaults to all companies
-      dry_run  — if true, return the mismatches without touching the DB
+      ticker          — limit to one company (Bloomberg format)
+      dry_run         — report without touching the DB
+      create_missing  — also synthesise stub profiles for docs with
+                        metrics but no profile row
     """
     from sqlalchemy import text as sa_text
     from apps.api.models import ExtractionProfile, Document
@@ -560,8 +567,43 @@ async def sync_profile_periods(
         for r in preview.all()
     ]
 
+    # Second class of bug: documents that have metrics but no
+    # ExtractionProfile row at all. These orphans also break the Phase A
+    # join. Find docs with ExtractedMetric rows but no matching profile.
+    orphans_sql_where = "AND c.ticker = :tticker" if ticker else ""
+    if ticker:
+        params["tticker"] = ticker.upper()
+    orphans_sql = sa_text(f"""
+        SELECT DISTINCT
+            d.id              AS document_id,
+            d.period_label    AS document_period,
+            d.document_type   AS document_type,
+            c.ticker          AS ticker,
+            d.company_id      AS company_id,
+            (SELECT COUNT(*) FROM extracted_metrics m WHERE m.document_id = d.id) AS metric_count
+        FROM documents d
+        JOIN companies c ON d.company_id = c.id
+        JOIN extracted_metrics em ON em.document_id = d.id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM extraction_profiles ep WHERE ep.document_id = d.id
+        )
+        {orphans_sql_where}
+        ORDER BY c.ticker, d.period_label
+    """)
+    orphan_rows = await db.execute(orphans_sql, params)
+    orphans = [
+        {
+            "document_id":     str(r.document_id),
+            "ticker":          r.ticker,
+            "document_period": r.document_period,
+            "document_type":   r.document_type,
+            "company_id":      str(r.company_id),
+            "metric_count":    int(r.metric_count or 0),
+        }
+        for r in orphan_rows.all()
+    ]
+
     if dry_run:
-        # Group by (from, to) for a concise summary
         from collections import Counter
         counts = Counter(
             (m["profile_period"], m["document_period"]) for m in mismatches
@@ -570,14 +612,16 @@ async def sync_profile_periods(
             "ticker": ticker,
             "dry_run": True,
             "mismatches_found": len(mismatches),
-            "summary": [
+            "orphans_found": len(orphans),
+            "mismatch_summary": [
                 {"from": f, "to": t, "rows": n}
                 for (f, t), n in sorted(counts.items(), key=lambda x: -x[1])
             ],
-            "examples": mismatches[:20],
+            "mismatch_examples": mismatches[:20],
+            "orphan_examples": orphans[:20],
         }
 
-    # Real run: UPDATE ... FROM ... WHERE IS DISTINCT FROM
+    # Real run: update mismatches
     update_sql = sa_text(f"""
         UPDATE extraction_profiles ep
         SET period_label = d.period_label
@@ -586,13 +630,33 @@ async def sync_profile_periods(
           AND ep.period_label IS DISTINCT FROM d.period_label
           {where_ticker}
     """)
-    result = await db.execute(update_sql, params)
+    update_result = await db.execute(update_sql, params)
+
+    # Real run: optionally synthesise stubs for orphans
+    stubs_created = 0
+    if create_missing and orphans:
+        import uuid as uuid_mod
+        from apps.api.models import ExtractionProfile as EP
+        for o in orphans:
+            stub = EP(
+                id=uuid_mod.uuid4(),
+                company_id=uuid_mod.UUID(o["company_id"]),
+                document_id=uuid_mod.UUID(o["document_id"]),
+                period_label=o["document_period"],
+                extraction_method="legacy_backfill",
+                items_extracted=o["metric_count"],
+            )
+            db.add(stub)
+            stubs_created += 1
+
     await db.commit()
     return {
         "ticker": ticker,
         "dry_run": False,
-        "rows_updated": result.rowcount or 0,
-        "mismatches_before": len(mismatches),
+        "mismatches_updated": update_result.rowcount or 0,
+        "orphans_found": len(orphans),
+        "stubs_created": stubs_created,
+        "create_missing": create_missing,
     }
 
 
