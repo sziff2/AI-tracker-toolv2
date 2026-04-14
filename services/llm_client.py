@@ -294,11 +294,18 @@ def _clean_json_string(raw: str) -> str:
     """
     import re
     cleaned = raw
-    # 1. Strip markdown fences
+    # 1. Strip markdown fences. The LLM sometimes appends an explanation
+    # after the closing fence (e.g. "```json\n[]\n```\n\nThe text contained
+    # no metrics..."), so after stripping the opening fence we look for a
+    # closing fence anywhere in the remainder and truncate there — not just
+    # when the whole string ends with ```.
     if cleaned.startswith("```"):
         first_line_end = cleaned.find("\n")
         cleaned = cleaned[first_line_end + 1:] if first_line_end > 0 else cleaned[3:]
-    if cleaned.endswith("```"):
+        closing = cleaned.find("```")
+        if closing != -1:
+            cleaned = cleaned[:closing]
+    elif cleaned.endswith("```"):
         cleaned = cleaned.rsplit("```", 1)[0]
     cleaned = cleaned.strip()
 
