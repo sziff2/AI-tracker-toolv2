@@ -15,3 +15,10 @@ storage/outputs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/
+
+# Local database backups (may contain sensitive data)
+DB Backup/
