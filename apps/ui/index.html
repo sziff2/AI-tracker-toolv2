@@ -5393,55 +5393,78 @@ async function hvIngestSelected(){
   if(!checked.length){toast('Select at least one document.');return;}
   var statusEl=E('hv-ingest-status');
   var btn=E('hv-ingest-btn');
+  var origLabel=btn?btn.textContent:'Add to Analysis';
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner-sm"></span> Ingesting...';}
   if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+checked.length+' document'+(checked.length>1?'s':'')+'…</span>';
   var ticker=window._harvestTicker;var docs=window._harvestDocs;
-  var ok=0,dup=0,fail=0;
-  for(var ci=0;ci<checked.length;ci++){
-    var idx=parseInt(checked[ci].dataset.idx);
-    var doc=docs[idx];if(!doc||!doc.source_url)continue;
+  // Build items + url→row map so we can update rows in-place from the response.
+  var items=[];var urlToRow={};
+  checked.forEach(function(c){
+    var idx=parseInt(c.dataset.idx);
+    var doc=docs[idx];if(!doc||!doc.source_url)return;
     var periodSel=document.querySelector('.hv-period[data-idx="'+idx+'"]');
     var dtypeSel=document.querySelector('.hv-dtype[data-idx="'+idx+'"]');
     var period=periodSel?periodSel.value:'';
     var dtype=dtypeSel?dtypeSel.value:'other';
-    if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+(ci+1)+'/'+checked.length+'…</span>';
-    try{
-      var fd=new FormData();
-      fd.append('doc_url',doc.source_url);fd.append('form_type',dtype);
-      fd.append('filing_date','');fd.append('period_label',period);
-      var stdName=standardiseDocName(ticker,period,dtype,doc.headline||'');
-      fd.append('title',stdName);
-      var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-url',{method:'POST',body:fd});
-      var d=await r.json();
-      var row=checked[ci].closest('tr');
-      if(d.status==='ingested'){
-        ok++;
-        if(row){
-          row.style.background='rgba(74,222,128,.08)';
-          var cb=row.querySelector('.hv-chk');if(cb){cb.checked=false;cb.disabled=true;}
-          var stCell=row.querySelector('td:last-child');
-          if(stCell)stCell.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff">In DB</span>';
-        }
+    var stdName=standardiseDocName(ticker,period,dtype,doc.headline||'');
+    items.push({doc_url:doc.source_url,form_type:dtype,period_label:period,title:stdName,filing_date:''});
+    urlToRow[doc.source_url]=c.closest('tr');
+  });
+  var ok=0,dup=0,fail=0;var jobs=[];
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/ingest-urls',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items:items})
+    });
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok){
+      var msg=(d&&(d.detail||d.error))||('HTTP '+r.status);
+      if(statusEl)statusEl.innerHTML='<span style="color:var(--red)">Batch ingest failed: '+esc(msg)+'</span>';
+      if(btn){btn.disabled=false;btn.textContent=origLabel;}
+      return;
+    }
+    ok=d.ingested||0;dup=d.duplicate||0;fail=d.failed||0;
+    jobs=d.jobs||[];
+    (d.results||[]).forEach(function(rr){
+      var row=urlToRow[rr.doc_url];if(!row)return;
+      if(rr.status==='ingested'){
+        // Keep row in place, highlight green, badge "In DB" — do NOT reload
+        // the list, so the analyst can see exactly which rows were ingested.
+        row.style.transition='background 0.4s ease';
+        row.style.background='rgba(74,222,128,.14)';
+        var cb=row.querySelector('.hv-chk');if(cb){cb.checked=false;cb.disabled=true;}
+        var stCell=row.querySelector('td:last-child');
+        if(stCell)stCell.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff" title="Ingested, analysis queued">In DB</span>';
+      } else if(rr.status==='duplicate'){
+        row.style.transition='background 0.4s ease';
+        row.style.background='rgba(196,164,90,.10)';
+        var cb2=row.querySelector('.hv-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
+        var stCell2=row.querySelector('td:last-child');
+        if(stCell2)stCell2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
+      } else {
+        row.style.transition='background 0.4s ease';
+        row.style.background='rgba(239,68,68,.10)';
+        var stCell3=row.querySelector('td:last-child');
+        if(stCell3)stCell3.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--red,#ef4444);color:#fff" title="'+esc(rr.error||'failed')+'">Failed</span>';
       }
-      else if(d.status==='duplicate'){
-        dup++;
-        if(row){
-          row.style.background='rgba(196,164,90,.08)';
-          var cb2=row.querySelector('.hv-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
-          var stCell2=row.querySelector('td:last-child');
-          if(stCell2)stCell2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
-        }
-      }
-      else{fail++;}
-    }catch(e){fail++;}
+    });
+  }catch(e){
+    fail=items.length;
+    if(statusEl)statusEl.innerHTML='<span style="color:var(--red)">Network error: '+esc(e.message||'')+'</span>';
+    if(btn){btn.disabled=false;btn.textContent=origLabel;}
+    return;
   }
-  if(btn){btn.disabled=false;btn.textContent='Ingest Selected';}
-  if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
+  if(btn){btn.disabled=false;btn.textContent=origLabel;}
+  var jobMsg='';
+  if(jobs.length){
+    jobMsg=' <span style="color:var(--gold)">· '+jobs.length+' analysis job'+(jobs.length>1?'s':'')+' queued</span>';
+  }
+  if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'')+jobMsg;
   hvUpdateSelCount();
-  // Refresh the document list after a short delay to update badges
-  if(ok>0){
-    setTimeout(function(){loadCkDocuments(ticker);},1500);
-  }
+  // No list reload — newly-ingested rows stay in place with the green
+  // highlight until the next cockpit refresh, at which point they'll move
+  // into the collapsed "In database" section per the existing rules.
 }
 async function addPastedUrls(ticker){
   var textarea=E('ck-paste-urls');var statusEl=E('paste-url-status');

@@ -1108,30 +1108,28 @@ async def browse_edgar(cik: str, form_types: str = "10-K,10-Q,8-K,ARS,DEF 14A,20
     }
 
 
-@router.post("/companies/{ticker}/ingest-url")
-async def ingest_from_url(
-    ticker: str,
-    doc_url: str = Form(...),
-    form_type: str = Form("other"),
-    filing_date: str = Form(""),
-    period_label: str = Form(""),
-    title: str = Form(""),
-    db: AsyncSession = Depends(get_db),
-):
-    """Download a document from a URL (EDGAR or IR page) and ingest it."""
+async def _download_and_ingest_one(
+    db: AsyncSession,
+    company: Company,
+    doc_url: str,
+    form_type: str = "other",
+    filing_date: str = "",
+    period_label: str = "",
+    title: str = "",
+) -> dict:
+    """Download a single URL and ingest it. Does not raise on download/ingest
+    errors — returns a dict with status in {ingested, duplicate, failed}.
+    On success the dict carries document_id, document_type and period_label,
+    which the caller needs to kick off a batch pipeline.
+    """
     import httpx
-    from datetime import datetime, timezone
-
-    company = await get_company_or_404(db, ticker)
-
-    # Infer period and doc type from filename/URL/title when not provided
-    from services.harvester.sources.ir_scraper import _infer_period, _classify_doc_type
     import re
+    from services.harvester.sources.ir_scraper import _infer_period, _classify_doc_type
+    from services.doc_utils import clean_title
 
     context = f"{title} {doc_url} {form_type} {filing_date}"
 
     if not period_label:
-        # Try date-based pattern first (e.g. lkq-20250930.htm)
         date_match = re.search(r'(\d{4})(\d{2})(\d{2})\.\w+$', doc_url)
         if date_match:
             py, pm = int(date_match.group(1)), int(date_match.group(2))
@@ -1140,22 +1138,18 @@ async def ingest_from_url(
             else:
                 period_label = f"{py}_Q{((pm - 1) // 3) + 1}"
         else:
-            # Try text-based inference from URL and title
             period_label = _infer_period(context) or ""
 
-    # Infer document type from context if generic
     if not form_type or form_type == "other":
         inferred_type = _classify_doc_type(context)
         if inferred_type != "other":
             form_type = inferred_type
 
     document_type = form_type if form_type else "other"
-
-    # Determine source from URL
     source = "edgar" if "sec.gov" in doc_url else "ir_scrape"
 
-    # Download the document. SEC EDGAR requires a descriptive UA; most IR CDNs
-    # (e.g. Heineken) block non-browser UAs with 403, so match the scraper's headers.
+    # SEC EDGAR requires a descriptive UA; most IR CDNs (e.g. Heineken) block
+    # non-browser UAs with 403, so match the scraper's headers.
     if "sec.gov" in doc_url:
         headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
     else:
@@ -1174,18 +1168,15 @@ async def ingest_from_url(
             resp.raise_for_status()
             content = resp.content
         except Exception as exc:
-            raise HTTPException(502, f"Failed to download: {str(exc)[:200]}")
+            return {"status": "failed", "doc_url": doc_url,
+                    "error": f"Failed to download: {str(exc)[:200]}"}
 
-    # Determine filename and extension
-    from services.doc_utils import clean_title
-    filename = doc_url.split("/")[-1].split("?")[0] or f"document.pdf"
+    filename = doc_url.split("/")[-1].split("?")[0] or "document.pdf"
     suffix = Path(filename).suffix or ".pdf"
-    # Auto-title from URL slug if not provided
     if not title:
         slug = filename.replace("-", " ").replace("_", " ")
         slug = slug.rsplit(".", 1)[0] if "." in slug else slug
         title = f"{form_type} {filing_date}".strip() if filing_date else slug[:80]
-    # Clean title: strip version suffixes, language codes, noise
     title = clean_title(title)
 
     with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -1194,18 +1185,137 @@ async def ingest_from_url(
 
     try:
         doc = await ingest_document(
-            db=db, company_id=company.id, ticker=ticker,
+            db=db, company_id=company.id, ticker=company.ticker,
             file_path=tmp_path, filename=filename,
             document_type=document_type, period_label=period_label,
             title=title, source=source, source_url=doc_url,
         )
-        return {"status": "ingested", "document_id": str(doc.id), "title": doc.title}
+        return {
+            "status": "ingested",
+            "doc_url": doc_url,
+            "document_id": str(doc.id),
+            "document_type": document_type,
+            "period_label": period_label,
+            "title": doc.title,
+        }
     except ValueError as e:
-        return {"status": "duplicate", "message": str(e)}
+        return {"status": "duplicate", "doc_url": doc_url, "message": str(e)}
     except Exception as e:
-        raise HTTPException(500, f"Ingestion failed: {str(e)[:200]}")
+        return {"status": "failed", "doc_url": doc_url,
+                "error": f"Ingestion failed: {str(e)[:200]}"}
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+
+
+@router.post("/companies/{ticker}/ingest-url")
+async def ingest_from_url(
+    ticker: str,
+    doc_url: str = Form(...),
+    form_type: str = Form("other"),
+    filing_date: str = Form(""),
+    period_label: str = Form(""),
+    title: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a document from a URL (EDGAR or IR page) and ingest it."""
+    company = await get_company_or_404(db, ticker)
+    result = await _download_and_ingest_one(
+        db, company, doc_url, form_type, filing_date, period_label, title,
+    )
+    if result["status"] == "ingested":
+        return {"status": "ingested", "document_id": result["document_id"], "title": result["title"]}
+    if result["status"] == "duplicate":
+        return {"status": "duplicate", "message": result.get("message", "")}
+    err = result.get("error", "Ingestion failed")
+    if err.startswith("Failed to download"):
+        raise HTTPException(502, err)
+    raise HTTPException(500, err)
+
+
+@router.post("/companies/{ticker}/ingest-urls")
+async def ingest_urls_batch(
+    ticker: str,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest a batch of URLs and kick off one batch pipeline per period.
+
+    Body: {"items": [{doc_url, form_type, period_label, title, filing_date}, ...]}
+
+    After all items are ingested, successfully-ingested docs are grouped by
+    period_label and a single run_batch_pipeline job is started per period —
+    matching the behaviour of upload-and-process / batch-upload so that
+    Results populates without a manual re-run step.
+    """
+    from apps.api.models import ProcessingJob
+    from services.background_processor import run_batch_pipeline, start_background_job
+
+    company = await get_company_or_404(db, ticker)
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not items:
+        raise HTTPException(400, "items must be a non-empty list")
+
+    results: list[dict] = []
+    # period_label -> list of (document_id: UUID, document_type: str)
+    period_map: dict[str, list[tuple]] = {}
+
+    for it in items:
+        if not isinstance(it, dict):
+            results.append({"status": "failed", "error": "invalid item"})
+            continue
+        doc_url = (it.get("doc_url") or "").strip()
+        if not doc_url:
+            results.append({"status": "failed", "error": "missing doc_url"})
+            continue
+        r = await _download_and_ingest_one(
+            db, company,
+            doc_url=doc_url,
+            form_type=(it.get("form_type") or "other"),
+            filing_date=(it.get("filing_date") or ""),
+            period_label=(it.get("period_label") or ""),
+            title=(it.get("title") or ""),
+        )
+        results.append(r)
+        if r["status"] == "ingested" and r.get("period_label"):
+            period_map.setdefault(r["period_label"], []).append(
+                (uuid.UUID(r["document_id"]), r["document_type"] or "other")
+            )
+
+    # Kick off one batch pipeline per period of newly-ingested docs.
+    jobs: list[dict] = []
+    for period_label, entries in period_map.items():
+        doc_ids = [e[0] for e in entries]
+        doc_types = [e[1] for e in entries]
+        job = ProcessingJob(
+            id=uuid.uuid4(),
+            company_id=company.id,
+            period_label=period_label,
+            job_type="batch",
+            status="queued",
+            current_step="queued",
+            progress_pct=0,
+        )
+        db.add(job)
+        await db.commit()
+        start_background_job(
+            run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types, period_label)
+        )
+        jobs.append({
+            "job_id": str(job.id),
+            "period": period_label,
+            "doc_count": len(doc_ids),
+        })
+
+    ingested_count = sum(1 for r in results if r.get("status") == "ingested")
+    dup_count = sum(1 for r in results if r.get("status") == "duplicate")
+    fail_count = sum(1 for r in results if r.get("status") == "failed")
+    return {
+        "ingested": ingested_count,
+        "duplicate": dup_count,
+        "failed": fail_count,
+        "results": results,
+        "jobs": jobs,
+    }
 
 
 # Backward compatibility alias
