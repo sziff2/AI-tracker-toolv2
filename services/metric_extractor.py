@@ -242,7 +242,7 @@ async def _extract_with_sections(
     # (splits into IS/BS/CF/segments, LLM only classifies labels, numbers from parser)
     two_pass_task = None
     if tables_data and doc_type in SECTION_SPLIT_TYPES:
-        two_pass_task = _extract_two_pass(db, document, tables_data, sector)
+        two_pass_task = _extract_two_pass(db, document, tables_data, sector, industry)
 
     # Gather all tasks
     section_results = await asyncio.gather(
@@ -489,7 +489,7 @@ def _build_reconciler_input(structure, per_table_results) -> dict:
     return out
 
 
-async def _extract_two_pass(db, document, tables_data, sector) -> dict:
+async def _extract_two_pass(db, document, tables_data, sector, industry: str = "") -> dict:
     """Two-pass structural extraction of financial statement tables.
 
     Pass 1: LLM classifies row labels only (no numbers — can't hallucinate).
@@ -535,9 +535,15 @@ async def _extract_two_pass(db, document, tables_data, sector) -> dict:
         if not structure.tables:
             return {"items": [], "reconciliation": None}
 
-        # Run two_pass_extract on each table in parallel
+        # Run two_pass_extract on each table in parallel.
+        # Sector + industry select the specialised label prompts. Industry is
+        # the load-bearing field when sector is ambiguous ("Financials" → needs
+        # industry="Banks" or "Insurance" to pick the right prompt).
         tasks = [
-            two_pass_extract(table, company.name, company.ticker)
+            two_pass_extract(
+                table, company.name, company.ticker,
+                sector=sector, industry=industry,
+            )
             for table in structure.tables
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)

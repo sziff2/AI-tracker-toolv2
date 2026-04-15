@@ -1,0 +1,85 @@
+You are classifying row labels from an INSURANCE income statement table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+This is an INSURANCE company. The income statement is premium-driven,
+not revenue-driven. Do NOT force industrial categories onto insurance
+items.
+
+CATEGORIES (use exactly one per row):
+  gross_premiums_written    — GWP, gross written premiums
+  ceded_premiums            — reinsurance ceded, outward reinsurance premiums
+  net_premiums_written      — NWP, net written premiums
+  net_premiums_earned       — NPE, net earned premiums
+  claims_incurred           — net claims incurred, losses incurred, claims paid
+  acquisition_costs         — policy acquisition costs, DAC amortisation,
+                              commissions
+  underwriting_expense      — other underwriting expenses, admin expenses
+  underwriting_result       — underwriting profit / loss, technical result
+  investment_income         — net investment income, interest and dividends
+  realised_gains            — realised investment gains / losses
+  unrealised_gains          — unrealised gains / fair value movements
+  other_income              — fee income, other operating income
+  operating_expense         — G&A expenses not tied to underwriting
+  interest_expense          — debt interest, finance costs
+  tax                       — income tax expense
+  net_income                — net income, profit for period
+  eps                       — basic / diluted / adjusted EPS
+  dps                       — dividends per share
+  combined_ratio            — combined ratio (%)
+  loss_ratio                — loss ratio, claims ratio (%)
+  expense_ratio             — expense ratio (%)
+  reserve_development       — prior year reserve development (favourable/adverse)
+  catastrophe_losses        — cat losses, natural catastrophe impact
+  book_value_per_share      — BVPS, TBVPS
+  roe                       — return on equity
+  other                     — anything else
+  skip                      — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Canonical mappings:
+    "Premiums"                   → require context: "written" or "earned"
+    "Losses and LAE"             → "claims_incurred"
+    "Loss adjustment expenses"   → "claims_incurred"
+    "Commissions"                → "acquisition_costs"
+    "Technical result"           → "underwriting_result"
+- Preserve gross/net/ceded distinction — never collapse.
+- Preserve "prior year" / "current year" qualifiers on reserve items.
+
+EDGE CASES:
+- Combined ratio, loss ratio, expense ratio are percentages — still
+  classify even though unit differs from currency amounts.
+- "Catastrophe impact on combined ratio" → category="catastrophe_losses".
+- "Net premiums" alone is ambiguous — prefer net_premiums_earned unless
+  label explicitly says "written".
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Gross written premiums
+- Net earned premiums
+- Net losses and loss adjustment expenses
+- Policy acquisition costs
+- Underwriting income
+- Net investment income
+- Combined ratio
+- Prior year favorable reserve development
+
+Output:
+[
+  {{"original": "Gross written premiums",               "normalised": "gross_premiums_written","category": "gross_premiums_written"}},
+  {{"original": "Net earned premiums",                  "normalised": "net_premiums_earned",   "category": "net_premiums_earned"}},
+  {{"original": "Net losses and loss adjustment expenses","normalised": "claims_incurred",     "category": "claims_incurred"}},
+  {{"original": "Policy acquisition costs",             "normalised": "acquisition_costs",     "category": "acquisition_costs"}},
+  {{"original": "Underwriting income",                  "normalised": "underwriting_result",   "category": "underwriting_result"}},
+  {{"original": "Net investment income",                "normalised": "investment_income",     "category": "investment_income"}},
+  {{"original": "Combined ratio",                       "normalised": "combined_ratio",        "category": "combined_ratio"}},
+  {{"original": "Prior year favorable reserve development","normalised": "prior_year_reserve_development","category": "reserve_development"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}

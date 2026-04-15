@@ -15,8 +15,48 @@ from typing import Any
 from services.financial_statement_segmenter import FinancialTable, StatementType
 from services.llm_client import call_llm_json_async, set_llm_context
 from configs.settings import settings
+from prompts.loader import load_prompt
 
 logger = logging.getLogger(__name__)
+
+
+# ── Sector detection ────────────────────────────────────────────
+
+def _sector_key(sector: str | None, industry: str | None = None) -> str | None:
+    """Map sector + industry to a prompt suffix, or None for generic.
+
+    Industry takes precedence because it's more specific:
+      sector="Financials", industry="Banks"         → "bank"
+      sector="Financials", industry="P&C Insurance" → "insurance"
+      sector="Financials", industry=""              → None (ambiguous — use generic)
+
+    Sector-only matches are accepted for unambiguous cases ("Banks" as a
+    sector label, "Insurance" as a sector label).
+    """
+    s = (sector or "").lower()
+    i = (industry or "").lower()
+    combined = f"{i} {s}"  # industry first so it dominates
+
+    if any(k in combined for k in (
+        "bank", "lending", "consumer finance", "credit services",
+        "mortgage", "thrift", "capital markets",
+    )):
+        return "bank"
+    if any(k in combined for k in ("insur", "reinsur", "underwrit")):
+        return "insurance"
+    # "Financials" / "Financial Services" alone is too broad — fall through
+    # to generic rather than guess.
+    return None
+
+
+# ── Statement type → base prompt name ───────────────────────────
+
+_PROMPT_BASE: dict[StatementType, str] = {
+    StatementType.INCOME_STATEMENT:  "labels_income_statement",
+    StatementType.BALANCE_SHEET:     "labels_balance_sheet",
+    StatementType.CASH_FLOW:         "labels_cash_flow",
+    StatementType.SEGMENT_BREAKDOWN: "labels_segment",
+}
 
 # ── Category mappings per statement type ────────────────────────
 
@@ -46,14 +86,40 @@ _CATEGORY_HINTS: dict[StatementType, list[str]] = {
 }
 
 
-def _build_label_prompt(labels: list[str], statement_type: StatementType) -> str:
-    """Build a short Haiku prompt for pass 1 (label classification only)."""
+def _build_label_prompt(
+    labels: list[str],
+    statement_type: StatementType,
+    sector: str | None = None,
+    industry: str | None = None,
+) -> str:
+    """Build a Haiku prompt for pass 1 (label classification only).
+
+    Resolution order (first hit wins):
+      1. prompts/extraction/labels_<statement>_<sector>.txt   (e.g. labels_income_statement_bank)
+      2. prompts/extraction/labels_<statement>.txt            (generic)
+      3. Inline fallback using _CATEGORY_HINTS
+    """
+    labels_text = "\n".join(f"- {label}" for label in labels)
+    base = _PROMPT_BASE.get(statement_type)
+
+    if base:
+        sector_key = _sector_key(sector, industry)
+        candidates = [f"{base}_{sector_key}", base] if sector_key else [base]
+        for name in candidates:
+            try:
+                return load_prompt(
+                    name,
+                    inputs={"labels_block": labels_text},
+                    include_context_contract=False,
+                    include_output_constraints=False,
+                )
+            except FileNotFoundError:
+                continue
+
+    # Inline fallback — statement types with no file prompt (KPI, guidance, etc.)
     type_name = statement_type.value.replace("_", " ")
     categories = _CATEGORY_HINTS.get(statement_type, [])
     cat_hint = ", ".join(categories) if categories else "use your best judgement"
-
-    labels_text = "\n".join(f"- {label}" for label in labels)
-
     return (
         f"Classify these financial statement row labels. Statement type: {type_name}.\n"
         f"Categories: {cat_hint}\n"
@@ -68,6 +134,8 @@ async def extract_labels_only(
     statement_type: StatementType,
     company_name: str,
     ticker: str,
+    sector: str | None = None,
+    industry: str | None = None,
 ) -> list[dict]:
     """
     Pass 1: Send ONLY row labels (no numbers) to Haiku for classification.
@@ -80,7 +148,7 @@ async def extract_labels_only(
     if not labels:
         return []
 
-    prompt = _build_label_prompt(labels, statement_type)
+    prompt = _build_label_prompt(labels, statement_type, sector=sector, industry=industry)
 
     set_llm_context(feature="two_pass_labels", ticker=ticker)
 
@@ -169,6 +237,8 @@ async def two_pass_extract(
     table: FinancialTable,
     company_name: str,
     ticker: str,
+    sector: str | None = None,
+    industry: str | None = None,
 ) -> list[dict]:
     """
     Main entry point for two-pass extraction.
@@ -177,6 +247,8 @@ async def two_pass_extract(
     Pass 2: Match labels to parser's numeric values
 
     Falls back to returning raw parser rows if label extraction fails.
+    ``sector`` + ``industry`` select bank / insurance specialised label
+    prompts. Industry is preferred (more specific) when both are given.
 
     Returns list of:
         {"metric": str, "category": str, "value": float|None,
@@ -192,6 +264,8 @@ async def two_pass_extract(
             table.statement_type,
             company_name,
             ticker,
+            sector=sector,
+            industry=industry,
         )
 
         if not labels:

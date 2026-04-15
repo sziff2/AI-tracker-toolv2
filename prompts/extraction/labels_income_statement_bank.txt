@@ -1,0 +1,89 @@
+You are classifying row labels from a BANK income statement table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+This is a BANK. The income statement structure differs fundamentally
+from an industrial — do NOT force industrial categories (revenue,
+cost_of_sales, gross_profit) onto banking items.
+
+CATEGORIES (use exactly one per row):
+  interest_income              — interest and fee income on loans, securities
+  interest_expense             — interest on deposits, wholesale funding, debt
+  net_interest_income          — NII (interest income minus interest expense)
+  non_interest_income          — fee income, trading, wealth, service charges,
+                                 investment banking, mortgage banking revenue
+  non_interest_expense         — compensation, occupancy, technology, comms,
+                                 professional fees, FDIC, marketing
+  provision_for_credit_losses  — PCL, loan loss provision, credit costs,
+                                 ECL charge
+  pre_provision_profit         — PPNR, pre-provision net revenue
+  pre_tax_profit               — income before tax
+  tax                          — income tax expense
+  net_income                   — net income, net earnings, profit for period
+  eps                          — basic / diluted / adjusted EPS
+  dps                          — dividends per share, dividend declared
+  shares_outstanding           — weighted avg shares (basic/diluted)
+  nim                          — net interest margin
+  efficiency_ratio             — efficiency / cost-income ratio
+  roe                          — return on equity, ROTCE, ROA
+  cet1_ratio                   — CET1, Tier 1 capital ratio, total capital ratio
+  charge_offs                  — net charge-offs, NCO rate
+  tbvps                        — tangible book value per share, book value per share
+  other                        — anything that doesn't fit above
+  skip                         — section headers, subtotal rows with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Canonical mappings:
+    "Net interest revenue"    → "net_interest_income"
+    "Credit costs", "ECL"     → "provision_for_credit_losses"
+    "Fee revenue", "Fees and commissions" → "non_interest_income"
+    "Operating expenses"      → "non_interest_expense"
+    "Net income applicable to common shareholders" → "net_income"
+- Preserve "adjusted" / "underlying" / "core" qualifiers
+  (e.g. "adjusted_net_interest_income").
+- "Operating expenses" in a BANK = non_interest_expense, NOT
+  operating_expense. Banks do not have cost_of_sales / gross_profit.
+
+EDGE CASES:
+- "Provision for loan losses" and "Provision for credit losses" both map
+  to category "provision_for_credit_losses".
+- Per-share items go to eps / dps / tbvps / shares_outstanding.
+- Capital ratios (CET1, Tier 1) appear as percentages — still classify
+  even though unit differs from currency amounts.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Interest income
+- Interest expense
+- Net interest income
+- Provision for credit losses
+- Noninterest income
+- Noninterest expense
+- Pre-tax income
+- Net income
+- Diluted earnings per share
+- Return on tangible common equity
+- CET1 capital ratio
+
+Output:
+[
+  {{"original": "Interest income",                 "normalised": "interest_income",              "category": "interest_income"}},
+  {{"original": "Interest expense",                "normalised": "interest_expense",             "category": "interest_expense"}},
+  {{"original": "Net interest income",             "normalised": "net_interest_income",          "category": "net_interest_income"}},
+  {{"original": "Provision for credit losses",     "normalised": "provision_for_credit_losses",  "category": "provision_for_credit_losses"}},
+  {{"original": "Noninterest income",              "normalised": "non_interest_income",          "category": "non_interest_income"}},
+  {{"original": "Noninterest expense",             "normalised": "non_interest_expense",         "category": "non_interest_expense"}},
+  {{"original": "Pre-tax income",                  "normalised": "pre_tax_profit",               "category": "pre_tax_profit"}},
+  {{"original": "Net income",                      "normalised": "net_income",                   "category": "net_income"}},
+  {{"original": "Diluted earnings per share",      "normalised": "diluted_eps",                  "category": "eps"}},
+  {{"original": "Return on tangible common equity","normalised": "rotce",                        "category": "roe"}},
+  {{"original": "CET1 capital ratio",              "normalised": "cet1_ratio",                   "category": "cet1_ratio"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}

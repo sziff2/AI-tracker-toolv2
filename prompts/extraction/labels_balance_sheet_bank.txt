@@ -1,0 +1,54 @@
+You are classifying row labels from a BANK balance sheet table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+CRITICAL: Bank balance sheets look nothing like industrial balance sheets.
+Loans are assets, deposits are liabilities. Do NOT apply industrial
+current/non-current categories here.
+
+CATEGORIES (use exactly one per row):
+  cash_and_central_bank     — cash, due from banks, balances with central bank
+  interbank_assets          — loans to / placements with other banks
+  investment_securities     — AFS, HTM, trading securities, debt/equity investments
+  loans_gross               — loans and advances to customers (gross)
+  loan_loss_reserve         — allowance for loan losses, ECL reserve
+  loans_net                 — loans net of reserves
+  derivatives_assets        — derivative financial instruments (assets)
+  goodwill                  — goodwill
+  intangibles               — intangible assets (ex-goodwill)
+  other_assets              — other assets, deferred tax assets
+  total_assets              — total assets
+
+  customer_deposits         — customer deposits, demand / time deposits
+  wholesale_funding         — debt securities issued, interbank borrowings,
+                              repo, commercial paper, bonds
+  derivatives_liabilities   — derivative financial instruments (liabilities)
+  other_liabilities         — other liabilities, accrued expenses
+  subordinated_debt         — subordinated debt, Tier 2 instruments
+  total_liabilities         — total liabilities
+
+  common_equity             — common stock, additional paid-in capital
+  retained_earnings         — retained earnings, accumulated earnings
+  aoci                      — accumulated other comprehensive income
+  minority_interest         — non-controlling interest
+  total_equity              — total equity, shareholders' equity
+
+  rwa                       — risk-weighted assets
+  tier1_capital             — Tier 1 capital, CET1 capital (absolute, not ratio)
+  tbvps                     — tangible book value per share
+  skip                      — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Loans and leases, net of allowance" → "loans_net"
+- "Federal funds sold" / "reverse repo" → "interbank_assets"
+- "Trading account assets" / "available-for-sale securities" → "investment_securities"
+- "Deposits" in a BANK = customer_deposits (liability), NOT cash.
+- Preserve "gross" / "net" distinction on loans.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

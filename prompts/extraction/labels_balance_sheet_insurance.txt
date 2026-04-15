@@ -1,0 +1,56 @@
+You are classifying row labels from an INSURANCE balance sheet table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+CRITICAL: Insurance balance sheets are dominated by investments on the
+asset side and technical provisions / reserves on the liability side.
+Do NOT apply industrial current/non-current categories here.
+
+CATEGORIES (use exactly one per row):
+  cash                         — cash and cash equivalents
+  fixed_income_investments     — bonds, fixed maturity securities, govt / corp debt
+  equity_investments           — equity securities, stocks held
+  real_estate_investments      — investment property, real estate held for investment
+  mortgage_loans               — mortgage loans, commercial mortgages
+  other_invested_assets        — alternatives, derivatives, partnerships, LP stakes
+  total_investments            — total investments subtotal
+  dac                          — deferred acquisition costs (asset)
+  reinsurance_recoverables     — reinsurance assets, amounts recoverable from reinsurers
+  premiums_receivable          — premiums and other receivables
+  goodwill                     — goodwill
+  intangibles                  — intangible assets (ex-goodwill), VOBA
+  other_assets                 — other assets, deferred tax assets
+  total_assets                 — total assets
+
+  unearned_premium_reserve     — UPR, unearned premiums
+  loss_reserves                — loss and loss adjustment expense reserves,
+                                 claims reserves, outstanding claims
+  life_policy_reserves         — future policy benefits, life reserves
+  technical_provisions         — total technical provisions / insurance liabilities
+  reinsurance_payable          — reinsurance liabilities
+  debt                         — long-term debt, senior notes, subordinated debt
+  other_liabilities            — other liabilities, accrued expenses
+  total_liabilities            — total liabilities
+
+  common_equity                — common stock, paid-in capital
+  retained_earnings            — retained earnings
+  aoci                         — accumulated other comprehensive income
+  minority_interest            — non-controlling interest
+  total_equity                 — total equity, shareholders' equity
+
+  book_value_per_share         — BVPS, TBVPS
+  skip                         — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Available-for-sale fixed maturities" → "fixed_income_investments"
+- "Reserves for losses and LAE" → "loss_reserves"
+- Preserve "gross" vs "net of reinsurance" distinction.
+- DAC sits on the asset side for GAAP filers — do NOT classify as expense.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

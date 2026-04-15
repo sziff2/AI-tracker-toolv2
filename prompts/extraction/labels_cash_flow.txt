@@ -1,0 +1,41 @@
+You are classifying row labels from a single cash flow statement table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+CATEGORIES (use exactly one per row):
+  net_income               — starting point from P&L (net income, profit for period)
+  depreciation             — D&A, depreciation, amortisation
+  working_capital_change   — change in receivables/inventory/payables/working cap
+  other_non_cash           — share-based comp, impairments, non-cash items
+  operating_cash_flow      — net cash from operating activities (subtotal)
+  capex                    — purchases of PP&E, capital expenditure, investment in PP&E
+  acquisitions             — business acquisitions, M&A outflows
+  divestitures             — sale of businesses, disposal proceeds
+  investing_cash_flow      — net cash from investing activities (subtotal)
+  debt_issued              — proceeds from borrowings, debt raised
+  debt_repaid              — repayment of debt, bond redemption
+  dividends_paid           — dividends paid to shareholders
+  share_buyback            — share repurchases, treasury stock
+  share_issuance           — proceeds from share issue
+  financing_cash_flow      — net cash from financing activities (subtotal)
+  free_cash_flow           — free cash flow (ONLY if explicitly labelled)
+  net_cash_change          — net increase/decrease in cash
+  fx_effect                — effect of exchange rate changes on cash
+  cash_begin_period        — cash at beginning of period
+  cash_end_period          — cash at end of period
+  skip                     — section headers with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Purchases of property, plant and equipment" → "capex"
+- "Dividends paid to shareholders of the parent" → "dividends_paid"
+- Parenthetical values in a cash flow are outflows (negative) — you don't
+  see values, but don't let the label "(Capital expenditure)" confuse you;
+  still classify as "capex".
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

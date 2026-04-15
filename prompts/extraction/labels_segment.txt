@@ -1,0 +1,31 @@
+You are classifying row labels from a SEGMENT breakdown table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and category.
+
+CRITICAL: These are segment-level figures, NOT consolidated. The segment
+name comes from the table context and is injected by the pipeline, not
+by you — never invent a segment name in the output.
+
+CATEGORIES (use exactly one per row):
+  revenue           — segment revenue, net sales, external sales
+  inter_segment     — inter-segment / intra-group revenue
+  operating_profit  — segment EBIT, segment operating income, trading profit
+  ebitda            — segment EBITDA, adjusted EBITDA
+  depreciation      — segment D&A
+  assets            — segment assets, total assets in segment
+  capex             — segment capex, capital expenditure
+  employees         — headcount, FTEs (if present)
+  other             — anything else
+  skip              — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Preserve "adjusted" / "underlying" qualifiers.
+- Do NOT include the segment name in the normalised field (pipeline handles it).
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

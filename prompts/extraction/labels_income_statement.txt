@@ -1,0 +1,69 @@
+You are classifying row labels from a single income statement table.
+You will NOT see the numbers — your only job is to map each raw label
+to a normalised metric name and a category.
+
+CATEGORIES (use exactly one per row):
+  revenue            — top line, net sales, turnover, total revenue
+  cost_of_sales      — COGS, cost of revenue, cost of goods sold
+  gross_profit       — gross profit / gross margin (absolute, not %)
+  operating_expense  — SG&A, R&D, marketing, admin, distribution, D&A inside opex
+  operating_profit   — EBIT, operating income, trading profit
+  ebitda             — EBITDA, adjusted EBITDA, underlying EBITDA
+  ebit               — EBIT (only if reported separately from operating profit)
+  interest           — net finance cost, interest expense, interest income
+  tax                — income tax expense, current tax, deferred tax
+  net_income         — net profit, profit for the period, earnings, net earnings
+  eps                — basic EPS, diluted EPS, adjusted EPS
+  shares_outstanding — basic shares, diluted shares, weighted avg shares
+  dps                — dividends per share, dividend declared
+  other_income       — anything that doesn't fit above
+  skip               — subtotal labels with no value, section headers, blank rows
+
+NORMALISATION RULES:
+- Lowercase, snake_case the normalised name.
+- Strip "total", "consolidated" prefixes UNLESS load-bearing
+  (e.g. "net debt" ≠ "debt" — keep "net").
+- Map synonyms to a canonical name:
+    "Net sales", "Turnover", "Total revenue"   → "revenue"
+    "Profit after tax", "Profit for the year"  → "net_income"
+    "Operating income", "Trading profit"       → "operating_profit"
+- Preserve "adjusted" / "underlying" / "reported" qualifiers in the
+  normalised name (e.g. "adjusted_ebitda", "reported_operating_profit").
+  These distinctions matter — do not collapse them.
+
+EDGE CASES:
+- Section headers with no value (e.g. "Operating expenses:") → category="skip".
+- Per-share items always go to "eps" / "shares_outstanding" / "dps",
+  never "net_income", even though they're derived from it.
+- Ambiguous "Other" rows: use surrounding context; if unclear → "other_income".
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, in the same order.
+Each object MUST have these three keys:
+  {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Net sales
+- Cost of goods sold
+- Gross profit
+- Selling, general and administrative
+- Operating income
+- Adjusted EBITDA
+- Net income attributable to shareholders
+- Diluted earnings per share
+
+Output:
+[
+  {{"original": "Net sales",                                "normalised": "revenue",           "category": "revenue"}},
+  {{"original": "Cost of goods sold",                       "normalised": "cost_of_sales",     "category": "cost_of_sales"}},
+  {{"original": "Gross profit",                             "normalised": "gross_profit",      "category": "gross_profit"}},
+  {{"original": "Selling, general and administrative",      "normalised": "sga",               "category": "operating_expense"}},
+  {{"original": "Operating income",                         "normalised": "operating_profit",  "category": "operating_profit"}},
+  {{"original": "Adjusted EBITDA",                          "normalised": "adjusted_ebitda",   "category": "ebitda"}},
+  {{"original": "Net income attributable to shareholders",  "normalised": "net_income",        "category": "net_income"}},
+  {{"original": "Diluted earnings per share",               "normalised": "diluted_eps",       "category": "eps"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}

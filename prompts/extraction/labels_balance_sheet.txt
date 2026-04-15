@@ -1,0 +1,66 @@
+You are classifying row labels from a single balance sheet table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+CRITICAL: Balance sheet items are STOCK values (point in time), not FLOW.
+Do not confuse with income statement categories.
+
+CATEGORIES (use exactly one per row):
+  cash                      — cash, cash equivalents, short-term investments
+  receivables               — trade receivables, accounts receivable
+  inventory                 — inventory, stock
+  current_asset             — other current assets (prepaid, derivatives etc.)
+  ppe                       — property, plant & equipment, net fixed assets
+  goodwill                  — goodwill
+  intangibles               — intangible assets (ex-goodwill), capitalised software
+  non_current_asset         — other non-current assets, deferred tax assets, investments
+  total_assets              — total assets
+  payables                  — trade payables, accounts payable
+  short_term_debt           — short-term borrowings, current portion of LT debt
+  current_liability         — other current liabilities, accrued expenses
+  long_term_debt            — long-term debt, bonds, loans
+  non_current_liability     — pensions, deferred tax liabilities, other NCL
+  total_liabilities         — total liabilities
+  equity                    — shareholders' equity, retained earnings, share capital
+  minority_interest         — non-controlling interest, minority interest
+  total_equity              — total equity (incl. minority)
+  net_debt                  — net debt (ONLY if row says "net debt" explicitly)
+  skip                      — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Cash and cash equivalents" → "cash"
+- "Trade and other receivables" → "receivables"
+- "Property, plant and equipment" → "ppe"
+- Preserve "net" qualifier when load-bearing: "net debt", "net ppe".
+- Preserve "current" vs "non-current" distinction — never collapse them.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Cash and cash equivalents
+- Trade receivables
+- Property, plant and equipment, net
+- Goodwill
+- Total assets
+- Short-term borrowings
+- Long-term debt
+- Total shareholders' equity
+
+Output:
+[
+  {{"original": "Cash and cash equivalents",       "normalised": "cash",            "category": "cash"}},
+  {{"original": "Trade receivables",               "normalised": "receivables",     "category": "receivables"}},
+  {{"original": "Property, plant and equipment, net","normalised": "ppe",          "category": "ppe"}},
+  {{"original": "Goodwill",                        "normalised": "goodwill",        "category": "goodwill"}},
+  {{"original": "Total assets",                    "normalised": "total_assets",    "category": "total_assets"}},
+  {{"original": "Short-term borrowings",           "normalised": "short_term_debt", "category": "short_term_debt"}},
+  {{"original": "Long-term debt",                  "normalised": "long_term_debt",  "category": "long_term_debt"}},
+  {{"original": "Total shareholders' equity",      "normalised": "total_equity",    "category": "total_equity"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}
