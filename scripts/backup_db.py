@@ -109,7 +109,33 @@ async def run() -> Path:
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"\nWrote {out_path} ({size_mb:.1f} MB)")
+
+    # Clean up backups older than BACKUP_RETAIN_DAYS (default 30)
+    retain_days = int(os.environ.get("BACKUP_RETAIN_DAYS", "30"))
+    _cleanup_old_backups(backup_dir, retain_days)
+
     return out_path
+
+
+def _cleanup_old_backups(backup_dir: Path, retain_days: int) -> None:
+    """Delete db_backup_*.json files older than retain_days."""
+    cutoff = date.today().toordinal() - retain_days
+    removed = 0
+    for f in backup_dir.glob("db_backup_*.json"):
+        # Parse date from filename: db_backup_YYYY-MM-DD.json
+        try:
+            date_str = f.stem.replace("db_backup_", "")
+            file_date = date.fromisoformat(date_str)
+        except ValueError:
+            continue
+        if file_date.toordinal() < cutoff:
+            f.unlink()
+            removed += 1
+            print(f"  Removed old backup: {f.name}")
+    if removed:
+        print(f"  Cleaned up {removed} backup(s) older than {retain_days} days")
+    else:
+        print(f"  No backups older than {retain_days} days to clean up")
 
 
 if __name__ == "__main__":
