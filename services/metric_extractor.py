@@ -601,10 +601,11 @@ async def _extract_two_pass(db, document, tables_data, sector, industry: str = "
                 continue
             if not isinstance(result, list):
                 continue
+            table_items = []
             for item in result:
                 if item.get("value") is None:
                     continue
-                all_items.append({
+                table_items.append({
                     "metric_name": item.get("metric", "unknown"),
                     "metric_value": item.get("value"),
                     "metric_text": item.get("original_label", ""),
@@ -617,6 +618,11 @@ async def _extract_two_pass(db, document, tables_data, sector, industry: str = "
                     "confidence": 0.95,  # high — numbers from parser, labels from Haiku
                     "source": "two_pass",
                 })
+            # Log KPI table contents so we can debug NIM/CET1 detection
+            if table.statement_type == StatementType.KPI_TABLE and table_items:
+                kpi_names = [i["metric_name"] for i in table_items[:10]]
+                logger.info("KPI table (%s) metrics: %s", table.period, kpi_names)
+            all_items.extend(table_items)
 
         # Reconciliation cross-checks (Q-sum vs FY, segment vs consolidated,
         # BS equation, P&L vs CF net income). Non-fatal — log on failure.
@@ -838,55 +844,82 @@ async def extract_by_document_type(
 # ─────────────────────────────────────────────────────────────────
 
 async def _persist_earnings_metrics(db, document, raw_items):
+    """Persist extracted metrics in batches to avoid single-row failures
+    killing the entire commit. Commits every BATCH_SIZE items."""
     from services.metric_normaliser import normalise_period
-    for item in raw_items:
-        if not isinstance(item, dict):
-            continue
-        try:
-            val = item.get("metric_value")
-            if val is not None:
-                try:
-                    val = float(val)
-                except (ValueError, TypeError):
-                    val = None
 
-            # Qualifier enrichment (from qualifier_extractor)
-            qualifiers = item.get("_qualifiers")
-            is_one_off = bool(item.get("_is_one_off", False))
+    BATCH_SIZE = 100
+    persisted = 0
+    skipped = 0
 
-            raw_period = item.get("period") or document.period_label or ""
-            canonical_period = normalise_period(raw_period) or document.period_label
+    for batch_start in range(0, len(raw_items), BATCH_SIZE):
+        batch = raw_items[batch_start:batch_start + BATCH_SIZE]
+        batch_count = 0
 
-            metric = ExtractedMetric(
-                id=uuid.uuid4(),
-                company_id=document.company_id,
-                document_id=document.id,
-                period_label=canonical_period,
-                metric_name=item.get("metric_name", ""),
-                metric_value=val,
-                metric_text=item.get("metric_text", ""),
-                unit=item.get("unit"),
-                segment=item.get("segment"),
-                source_snippet=str(item.get("source_snippet", ""))[:500],
-                confidence=item.get("confidence", 0.8),
-                needs_review=item.get("confidence", 0.8) < REVIEW_THRESHOLD,
-                is_one_off=is_one_off,
-                qualifier_json=qualifiers if qualifiers else None,
-            )
-            db.add(metric)
+        for item in batch:
+            if not isinstance(item, dict):
+                continue
+            try:
+                val = item.get("metric_value")
+                if val is not None:
+                    try:
+                        val = float(val)
+                    except (ValueError, TypeError):
+                        val = None
 
-            if metric.needs_review:
-                review = ReviewQueueItem(
+                qualifiers = item.get("_qualifiers")
+                is_one_off = bool(item.get("_is_one_off", False))
+
+                raw_period = item.get("period") or document.period_label or ""
+                canonical_period = normalise_period(raw_period) or document.period_label
+
+                metric = ExtractedMetric(
                     id=uuid.uuid4(),
-                    entity_type="metric",
-                    entity_id=metric.id,
-                    queue_reason=f"Low confidence ({item.get('confidence', 0):.2f})",
-                    priority="normal",
+                    company_id=document.company_id,
+                    document_id=document.id,
+                    period_label=canonical_period,
+                    metric_name=item.get("metric_name", ""),
+                    metric_value=val,
+                    metric_text=item.get("metric_text", ""),
+                    unit=item.get("unit"),
+                    segment=item.get("segment"),
+                    source_snippet=str(item.get("source_snippet", ""))[:500],
+                    confidence=item.get("confidence", 0.8),
+                    needs_review=item.get("confidence", 0.8) < REVIEW_THRESHOLD,
+                    is_one_off=is_one_off,
+                    qualifier_json=qualifiers if qualifiers else None,
                 )
-                db.add(review)
+                db.add(metric)
+                batch_count += 1
+
+                if metric.needs_review:
+                    review = ReviewQueueItem(
+                        id=uuid.uuid4(),
+                        entity_type="metric",
+                        entity_id=metric.id,
+                        queue_reason=f"Low confidence ({item.get('confidence', 0):.2f})",
+                        priority="normal",
+                    )
+                    db.add(review)
+            except Exception as e:
+                logger.warning("Failed to build metric: %s", str(e)[:200])
+                skipped += 1
+
+        try:
+            await db.commit()
+            persisted += batch_count
         except Exception as e:
-            logger.warning("Failed to persist metric: %s", str(e)[:100])
-    await db.commit()
+            logger.error(
+                "COMMIT FAILED for batch %d-%d (doc %s): %s",
+                batch_start, batch_start + len(batch), document.id, str(e)[:300],
+            )
+            await db.rollback()
+            skipped += batch_count
+
+    logger.info(
+        "Persisted %d extracted_metrics for doc %s (%d skipped)",
+        persisted, document.id, skipped,
+    )
 
 
 async def _persist_transcript_items(db, document, raw_items):
