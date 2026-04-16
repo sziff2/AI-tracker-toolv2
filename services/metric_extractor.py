@@ -552,28 +552,42 @@ async def _extract_two_pass(db, document, tables_data, sector, industry: str = "
                 tables_by_page[page_num] = page_tables
 
         structure = segment_document(pages, tables_by_page, sector=sector, industry=industry)
-        logger.info("Two-pass: segmented %d financial tables from %d pages",
-                    len(structure.tables), len(pages))
 
-        if not structure.tables:
+        # Filter out table types that are noise (footnotes, equity changes,
+        # narrative-only). Only extract tables classified as a known
+        # financial statement type or KPI. A bank 10-Q can have 200+ tables
+        # but only ~20-30 are useful financial statements.
+        _EXTRACT_TYPES = {
+            StatementType.INCOME_STATEMENT,
+            StatementType.BALANCE_SHEET,
+            StatementType.CASH_FLOW,
+            StatementType.SEGMENT_BREAKDOWN,
+            StatementType.KPI_TABLE,
+        }
+        useful_tables = [t for t in structure.tables if t.statement_type in _EXTRACT_TYPES]
+        skipped = len(structure.tables) - len(useful_tables)
+        logger.info("Two-pass: segmented %d tables from %d pages, extracting %d (skipped %d unknown/equity/other)",
+                    len(structure.tables), len(pages), len(useful_tables), skipped)
+
+        if not useful_tables:
             return {"items": [], "reconciliation": None}
 
-        # Run two_pass_extract on each table in parallel.
+        # Run two_pass_extract on each useful table in parallel.
         # Sector + industry select the specialised label prompts. Industry is
-        # the load-bearing field when sector is ambiguous ("Financials" → needs
+        # the load-bearing field when sector is ambiguous ("Financials" needs
         # industry="Banks" or "Insurance" to pick the right prompt).
         tasks = [
             two_pass_extract(
                 table, company.name, company.ticker,
                 sector=sector, industry=industry,
             )
-            for table in structure.tables
+            for table in useful_tables
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect and convert to ExtractedMetric-compatible format
         all_items = []
-        for table, result in zip(structure.tables, results):
+        for table, result in zip(useful_tables, results):
             if isinstance(result, Exception):
                 logger.warning("Two-pass failed for %s: %s",
                                table.statement_type.value, str(result)[:100])
@@ -601,7 +615,8 @@ async def _extract_two_pass(db, document, tables_data, sector, industry: str = "
         # BS equation, P&L vs CF net income). Non-fatal — log on failure.
         reconciliation = None
         try:
-            recon_input = _build_reconciler_input(structure, results)
+            recon_input = _build_reconciler_input(
+                type('S', (), {'tables': useful_tables})(), results)
             reconciliation = reconcile_extractions(recon_input)
             if reconciliation and not reconciliation.get("passed", True):
                 high = [i for i in reconciliation.get("issues", [])
