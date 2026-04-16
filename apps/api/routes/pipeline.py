@@ -681,3 +681,61 @@ async def get_contract_history(
         "authored_by": c.authored_by,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     } for c in contracts]
+
+
+# ─────────────────────────────────────────────────────────────────
+# Admin — Database backup (streamed JSON download)
+# ─────────────────────────────────────────────────────────────────
+
+@router.get("/admin/backup")
+async def download_backup(db: AsyncSession = Depends(get_db)):
+    """
+    Stream a full database backup as a dated JSON download.
+
+    Hit this from a browser to download, or automate locally:
+        curl -o "DB Backup/db_backup_$(date +%F).json" \\
+             https://ai-tracker-tool-production.up.railway.app/api/v1/admin/backup
+    """
+    import json
+    from datetime import date, datetime
+    from decimal import Decimal
+    from uuid import UUID
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import text
+
+    TABLES = [
+        "companies", "document_sections", "documents", "extracted_metrics",
+        "extraction_profiles", "harvested_documents", "harvester_sources",
+        "kpi_actuals", "llm_usage_log", "portfolio_holdings", "portfolios",
+        "price_records", "processing_jobs", "research_outputs", "review_queue",
+        "scenario_snapshots", "valuation_scenarios",
+    ]
+
+    def _default(obj):
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, (bytes, bytearray)):
+            return obj.decode("utf-8", errors="replace")
+        raise TypeError(f"Not JSON serializable: {type(obj).__name__}")
+
+    dump = {}
+    for table in TABLES:
+        try:
+            result = await db.execute(text(f'SELECT * FROM "{table}"'))
+            rows = result.mappings().all()
+            dump[table] = [dict(row) for row in rows]
+        except Exception:
+            dump[table] = []
+
+    today = date.today().isoformat()
+    content = json.dumps(dump, default=_default, ensure_ascii=False)
+
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="db_backup_{today}.json"'},
+    )
