@@ -1740,17 +1740,15 @@ function calcBuffett(){
   var el=document.getElementById('sc-buffett-tp');
   var detail=document.getElementById('sc-buffett-detail');
   if(!el)return;
-  // Need at least bear + one upside case (base or bull)
-  var upsideTp=!isNaN(bullTp)?bullTp:(!isNaN(baseTp)?baseTp:NaN);
-  var upsideProb=!isNaN(bullTp)?bullProb:(!isNaN(baseTp)?baseProb:NaN);
-  if(isNaN(upsideTp)||isNaN(bearTp)){el.textContent='—';if(detail)detail.textContent='Enter at least base/bull and bear targets';return;}
-  // Default probabilities if not set
-  if(isNaN(upsideProb))upsideProb=75;
-  if(isNaN(bearProb))bearProb=100-upsideProb;
-  var bf=upsideTp*(upsideProb/100)+bearTp*(bearProb/100);
-  var upsideLabel=!isNaN(bullTp)?'Bull':'Base';
+  // Probability-weighted expected value across all filled scenarios
+  var terms=[];var totalProb=0;var bf=0;
+  if(!isNaN(bullTp)&&!isNaN(bullProb)){terms.push('Bull '+bullTp+' x '+bullProb+'%');bf+=bullTp*(bullProb/100);totalProb+=bullProb;}
+  if(!isNaN(baseTp)&&!isNaN(baseProb)){terms.push('Base '+baseTp+' x '+baseProb+'%');bf+=baseTp*(baseProb/100);totalProb+=baseProb;}
+  if(!isNaN(bearTp)&&!isNaN(bearProb)){terms.push('Bear '+bearTp+' x '+bearProb+'%');bf+=bearTp*(bearProb/100);totalProb+=bearProb;}
+  if(terms.length<2){el.textContent='--';if(detail)detail.textContent='Enter at least 2 scenarios with target prices and probabilities';return;}
   el.textContent=Math.round(bf*100)/100;
-  if(detail)detail.textContent=upsideLabel+' '+upsideTp+' × '+upsideProb+'% + Bear '+bearTp+' × '+bearProb+'% = '+Math.round(bf*100)/100;
+  var warn=Math.abs(totalProb-100)>1?' (probs sum to '+totalProb+'%)':'';
+  if(detail)detail.textContent=terms.join(' + ')+' = '+Math.round(bf*100)/100+warn;
 }
 
 // ── Scenario form load/save ──────────────────────────────────
