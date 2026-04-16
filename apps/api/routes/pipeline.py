@@ -692,6 +692,9 @@ async def download_backup(db: AsyncSession = Depends(get_db)):
     """
     Stream a full database backup as a dated JSON download.
 
+    Streams table-by-table so the first bytes arrive immediately and
+    Railway's request timeout doesn't kill the connection.
+
     Hit this from a browser to download, or automate locally:
         curl -o "DB Backup/db_backup_$(date +%F).json" \\
              https://ai-tracker-tool-production.up.railway.app/api/v1/admin/backup
@@ -722,20 +725,30 @@ async def download_backup(db: AsyncSession = Depends(get_db)):
             return obj.decode("utf-8", errors="replace")
         raise TypeError(f"Not JSON serializable: {type(obj).__name__}")
 
-    dump = {}
-    for table in TABLES:
-        try:
-            result = await db.execute(text(f'SELECT * FROM "{table}"'))
-            rows = result.mappings().all()
-            dump[table] = [dict(row) for row in rows]
-        except Exception:
-            dump[table] = []
+    async def _stream():
+        """Yield JSON incrementally — one table at a time."""
+        yield "{"
+        first = True
+        for table in TABLES:
+            if not first:
+                yield ","
+            first = False
+            yield f"\n{json.dumps(table)}: "
+            try:
+                result = await db.execute(text(f'SELECT * FROM "{table}"'))
+                rows = result.mappings().all()
+                yield json.dumps(
+                    [dict(row) for row in rows],
+                    default=_default,
+                    ensure_ascii=False,
+                )
+            except Exception:
+                yield "[]"
+        yield "\n}"
 
     today = date.today().isoformat()
-    content = json.dumps(dump, default=_default, ensure_ascii=False)
-
     return StreamingResponse(
-        iter([content]),
+        _stream(),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="db_backup_{today}.json"'},
     )
