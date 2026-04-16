@@ -12,7 +12,7 @@ and validates that segments sum to group totals.
 import logging
 from typing import Optional
 
-from services.llm_client import call_llm_json_async, TIER_DEFAULT
+from services.llm_client import call_llm_json_async, TIER_DEFAULT, TIER_FAST
 from prompts.section_prompts import SEGMENT_DECOMPOSITION_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ async def extract_segments(
     )
 
     try:
-        result = await call_llm_json_async(prompt, max_tokens=max_tokens, tier=TIER_DEFAULT)
+        result = await call_llm_json_async(prompt, max_tokens=max_tokens, tier=TIER_FAST)
 
         if not isinstance(result, dict):
             logger.warning("Segment extractor: unexpected result type %s", type(result))

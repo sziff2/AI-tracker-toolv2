@@ -25,7 +25,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm_client import call_llm_json_async, TIER_DEFAULT
+from services.llm_client import call_llm_json_async, TIER_FAST
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ async def extract_non_gaap_bridge(text: str, max_tokens: int = 4096) -> dict:
     prompt = NON_GAAP_BRIDGE_PROMPT.format(text=text[:20000])
 
     try:
-        result = await call_llm_json_async(prompt, max_tokens=max_tokens, tier=TIER_DEFAULT)
+        result = await call_llm_json_async(prompt, max_tokens=max_tokens, tier=TIER_FAST)
         if not isinstance(result, dict):
             return {"bridges": [], "has_bridge": True, "error": "unexpected response type"}
 

@@ -169,9 +169,27 @@ async def _extract_with_sections(
         logger.info("Captured %d chars of MD&A narrative for synthesis", len(mda_narrative))
 
     # ── Step 2: Build extraction tasks per section ───────────
+    #
+    # For structured filings (10-K, 10-Q, earnings releases) with tables,
+    # the two-pass extractor handles financial statement data more
+    # accurately and cheaply (Haiku label classification, numbers from
+    # parser — can't hallucinate). So we SKIP section-based LLM extraction
+    # for financial_statements / highlights sections and only run it for
+    # narrative sections (MD&A, risk factors, guidance) where the LLM
+    # adds genuine value interpreting management language.
+    #
+    # This cuts extraction cost by ~80-90% on dense 10-Qs where financial
+    # statement sections dominate.
+    has_two_pass = tables_data and doc_type in SECTION_SPLIT_TYPES
+    _SKIP_SECTION_TYPES = {"financial_statements", "highlights", "boilerplate"}
+
     extraction_tasks = []
 
     for section in sections:
+        # Skip sections that two-pass handles better
+        if has_two_pass and section.section_type in _SKIP_SECTION_TYPES:
+            continue
+
         prompt_template = SECTION_PROMPT_MAP.get(section.section_type)
 
         if prompt_template is None:
@@ -190,6 +208,12 @@ async def _extract_with_sections(
             "section_type": section.section_type,
             "max_tokens": section.max_tokens,
         })
+
+    if has_two_pass:
+        logger.info(
+            "Two-pass active: %d section extraction tasks (skipped financial_statements/highlights)",
+            len(extraction_tasks),
+        )
 
     # ── Step 3: Run all section extractions in parallel ──────
     # Uses call_llm_native_async (true async + retry) instead of
@@ -233,16 +257,15 @@ async def _extract_with_sections(
     if not segment_text:
         segment_text = text[:30000]
 
-    # Also run table-first extraction if tables available
-    table_task = None
-    if tables_data and doc_type in SECTION_SPLIT_TYPES:
-        table_task = _extract_from_tables(db, document, tables_data)
-
     # Two-pass structural extraction for financial statements
-    # (splits into IS/BS/CF/segments, LLM only classifies labels, numbers from parser)
+    # (splits into IS/BS/CF/KPI/segments, LLM only classifies labels, numbers from parser).
+    # When two-pass is active, skip the older table-first extraction — it's
+    # redundant and costs extra Haiku calls for overlapping results.
+    table_task = None
     two_pass_task = None
     if tables_data and doc_type in SECTION_SPLIT_TYPES:
         two_pass_task = _extract_two_pass(db, document, tables_data, sector, industry)
+        # table-first extraction disabled when two-pass runs — same data, lower quality
 
     # Gather all tasks
     section_results = await asyncio.gather(
