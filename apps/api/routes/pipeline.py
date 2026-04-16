@@ -687,6 +687,17 @@ async def get_contract_history(
 # Admin — Database backup (streamed JSON download)
 # ─────────────────────────────────────────────────────────────────
 
+@router.post("/admin/backup/notify")
+async def trigger_backup_notification():
+    """Trigger the daily backup summary → Teams notification now (via Celery worker)."""
+    try:
+        from apps.worker.tasks import daily_backup_report
+        daily_backup_report.delay()
+        return {"status": "sent_to_celery_worker"}
+    except Exception as exc:
+        return {"status": "celery_failed", "error": str(exc)}
+
+
 @router.get("/admin/backup")
 async def download_backup(db: AsyncSession = Depends(get_db)):
     """
