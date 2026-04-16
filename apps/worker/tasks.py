@@ -89,6 +89,11 @@ celery_app.conf.beat_schedule = {
         "task": "apps.worker.tasks.refresh_prices_task",
         "schedule": crontab(hour=18, minute=0),
     },
+    # Daily DB backup summary + download link — 06:00 UTC (7 AM BST)
+    "daily-backup": {
+        "task": "apps.worker.tasks.daily_backup_report",
+        "schedule": crontab(hour=6, minute=0),
+    },
 }
 
 
@@ -211,3 +216,96 @@ def run_agent_on_demand_task(
     except Exception as e:
         logger.exception("run_agent_on_demand failed: %s", e)
         raise
+
+
+# ─────────────────────────────────────────────────────────────────
+# Daily DB backup — posts summary + download link to Teams
+# ─────────────────────────────────────────────────────────────────
+
+@celery_app.task(name="apps.worker.tasks.daily_backup_report")
+def daily_backup_report():
+    """Count rows in key tables and post a summary to Teams with a download link."""
+    result = _run_async_task(_async_daily_backup())
+    logger.info("[BACKUP] Daily report posted: %s", result.get("status"))
+    return result
+
+
+async def _async_daily_backup():
+    from datetime import date
+    from sqlalchemy import text
+    import httpx
+
+    from apps.api.database import AsyncSessionLocal
+
+    TABLES = [
+        "companies", "documents", "document_sections", "extracted_metrics",
+        "extraction_profiles", "harvested_documents", "research_outputs",
+        "valuation_scenarios", "scenario_snapshots", "price_records",
+        "portfolio_holdings", "portfolios",
+    ]
+
+    row_counts = {}
+    async with AsyncSessionLocal() as db:
+        for table in TABLES:
+            try:
+                result = await db.execute(text(f'SELECT COUNT(*) FROM "{table}"'))
+                row_counts[table] = result.scalar()
+            except Exception:
+                row_counts[table] = "error"
+
+    today = date.today().isoformat()
+    total_rows = sum(v for v in row_counts.values() if isinstance(v, int))
+
+    # Build row count summary lines
+    summary_lines = [f"**{table}**: {count:,}" if isinstance(count, int) else f"**{table}**: {count}"
+                     for table, count in row_counts.items()]
+
+    download_url = f"{settings.app_base_url}/api/v1/admin/backup"
+
+    # Adaptive Card for Teams
+    payload = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": f"💾 Daily DB Backup — {today}",
+                "weight": "Bolder",
+                "size": "Medium",
+            },
+            {
+                "type": "TextBlock",
+                "text": f"**Total rows**: {total_rows:,} across {len(TABLES)} tables",
+                "wrap": True,
+            },
+            {
+                "type": "TextBlock",
+                "text": "   \n".join(summary_lines),
+                "wrap": True,
+                "size": "Small",
+            },
+        ],
+        "actions": [
+            {
+                "type": "Action.OpenUrl",
+                "title": "Download Backup JSON",
+                "url": download_url,
+            }
+        ],
+    }
+
+    webhook_url = settings.teams_webhook_url
+    if not webhook_url:
+        logger.warning("[BACKUP] No TEAMS_WEBHOOK_URL configured, skipping notification")
+        return {"status": "skipped", "reason": "no webhook", "row_counts": row_counts}
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(webhook_url, json=payload)
+            resp.raise_for_status()
+        logger.info("[BACKUP] Teams backup notification sent")
+        return {"status": "sent", "total_rows": total_rows, "row_counts": row_counts}
+    except Exception as exc:
+        logger.error("[BACKUP] Teams notification failed: %s", exc)
+        return {"status": "failed", "error": str(exc)[:200]}
