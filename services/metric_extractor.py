@@ -181,13 +181,20 @@ async def _extract_with_sections(
     # This cuts extraction cost by ~80-90% on dense 10-Qs where financial
     # statement sections dominate.
     has_two_pass = tables_data and doc_type in SECTION_SPLIT_TYPES
-    _SKIP_SECTION_TYPES = {"financial_statements", "highlights", "boilerplate"}
+
+    # When two-pass is active, only run section LLM extraction for narrative
+    # sections where the LLM adds genuine value (MD&A tone, guidance, risk).
+    # Everything else (financial_statements, notes, highlights, boilerplate,
+    # preamble) is either handled by two-pass table extraction or doesn't
+    # produce useful metrics. A bank 10-Q can have 100+ sections — sending
+    # each to Sonnet costs $5+ for mostly noise.
+    _NARRATIVE_SECTION_TYPES = {"mda", "guidance", "risk_factors"}
 
     extraction_tasks = []
 
     for section in sections:
-        # Skip sections that two-pass handles better
-        if has_two_pass and section.section_type in _SKIP_SECTION_TYPES:
+        # When two-pass runs, only extract narrative sections via LLM
+        if has_two_pass and section.section_type not in _NARRATIVE_SECTION_TYPES:
             continue
 
         prompt_template = SECTION_PROMPT_MAP.get(section.section_type)
