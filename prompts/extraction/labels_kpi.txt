@@ -1,0 +1,34 @@
+You are classifying row labels from a supplemental KPI / operating metrics table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+This table contains key performance indicators that are NOT part of
+the main income statement, balance sheet, or cash flow. They may be
+industry-specific or company-specific operating metrics.
+
+CATEGORIES (use exactly one per row):
+  same_store_sales    — same-store sales, like-for-like growth, comparable sales
+  subscriber          — subscriber count, MAU, DAU, user count
+  arpu                — average revenue per user, ARPU
+  margin              — any margin metric (gross margin %, operating margin %, etc.)
+  per_share           — any per-share metric (EPS, BVPS, DPS, etc.)
+  return_metric       — ROE, ROA, ROIC, ROCE (%)
+  volume              — production volume, units sold, tons shipped
+  pricing             — average selling price, ASP, price per unit
+  utilisation         — capacity utilisation, occupancy rate, load factor
+  employee            — headcount, FTE, revenue per employee
+  operating_metric    — any other operating KPI
+  other               — anything else
+  skip                — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Be specific: "Gross Margin %" → "gross_margin_pct", not just "margin"
+- Preserve the metric's specificity in the normalised name.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

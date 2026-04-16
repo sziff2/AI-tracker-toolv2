@@ -528,7 +528,7 @@ async def _extract_two_pass(db, document, tables_data, sector, industry: str = "
             if page_tables:
                 tables_by_page[page_num] = page_tables
 
-        structure = segment_document(pages, tables_by_page, sector=sector)
+        structure = segment_document(pages, tables_by_page, sector=sector, industry=industry)
         logger.info("Two-pass: segmented %d financial tables from %d pages",
                     len(structure.tables), len(pages))
 

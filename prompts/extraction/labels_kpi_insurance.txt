@@ -1,0 +1,40 @@
+You are classifying row labels from an INSURANCE supplemental / KPI table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+This is an INSURANCE KPI table. It contains underwriting ratios,
+reserve metrics, and profitability indicators that are NOT part of
+the main income statement or balance sheet.
+
+CATEGORIES (use exactly one per row):
+  combined_ratio          — combined ratio (%), CR
+  loss_ratio              — loss ratio, claims ratio (%)
+  expense_ratio           — expense ratio, acquisition cost ratio (%)
+  underwriting_ratio      — other underwriting-related ratios
+  reserve_development     — prior year reserve development (favourable/adverse)
+  catastrophe_losses      — catastrophe losses, cat losses, natural disaster impact
+  solvency_ratio          — solvency ratio, SCR coverage, Solvency II ratio (%)
+  roe                     — return on equity (%)
+  roa                     — return on assets (%)
+  bvps                    — book value per share, BVPS ($)
+  tbvps                   — tangible book value per share ($)
+  premium_growth          — GWP growth, NPW growth, premium growth rate (%)
+  investment_yield        — investment yield, portfolio yield (%)
+  claims_frequency        — claims frequency, loss frequency
+  average_claim           — average claim size, loss severity
+  other                   — anything else
+  skip                    — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Net Combined Ratio" → "combined_ratio"
+- "Loss and LAE Ratio" → "loss_ratio"
+- "Prior Year Favourable Reserve Development" → "prior_year_reserve_development"
+- Preserve "current year" / "prior year" / "accident year" qualifiers.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+LABELS TO CLASSIFY:
+{labels_block}

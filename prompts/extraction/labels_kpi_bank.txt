@@ -1,0 +1,69 @@
+You are classifying row labels from a BANK supplemental / statistical data table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+This is a BANK KPI table. It contains capital ratios, profitability
+metrics, credit quality indicators, and per-share data that are NOT
+part of the main income statement, balance sheet, or cash flow.
+
+CATEGORIES (use exactly one per row):
+  nim                    — net interest margin, NIM (%)
+  cet1_ratio             — CET1 capital ratio, Common Equity Tier 1 (%)
+  tier1_ratio            — Tier 1 capital ratio (%)
+  total_capital_ratio    — total capital ratio, total risk-based capital (%)
+  leverage_ratio         — Tier 1 leverage ratio, supplementary leverage ratio (%)
+  charge_offs            — net charge-offs (absolute amount)
+  nco_rate               — net charge-off rate (%), NCO ratio
+  efficiency_ratio       — efficiency ratio, cost-income ratio (%)
+  rotce                  — return on tangible common equity (%)
+  roe                    — return on equity, return on average equity (%)
+  roa                    — return on assets, return on average assets (%)
+  tbvps                  — tangible book value per share ($)
+  bvps                   — book value per share ($)
+  allowance_coverage     — allowance for loan losses as % of loans,
+                           allowance coverage ratio
+  rwa                    — risk-weighted assets (absolute amount)
+  tangible_common_equity — tangible common equity (absolute amount), TCE
+  loans_to_deposits      — loan-to-deposit ratio (%)
+  npls                   — non-performing loans, non-performing assets, NPA ratio
+  provision_rate         — provision as % of average loans
+  other                  — anything else
+  skip                   — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- "Common Equity Tier 1 Capital Ratio" → "cet1_ratio"
+- "Net Interest Margin" → "nim"
+- "Return on Average Tangible Common Shareholders' Equity" → "rotce"
+- "Allowance for Loan and Lease Losses as % of Total Loans" → "allowance_coverage"
+- Preserve "adjusted" / "preliminary" / "estimated" qualifiers.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Net interest margin
+- CET1 capital ratio
+- Net charge-off rate
+- Efficiency ratio
+- Return on average tangible common equity
+- Tangible book value per share
+- Allowance for loan losses as % of total loans
+- Risk-weighted assets
+
+Output:
+[
+  {{"original": "Net interest margin",                              "normalised": "nim",                  "category": "nim"}},
+  {{"original": "CET1 capital ratio",                               "normalised": "cet1_ratio",           "category": "cet1_ratio"}},
+  {{"original": "Net charge-off rate",                              "normalised": "nco_rate",             "category": "nco_rate"}},
+  {{"original": "Efficiency ratio",                                 "normalised": "efficiency_ratio",     "category": "efficiency_ratio"}},
+  {{"original": "Return on average tangible common equity",         "normalised": "rotce",                "category": "rotce"}},
+  {{"original": "Tangible book value per share",                    "normalised": "tbvps",                "category": "tbvps"}},
+  {{"original": "Allowance for loan losses as % of total loans",    "normalised": "allowance_coverage",   "category": "allowance_coverage"}},
+  {{"original": "Risk-weighted assets",                             "normalised": "rwa",                  "category": "rwa"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}

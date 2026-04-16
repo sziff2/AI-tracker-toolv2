@@ -105,6 +105,29 @@ _INSURANCE_PL_OVERRIDE_KEYWORDS = {
     "acquisition costs", "investment income", "realised gains",
 }
 
+# Sector-specific KPI keywords — supplemental / statistical data tables
+_BANK_KPI_KEYWORDS = {
+    "net interest margin", "nim", "cet1", "tier 1 capital", "capital ratio",
+    "charge-off", "net charge-off", "nco rate", "efficiency ratio",
+    "rotce", "return on tangible", "tbvps", "tangible book value",
+    "allowance coverage", "rwa", "risk-weighted", "risk weighted",
+    "selected financial data", "statistical data", "supplemental data",
+    "key metrics", "financial highlights",
+}
+
+# Note: combined ratio, loss ratio, expense ratio are intentionally NOT here
+# because they overlap with _INSURANCE_PL_OVERRIDE_KEYWORDS and would
+# cause standalone KPI tables to score too high on P&L. They're captured
+# in the label prompt instead once the table is classified as KPI.
+_INSURANCE_KPI_KEYWORDS = {
+    "reserve development", "prior year development",
+    "catastrophe losses", "cat losses", "natural catastrophe",
+    "solvency ratio", "solvency capital", "scr coverage",
+    "book value per share", "bvps", "tangible book value",
+    "selected financial data", "underwriting summary",
+    "supplemental data", "key metrics", "financial highlights",
+}
+
 _CASH_FLOW_KEYWORDS = {
     "operating cash flow", "cash from operations", "cash flow from operations",
     "cash generated from operations", "capital expenditure", "capex",
@@ -208,11 +231,12 @@ def _flatten_table_text(table: list[list]) -> str:
     return " ".join(parts)
 
 
-def classify_table(table: list[list], page_text: str, page_num: int, sector: str = None) -> StatementType:
+def classify_table(table: list[list], page_text: str, page_num: int,
+                    sector: str = None, industry: str = None) -> StatementType:
     """
     Classify a table as income statement, balance sheet, cash flow, etc.
     Uses keyword matching against row labels and surrounding page text.
-    Sector-aware: banks and insurers get boosted P&L detection.
+    Sector+industry-aware: banks and insurers get boosted P&L and KPI detection.
     """
     if not table or len(table) < 2:
         return StatementType.UNKNOWN
@@ -240,10 +264,16 @@ def classify_table(table: list[list], page_text: str, page_num: int, sector: str
             scores[StatementType.CASH_FLOW] += 1
 
     # Sector-specific P&L boost: banks and insurers have P&L keywords
-    # that the generic classifier mistakes for BS
+    # that the generic classifier mistakes for BS.
+    # Industry is preferred (more specific) — "Financials" alone is ambiguous.
     sector_lower = (sector or "").lower()
-    is_bank = any(k in sector_lower for k in ["financ", "bank", "lending", "credit"])
-    is_insurance = any(k in sector_lower for k in ["insur", "underwrit"])
+    industry_lower = (industry or "").lower()
+    combined = f"{industry_lower} {sector_lower}"
+    is_bank = any(k in combined for k in [
+        "bank", "lending", "consumer finance", "credit services",
+        "mortgage", "thrift", "capital markets",
+    ])
+    is_insurance = any(k in combined for k in ["insur", "reinsur", "underwrit"])
 
     if is_bank:
         for kw in _BANK_PL_OVERRIDE_KEYWORDS:
@@ -265,11 +295,17 @@ def classify_table(table: list[list], page_text: str, page_num: int, sector: str
         if kw in context:
             return StatementType.EQUITY_CHANGES
 
-    for kw in _KPI_KEYWORDS:
-        if kw in context:
-            best_score = max(scores.values())
-            if best_score < 3:
-                return StatementType.KPI_TABLE
+    # KPI detection — sector-boosted. Bank/insurance supplemental tables
+    # (NIM, CET1, combined ratio, etc.) are critical but don't match P&L/BS/CF.
+    kpi_score = sum(1 for kw in _KPI_KEYWORDS if kw in context)
+    if is_bank:
+        kpi_score += sum(1 for kw in _BANK_KPI_KEYWORDS if kw in context)
+    if is_insurance:
+        kpi_score += sum(1 for kw in _INSURANCE_KPI_KEYWORDS if kw in context)
+    if kpi_score >= 1:
+        best_score = max(scores.values())
+        if best_score < 3:
+            return StatementType.KPI_TABLE
 
     for kw in _GUIDANCE_KEYWORDS:
         if kw in context:
@@ -603,14 +639,17 @@ def segment_document(
     pages: list[dict],
     tables_by_page: dict,
     sector: str = None,
+    industry: str = None,
 ) -> FinancialDocumentStructure:
     """
     Main entry point. Takes parsed document pages and pdfplumber tables.
-    Pass sector (e.g. "Financials") for bank/insurance-aware classification.
+    Pass sector + industry for bank/insurance-aware classification.
 
     Args:
         pages: list of {"page_num": int, "text": str}
         tables_by_page: dict mapping page_num -> list of tables (list[list[list]])
+        sector: e.g. "Financials"
+        industry: e.g. "Banks", "Consumer Finance", "Property & Casualty Insurance"
 
     Returns:
         Complete FinancialDocumentStructure
@@ -641,7 +680,8 @@ def segment_document(
                 continue
 
             # Classify the table
-            stmt_type = classify_table(raw_table, page_text, page_num, sector=sector)
+            stmt_type = classify_table(raw_table, page_text, page_num,
+                                       sector=sector, industry=industry)
 
             # Extract periods from headers
             periods = extract_periods_from_headers(raw_table)

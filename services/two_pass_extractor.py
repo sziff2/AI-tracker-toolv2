@@ -56,6 +56,7 @@ _PROMPT_BASE: dict[StatementType, str] = {
     StatementType.BALANCE_SHEET:     "labels_balance_sheet",
     StatementType.CASH_FLOW:         "labels_cash_flow",
     StatementType.SEGMENT_BREAKDOWN: "labels_segment",
+    StatementType.KPI_TABLE:         "labels_kpi",
 }
 
 # ── Category mappings per statement type ────────────────────────
@@ -82,6 +83,10 @@ _CATEGORY_HINTS: dict[StatementType, list[str]] = {
     ],
     StatementType.SEGMENT_BREAKDOWN: [
         "revenue", "operating_profit", "ebit", "ebitda", "assets",
+    ],
+    StatementType.KPI_TABLE: [
+        "capital_ratio", "efficiency_ratio", "return_metric", "margin",
+        "per_share", "credit_quality", "operating_metric", "other",
     ],
 }
 
