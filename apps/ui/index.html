@@ -522,6 +522,10 @@ select.fi{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div id="pending-review-body" style="display:none;margin-top:4px">
         <div id="pending-review-inner"><div class="ld" style="margin:8px 0;font-size:12px">Loading…</div></div>
       </div>
+      <div class="col" onclick="toggleCoverageGapsPanel()" style="margin-top:8px"><span style="font-size:12px">📅 Coverage gaps <span id="coverage-gaps-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:4px">0</span></span><span id="coverage-gaps-arr">▸</span></div>
+      <div id="coverage-gaps-body" style="display:none;margin-top:4px">
+        <div id="coverage-gaps-inner"><div class="ld" style="margin:8px 0;font-size:12px">Loading…</div></div>
+      </div>
       <div class="col" onclick="toggleHarvestLogPanel()" style="margin-top:8px"><span style="font-size:12px">📋 Recent harvest log</span><span id="harvest-log-panel-arr">▸</span></div>
       <div id="harvest-log-panel-body" style="display:none;margin-top:4px">
         <div id="harvest-log-panel-inner"><div class="ld" style="margin:8px 0;font-size:12px">Loading…</div></div>
@@ -5718,6 +5722,7 @@ function _hsToggleConfig(safe){
 }
 async function loadHarvesterSourcesPanel(){
   refreshPendingReviewBadge();
+  refreshCoverageGapsBadge();
   var el=E('harvester-sources-table');if(!el)return;
   el.innerHTML='<div class="ld" style="margin:8px 0;font-size:13px">Loading…</div>';
   try{
@@ -5897,6 +5902,93 @@ async function dismissPendingReview(id){
     loadPendingReview();
   }catch(e){
     alert('Failed to dismiss: '+e.message);
+  }
+}
+
+var _coverageGapsOpen=false;
+function toggleCoverageGapsPanel(){
+  _coverageGapsOpen=!_coverageGapsOpen;
+  var body=E('coverage-gaps-body'),arr=E('coverage-gaps-arr');
+  if(_coverageGapsOpen){body.style.display='block';arr.textContent='▾';loadCoverageGaps();}
+  else{body.style.display='none';arr.textContent='▸';}
+}
+
+async function refreshCoverageGapsBadge(){
+  try{
+    var r=await fetch('/api/v1/harvester/coverage-gaps');
+    if(!r.ok)return;
+    var d=await r.json();
+    var b=E('coverage-gaps-badge');if(!b)return;
+    // Only count overdue/critical/source_broken in the badge — "warning"
+    // is an early-warning not-yet-overdue signal and shouldn't look alarming.
+    var alarming=(d.gaps||[]).filter(function(g){return g.severity!=='warning';}).length;
+    if(alarming>0){b.textContent=alarming;b.style.display='inline-block';}
+    else{b.style.display='none';}
+  }catch(e){}
+}
+
+async function loadCoverageGaps(){
+  var el=E('coverage-gaps-inner');if(!el)return;
+  el.innerHTML='<div class="ld" style="margin:6px 0;font-size:12px">Loading…</div>';
+  try{
+    var r=await fetch('/api/v1/harvester/coverage-gaps');
+    if(!r.ok)throw new Error('Failed');
+    var d=await r.json();
+    refreshCoverageGapsBadge();
+    if(!d.count){
+      el.innerHTML='<div style="font-family:var(--sans);font-size:12px;color:var(--text4);padding:6px 0">No coverage gaps — every active company is up to date vs its learned reporting cadence.</div>';
+      return;
+    }
+    var sevColor={warning:'var(--text3)',overdue:'var(--amber)',critical:'var(--red)',source_broken:'var(--red)'};
+    var sevOrder={source_broken:0,critical:1,overdue:2,warning:3};
+    var gaps=(d.gaps||[]).slice().sort(function(a,b){
+      var so=(sevOrder[a.severity]||9)-(sevOrder[b.severity]||9);
+      if(so!==0)return so;
+      return (b.days_overdue||0)-(a.days_overdue||0);
+    });
+    var h='<div style="font-family:var(--sans);font-size:11px;color:var(--text3);margin:4px 0 8px">Documents you should have but don\'t. Expected dates are learned from each company\'s historical reporting cadence, not a static rule. Auto-rescans run daily at 14:00 UTC (rate-limited to 1/day/gap, 3 total attempts).</div>';
+    h+='<table class="kt" style="margin-top:4px">';
+    h+='<thead><tr><th>Severity</th><th>Ticker</th><th>Doc type</th><th>Period</th><th>Expected by</th><th>Overdue</th><th>Reason</th><th style="text-align:right">Actions</th></tr></thead><tbody>';
+    gaps.forEach(function(g){
+      h+='<tr>';
+      h+='<td style="font-size:11px;font-weight:700;color:'+(sevColor[g.severity]||'var(--text3)')+'">'+esc(g.severity)+'</td>';
+      h+='<td class="kn">'+esc(g.ticker||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(g.doc_type||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3)">'+esc(g.expected_period||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+esc(g.expected_by||'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text3);text-align:right">'+(g.days_overdue>0?g.days_overdue+'d':'—')+'</td>';
+      h+='<td style="font-size:11px;color:var(--text2);max-width:320px">'+esc(g.reason||'—')+'</td>';
+      h+='<td style="text-align:right;white-space:nowrap">';
+      var safeTicker=encodeURIComponent(g.ticker||'');
+      var safeType=encodeURIComponent(g.doc_type||'');
+      var safePeriod=encodeURIComponent(g.expected_period||'');
+      h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="rescanCoverageGap(\''+safeTicker+'\',\''+safeType+'\',\''+safePeriod+'\',this)">Rescan</button>';
+      h+='</td></tr>';
+    });
+    h+='</tbody></table>';
+    el.innerHTML=h;
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);font-size:12px">Failed to load coverage gaps.</div>';
+  }
+}
+
+async function rescanCoverageGap(ticker,docType,period,btn){
+  if(btn){btn.disabled=true;btn.textContent='Scanning…';}
+  try{
+    var url='/api/v1/harvester/coverage-gaps/'+ticker+'/rescan';
+    var qs=[];
+    if(docType)qs.push('doc_type='+docType);
+    if(period)qs.push('expected_period='+period);
+    if(qs.length)url+='?'+qs.join('&');
+    var r=await fetch(url,{method:'POST'});
+    if(!r.ok)throw new Error('Failed');
+    var d=await r.json();
+    var newDocs=(d.summary&&d.summary.new)||0;
+    alert('Rescan complete — '+newDocs+' new document(s) discovered.');
+    loadCoverageGaps();
+  }catch(e){
+    alert('Rescan failed: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Rescan';}
   }
 }
 

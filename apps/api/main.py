@@ -278,6 +278,31 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS ix_ingestion_triage_source_url ON ingestion_triage(source_url)"
         ))
 
+        # ── Coverage rescan log ──────────────────────────────────
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS coverage_rescan_log (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id) NOT NULL,
+                ticker TEXT,
+                doc_type TEXT,
+                expected_period TEXT,
+                triggered_by TEXT NOT NULL DEFAULT 'auto',
+                triggered_at TIMESTAMPTZ NOT NULL,
+                sources_tried JSONB,
+                candidates_found INTEGER,
+                result TEXT,
+                error_message TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_coverage_rescan_company ON coverage_rescan_log(company_id)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_coverage_rescan_triggered_at ON coverage_rescan_log(triggered_at)"
+        ))
+
     # ── Agent registry autodiscovery ─────────────────────────────
     from agents.registry import AgentRegistry
     AgentRegistry.autodiscover()

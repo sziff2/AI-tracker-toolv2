@@ -883,3 +883,33 @@ class IngestionTriage(Base, TimestampMixin):
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
 
     company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Coverage Rescan Log — one row per auto/manual rescan attempt
+# ─────────────────────────────────────────────────────────────────
+class CoverageRescanLog(Base, TimestampMixin):
+    """Records every Coverage-Monitor-triggered rescan attempt so we
+    don't hammer a broken source. The Coverage Monitor checks this table
+    before triggering a new scan — if the same (company, doc_type,
+    expected_period) was rescanned in the last 24h, skip."""
+    __tablename__ = "coverage_rescan_log"
+    __table_args__ = (
+        Index("ix_coverage_rescan_company", "company_id"),
+        Index("ix_coverage_rescan_triggered_at", "triggered_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    ticker = Column(Text, nullable=True)
+    doc_type = Column(Text, nullable=True)
+    expected_period = Column(Text, nullable=True)
+    # "auto" = triggered by CoverageMonitor. "manual" = analyst clicked Rescan.
+    triggered_by = Column(Text, nullable=False, default="auto")
+    triggered_at = Column(DateTime(timezone=True), nullable=False)
+    sources_tried = Column(JSONB, nullable=True)     # list[str]
+    candidates_found = Column(Integer, nullable=True)
+    result = Column(Text, nullable=True)             # success | no_new_candidates | error
+    error_message = Column(Text, nullable=True)
+
+    company = relationship("Company")

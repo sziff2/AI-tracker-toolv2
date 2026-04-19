@@ -230,6 +230,40 @@ async def dismiss_pending_review(hd_id: str, db: AsyncSession = Depends(get_db))
     return {"ok": True}
 
 
+# ── GET /harvester/coverage-gaps ──────────────────────────────────
+
+@router.get("/harvester/coverage-gaps")
+async def coverage_gaps(db: AsyncSession = Depends(get_db)):
+    """Per-company coverage gaps with learned cadence. Does NOT trigger
+    rescans — pass ?refresh=true to re-run detection (it's already fast)."""
+    from agents.ingestion.coverage_monitor import CoverageMonitor
+    result = await CoverageMonitor().run_daily_check(auto_trigger=False)
+    return {
+        "count": result.gaps_found,
+        "gaps":  result.gap_details,
+    }
+
+
+@router.post("/harvester/coverage-gaps/{ticker:path}/rescan")
+async def rescan_gap(
+    ticker: str,
+    doc_type: Optional[str] = None,
+    expected_period: Optional[str] = None,
+):
+    """Manual rescan trigger for a specific coverage gap. Bypasses the
+    24h auto-throttle because the analyst explicitly asked."""
+    from agents.ingestion.coverage_monitor import CoverageMonitor
+    clean = ticker.strip().upper()
+    try:
+        summary = await CoverageMonitor().rescan_one_gap(
+            clean, doc_type=doc_type, expected_period=expected_period,
+        )
+        return {"ok": True, "ticker": clean, "summary": summary}
+    except Exception as exc:
+        logger.error("Manual rescan failed for %s: %s", clean, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc)[:200])
+
+
 # ── GET /harvester/coverage ───────────────────────────────────────
 
 @router.get("/harvester/coverage")

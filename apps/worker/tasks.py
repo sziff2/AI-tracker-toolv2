@@ -94,6 +94,14 @@ celery_app.conf.beat_schedule = {
         "task": "apps.worker.tasks.daily_backup_report",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Coverage Monitor — 14:00 UTC daily (between European close and US open).
+    # Detects overdue documents and auto-triggers targeted rescans for
+    # eligible gaps. Per-gap 24h rate limit + 3-attempt cap avoids
+    # hammering broken sources.
+    "daily-coverage-monitor": {
+        "task": "apps.worker.tasks.coverage_monitor_task",
+        "schedule": crontab(hour=14, minute=0),
+    },
 }
 
 
@@ -143,6 +151,30 @@ def harvest_new_documents(tickers: list = None, skip_llm: bool = False):
 async def _async_harvest(tickers=None, skip_llm=False):
     from services.harvester import run_harvest
     return await run_harvest(tickers=tickers, skip_llm=skip_llm)
+
+
+@celery_app.task(name="apps.worker.tasks.coverage_monitor_task")
+def coverage_monitor_task():
+    """Daily Coverage Monitor — detects overdue documents and auto-triggers
+    targeted rescans for eligible gaps. Runs at 14:00 UTC via Celery Beat."""
+    result = _run_async_task(_async_coverage_monitor())
+    logger.info("[COVERAGE] Daily monitor complete: %s", result)
+    return result
+
+
+async def _async_coverage_monitor():
+    from agents.ingestion.coverage_monitor import CoverageMonitor
+    res = await CoverageMonitor().run_daily_check(auto_trigger=True)
+    return {
+        "gaps_found":                res.gaps_found,
+        "rescans_triggered":         res.rescans_triggered,
+        "rescans_skipped_recent":    res.rescans_skipped_recent,
+        "rescans_skipped_exhausted": res.rescans_skipped_exhausted,
+        "rescan_successes":          res.rescan_successes,
+        "rescan_no_new":             res.rescan_no_new,
+        "rescan_errors":             res.rescan_errors,
+        "triggered_tickers":         res.triggered_tickers,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
