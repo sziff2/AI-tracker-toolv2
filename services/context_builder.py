@@ -76,28 +76,34 @@ async def build_agent_context(
         async with AsyncSessionLocal() as s:
             return await fn(s, *args, **kwargs)
 
+    prior_period_label = _previous_period(period)
+
     (
         company_meta,
         thesis,
         kpis,
         guidance,
+        prior_guidance,
         prior_period,
         tracked_kpis,
         extraction_ctx,
         context_contract,
         transcript_analysis,
         presentation_analysis,
+        annual_report_analysis,
     ) = await asyncio.gather(
         _with_session(_build_company_meta, company_id),
         _with_session(build_thesis_context, company_id),
         _with_session(build_kpi_summary, company_id, period),
         _with_session(build_guidance_summary, company_id, period),
+        _with_session(build_guidance_summary, company_id, prior_period_label),
         _with_session(build_prior_period_context, company_id, period),
         _with_session(build_tracked_kpi_context, company_id),
         _with_session(build_extraction_context, company_id, period),
         _with_session(build_context_contract),
         _with_session(_load_document_analysis, company_id, period, "transcript_analysis"),
         _with_session(_load_document_analysis, company_id, period, "presentation_analysis"),
+        _with_session(_load_document_analysis, company_id, period, "annual_report_analysis"),
     )
 
     # Fix 2a — only load raw transcript/presentation text as fallback
@@ -121,6 +127,7 @@ async def build_agent_context(
         "thesis":           thesis,
         "extracted_metrics": kpis,
         "guidance":          guidance,
+        "prior_guidance":    prior_guidance,
         "prior_period":      prior_period,
         "tracked_kpis":      tracked_kpis,
         # Enriched extraction outputs
@@ -135,6 +142,7 @@ async def build_agent_context(
         "presentation_text":       presentation_text,
         "transcript_deep_dive":    transcript_analysis,
         "presentation_analysis":   presentation_analysis,
+        "annual_report_analysis":  annual_report_analysis,
         # Shared macro assumptions — injected into every agent prompt
         # No agent may contradict these assumptions (enforced by QC agent)
         "context_contract":    context_contract,

@@ -121,15 +121,30 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
     except Exception:
         pass
 
-    # Set the document text
+    # Dispatch by document type. Annual reports get a larger window
+    # (60k chars) because the strategic narrative, risk factor delta,
+    # and footnote disclosures we want are often deep into the document.
+    # Transcripts and presentations are tighter at 30k.
     if dtype == "transcript":
         inputs["transcript_text"] = full_text[:30000]
         agent_id = "transcript_deep_dive"
         output_type = "transcript_analysis"
-    else:
+        analysis_model = settings.agent_fast_model  # Haiku
+    elif dtype == "presentation":
         inputs["presentation_text"] = full_text[:30000]
         agent_id = "presentation_analysis"
         output_type = "presentation_analysis"
+        analysis_model = settings.agent_fast_model  # Haiku
+    elif dtype == "annual_report":
+        inputs["annual_report_text"] = full_text[:60000]
+        agent_id = "annual_report_deep_read"
+        output_type = "annual_report_analysis"
+        # Sonnet for annual reports — the deltas and footnote interpretation
+        # are higher-stakes and the document is longer / denser.
+        analysis_model = settings.agent_default_model
+    else:
+        logger.warning("_analyse_document_with_llm called with unsupported dtype %r", dtype)
+        return
 
     # Build and run prompt
     prompt_result = load_prompt(agent_id, inputs)
@@ -137,7 +152,7 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
 
     result = await call_llm_native_async(
         prompt,
-        model=settings.agent_fast_model,  # Haiku for cost efficiency
+        model=analysis_model,
         max_tokens=4096,
         feature=f"doc_{dtype}_analysis",
     )
@@ -520,7 +535,7 @@ async def run_batch_pipeline(
                                 return ("error", str(e)[:200])
 
                         async def _run_doc_analysis():
-                            if dtype not in ("transcript", "presentation"):
+                            if dtype not in ("transcript", "presentation", "annual_report"):
                                 return None
                             if not full_text or len(full_text) < 500:
                                 return None

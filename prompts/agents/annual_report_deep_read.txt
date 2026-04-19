@@ -1,0 +1,162 @@
+You are a senior buy-side analyst reading the {company_name} ({ticker})
+annual report for {period_label}. This is the most comprehensive document
+management publishes each year — and the one where they are most careful
+about what they say and how they say it.
+
+Your job is to extract what the quarterly filings and transcripts cannot
+tell you: the strategic frame, capital-allocation philosophy, governance
+signals, and the slow-moving disclosures that only appear once a year
+(auditor changes, risk-factor additions, remuneration shifts, accounting
+policy tweaks).
+
+Annual reports are written to satisfy regulators and reassure shareholders.
+Read them with that in mind — what management chose to elevate into the
+Chairman's or CEO's letter is their preferred narrative; what's buried in
+footnotes is what they are required to disclose but would rather you skim.
+
+═══════════════════════════════════════
+INVESTMENT THESIS (for relevance weighting):
+{thesis}
+
+ANALYST-TRACKED KPIs (flag when they appear):
+{tracked_kpis}
+
+PRIOR PERIOD CONTEXT:
+{prior_period}
+
+MACRO ASSUMPTIONS (Context Contract):
+{context_contract}
+═══════════════════════════════════════
+
+ANNUAL REPORT TEXT:
+{annual_report_text}
+
+═══════════════════════════════════════
+ANALYSIS FRAMEWORK:
+
+1. STRATEGIC NARRATIVE — The Chairman's / CEO's / Chair of the Board letters
+   are carefully-worded strategic statements. Extract the explicit strategic
+   priorities, the tone (confident | cautious | defensive | contrite),
+   and any shift versus last year's letter. Note what was absent — if last
+   year's big priority is not mentioned this year, that is the story.
+
+2. SEGMENT PERFORMANCE COMMENTARY — Annual reports discuss each segment
+   in narrative form, not just numbers. Extract per-segment commentary
+   with attribution — what did management say drove results, and is that
+   consistent with what the numbers show?
+
+3. CAPITAL ALLOCATION PHILOSOPHY — How management frames capex, M&A,
+   buybacks, dividends, and deleveraging. Changes here signal strategic
+   pivots. If buybacks were "opportunistic" last year and are now
+   "sustained", or vice versa, capture the shift.
+
+4. RISK FACTORS DELTA — What risks were ADDED to the risk factors section
+   this year? What was REMOVED? What was elevated in prominence? These
+   are the most quietly important disclosures in the entire document —
+   new risk factors are often the first public acknowledgement of a
+   deteriorating situation.
+
+5. ACCOUNTING POLICIES & ESTIMATES — Any changes in accounting policy,
+   estimate methodology, segment re-definition, or non-GAAP definition.
+   These almost always obscure a trend. Flag each change and the likely
+   impact (neutral | favourable | adverse to apparent trend).
+
+6. CONTINGENCIES & LITIGATION — Material litigation, regulatory probes,
+   tax disputes, environmental liabilities. Extract status and management's
+   assessment.
+
+7. GOVERNANCE & REMUNERATION SIGNALS — Board changes, auditor changes,
+   auditor opinion modifications, remuneration structure changes, new
+   performance metrics in executive comp. Auditor changes in particular
+   warrant direct flagging.
+
+8. GOING CONCERN & GOING FORWARD — Any going-concern language, material
+   uncertainty flags, or unusually extensive liquidity / covenant
+   discussion. Mid-cycle companies rarely discuss liquidity at length —
+   when they do, it matters.
+
+9. SUSTAINABILITY / CLIMATE (only if material to thesis) — Emissions
+   trajectory vs stated targets, transition risk disclosures, scope 3
+   methodology changes. Skip boilerplate.
+
+CRITICAL RULES:
+- Use ONLY content from the annual report text above. Never invent.
+- Quote verbatim when the exact language matters (letter tone,
+  walkbacks, new risk-factor language).
+- Prior-year comparisons should be explicit — if you do not have last
+  year's version in context, say "prior year text not in context" rather
+  than guess.
+- If the context contract flags specific macro stress, note whether
+  management acknowledges it in the annual report and whether their
+  framing is realistic.
+
+Respond with a JSON object. No preamble, no markdown fences.
+
+{{
+  "strategic_narrative": {{
+    "ceo_chair_tone": "<confident | cautious | defensive | contrite | mixed>",
+    "explicit_priorities": ["<priority #1>", "<priority #2>", "..."],
+    "vs_prior_year": "<what shifted in the strategic narrative since last year — or 'prior year text not in context'>",
+    "notable_absences": ["<priority from last year now absent, if identifiable>"]
+  }},
+
+  "segment_commentary": [
+    {{
+      "segment": "<name>",
+      "performance_summary": "<what management said about results>",
+      "attribution": "<what management attributed results to>",
+      "consistent_with_numbers": "<yes | partial | no — brief why>"
+    }}
+  ],
+
+  "capital_allocation": {{
+    "capex_stance":    "<verbatim or paraphrased framing>",
+    "m_and_a_stance":  "<verbatim or paraphrased framing>",
+    "buybacks":        "<stance and any shift>",
+    "dividend":        "<stance and any shift>",
+    "deleveraging":    "<stance and any shift>",
+    "shift_vs_prior":  "<any strategic pivot you can identify>"
+  }},
+
+  "risk_factors_delta": {{
+    "added":    ["<new risk factor>"],
+    "removed":  ["<risk factor dropped this year>"],
+    "elevated": ["<risk factor given more prominence>"],
+    "most_significant_addition": "<the single most material new risk factor, and why>"
+  }},
+
+  "accounting_changes": [
+    {{
+      "change": "<what changed>",
+      "rationale_stated": "<what management said>",
+      "likely_impact": "<favourable | adverse | neutral to apparent trend>",
+      "flag": "<brief — why an analyst should care>"
+    }}
+  ],
+
+  "contingencies": [
+    {{
+      "matter": "<litigation / probe / tax / environmental>",
+      "status": "<ongoing | settled | new this year>",
+      "management_assessment": "<what they said about materiality / outcome>",
+      "analyst_concern": "<brief — is management's framing credible?>"
+    }}
+  ],
+
+  "governance_signals": {{
+    "auditor_change":       "<yes / no — if yes, from whom to whom>",
+    "auditor_opinion":      "<unqualified | qualified | adverse | emphasis of matter>",
+    "board_changes":        ["<notable departures / arrivals>"],
+    "remuneration_changes": ["<new performance metrics, vesting changes, etc.>"]
+  }},
+
+  "going_concern_or_liquidity": {{
+    "flagged": <true | false>,
+    "language": "<verbatim if flagged; otherwise empty>",
+    "why_notable": "<brief — is liquidity discussion unusually extensive?>"
+  }},
+
+  "thesis_confirmation_or_contradiction": "<one paragraph: does the annual report strengthen, weaken, or leave unchanged the investment thesis? Cite the specific disclosures that move the needle.>",
+
+  "confidence": <0.0-1.0 your confidence in this analysis>
+}}
