@@ -82,10 +82,15 @@ text = await call_llm_async(prompt)
 ## Agent Architecture
 The platform is transitioning to a modular agent architecture where each analysis step is an independent agent.
 
-### Status
-- `agents/base.py`, `agents/registry.py`, `agents/__init__.py` — **built and reviewed**
-- Agent DB tables (`agent_outputs`, `pipeline_runs`, etc.) — **in models.py**
-- Individual agents (Financial Analyst, Bear, Bull, Debate, QC) — **not yet built (Phase 1)**
+### Status (2026-04-19)
+- **Foundation ✅** — `agents/base.py`, `agents/registry.py`, `agents/orchestrator.py`, DB tables (`agent_outputs`, `pipeline_runs`, `agent_calibration`, `context_contracts`)
+- **Analysis agents ✅** — `task/financial_analyst.py`, `task/bear_case.py`, `task/bull_case.py`, `meta/debate_agent.py`, `meta/quality_control.py`
+- **Document agents 🟡 partial** — deep reads run at ingestion-time via prompt files under `prompts/agents/` (not registered pipeline agents). `transcript_deep_dive.txt`, `presentation_analysis.txt`, `annual_report_deep_read.txt` wired into `services/background_processor._analyse_document_with_llm()`. `broker_note_synthesis.txt` not built (and may not be needed).
+- **Specialist agents 🟡 partial** — `specialist/guidance_tracker.py` built. Reads guidance rows across periods to score management accountability.
+- **Ingestion agents 🟡 partial** — `ingestion/orchestrator.py` (simple tier-based wrapper) + `ingestion/document_triage.py` (classifies candidates, decides auto-ingest vs review) built. Hooked into `services/harvester/dispatcher.py`. Table `ingestion_triage` created. Pending-review UI panel at Data Hub → Document Harvester. Still missing: `coverage_monitor` (as agent), `event_scanner`, `source_quality`. Table `source_quality` still missing.
+- **Macro / Portfolio agents ❌** — not started
+- **Calibration worker ❌** — `agent_calibration` table exists, no worker populates it
+- **Cleanup debt** — `services/context_builder.py` and `services/background_processor.py` still exist; scheduled for deletion per `_agent-architecture-clean-break.md` §8
 
 ### Directory Structure
 - `agents/` — agent package

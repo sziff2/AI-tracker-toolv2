@@ -248,6 +248,36 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE extraction_profiles ADD COLUMN IF NOT EXISTS reconciliation JSONB"
         ))
 
+        # ── Ingestion triage ─────────────────────────────────────
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS ingestion_triage (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id),
+                source_url TEXT NOT NULL,
+                candidate_title TEXT,
+                source_type TEXT,
+                document_type TEXT,
+                period_label TEXT,
+                priority TEXT,
+                relevance_score INTEGER,
+                auto_ingest BOOLEAN DEFAULT TRUE,
+                needs_review BOOLEAN DEFAULT FALSE,
+                rationale TEXT,
+                was_ingested BOOLEAN DEFAULT FALSE,
+                analyst_override TEXT,
+                was_useful BOOLEAN,
+                document_id UUID REFERENCES documents(id),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_ingestion_triage_company ON ingestion_triage(company_id)"
+        ))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_ingestion_triage_source_url ON ingestion_triage(source_url)"
+        ))
+
     # ── Agent registry autodiscovery ─────────────────────────────
     from agents.registry import AgentRegistry
     AgentRegistry.autodiscover()

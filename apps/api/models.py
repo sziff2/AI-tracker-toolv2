@@ -844,3 +844,42 @@ class ExtractionProfile(Base, TimestampMixin):
 
     company = relationship("Company")
     document = relationship("Document")
+
+
+# ─────────────────────────────────────────────────────────────────
+# Ingestion Triage — per-candidate classification and priority decision
+# ─────────────────────────────────────────────────────────────────
+class IngestionTriage(Base, TimestampMixin):
+    """Audit row for every harvester candidate that Document Triage Agent
+    classified. Used to track whether the agent got the period/type right,
+    whether the analyst overrode the auto-ingest decision, and whether the
+    ingested document ended up being useful. Feeds the source-quality
+    agent's reliability scoring over time."""
+    __tablename__ = "ingestion_triage"
+    __table_args__ = (
+        Index("ix_ingestion_triage_company", "company_id"),
+        Index("ix_ingestion_triage_source_url", "source_url"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    # Candidate identity — same source_url the dispatcher dedupes on
+    source_url = Column(Text, nullable=False)
+    candidate_title = Column(Text, nullable=True)
+    source_type = Column(Text, nullable=True)      # sec_edgar | ir_regex | ir_llm | investegate | rss
+    # Agent classification
+    document_type = Column(Text, nullable=True)    # annual_report | 10-Q | transcript | ...
+    period_label = Column(Text, nullable=True)
+    priority = Column(Text, nullable=True)         # immediate | normal | low | skip
+    relevance_score = Column(Integer, nullable=True)   # 0-100
+    auto_ingest = Column(Boolean, default=True)
+    needs_review = Column(Boolean, default=False)
+    rationale = Column(Text, nullable=True)
+    # Outcome tracking
+    was_ingested = Column(Boolean, default=False)
+    analyst_override = Column(Text, nullable=True) # null | upgraded | downgraded | reclassified | skipped
+    was_useful = Column(Boolean, nullable=True)    # set later from analyst feedback
+    # Link to the Document row if ingestion went ahead
+    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+
+    company = relationship("Company")

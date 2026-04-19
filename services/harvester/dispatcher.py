@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.database import AsyncSessionLocal
-from apps.api.models import Company, Document, HarvestedDocument
+from apps.api.models import Company, Document, HarvestedDocument, IngestionTriage
 from services.document_ingestion import ingest_document
 
 logger = logging.getLogger(__name__)
@@ -108,6 +108,100 @@ def _fallback_period(published_at: Optional[datetime]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Triage — runs the Document Triage Agent on a single candidate
+# ─────────────────────────────────────────────────────────────────
+
+async def _get_active_thesis(db: AsyncSession, company_id: uuid.UUID) -> str:
+    """Return the active thesis core text, compressed. Empty string if none."""
+    from apps.api.models import ThesisVersion
+    r = await db.execute(
+        select(ThesisVersion)
+        .where(ThesisVersion.company_id == company_id)
+        .where(ThesisVersion.active == True)  # noqa: E712
+        .limit(1)
+    )
+    t = r.scalar_one_or_none()
+    if not t:
+        return ""
+    parts = []
+    if t.core_thesis:
+        parts.append(t.core_thesis[:1500])
+    if t.key_risks:
+        parts.append(f"Key risks: {t.key_risks[:500]}")
+    return "\n".join(parts)
+
+
+async def _run_triage(
+    db: AsyncSession,
+    candidate: dict,
+    company: Company,
+) -> Optional[dict]:
+    """Invoke DocumentTriageAgent on a candidate. Returns the agent's
+    structured output, or None on failure. Records an IngestionTriage
+    audit row regardless of success / fallback."""
+    from agents.ingestion.document_triage import DocumentTriageAgent
+
+    thesis_text = await _get_active_thesis(db, company.id)
+
+    published_at_raw = candidate.get("published_at")
+    published_at_str = ""
+    if published_at_raw:
+        try:
+            published_at_str = published_at_raw.isoformat() if hasattr(published_at_raw, "isoformat") else str(published_at_raw)
+        except Exception:
+            published_at_str = str(published_at_raw)[:32]
+
+    inputs = {
+        "ticker":              candidate.get("ticker", "") or "",
+        "company_name":        company.name or "",
+        "fiscal_year_end":     getattr(company, "fiscal_year_end", "") or "",
+        "country":             getattr(company, "country", "") or "",
+        "sector":              getattr(company, "sector", "") or "",
+        "source_url":          candidate.get("source_url", ""),
+        "candidate_title":     candidate.get("headline", "") or candidate.get("title", "") or "",
+        "source_type":         candidate.get("source", "") or "",
+        "published_at":        published_at_str,
+        "filing_form":         candidate.get("form_type", "") or candidate.get("filing_form", "") or "",
+        "regex_document_type": candidate.get("document_type", "") or "",
+        "regex_period_label":  candidate.get("period_label", "") or "",
+        "thesis":              thesis_text or "No active thesis on file.",
+        "tracked_kpis":        "",  # not yet routed into triage — Sprint 2
+    }
+
+    try:
+        agent = DocumentTriageAgent()
+        result = await agent.run(inputs)
+        if result.status != "completed" or not isinstance(result.output, dict):
+            logger.warning("[TRIAGE] Agent returned non-completed status %s for %s",
+                           result.status, candidate.get("source_url", "")[:80])
+            return None
+
+        # Audit row — record even when we fall back later
+        db.add(IngestionTriage(
+            id=uuid.uuid4(),
+            company_id=company.id,
+            source_url=candidate.get("source_url", ""),
+            candidate_title=(candidate.get("headline") or candidate.get("title") or "")[:500],
+            source_type=candidate.get("source"),
+            document_type=result.output.get("document_type"),
+            period_label=result.output.get("period_label"),
+            priority=result.output.get("priority"),
+            relevance_score=result.output.get("relevance_score"),
+            auto_ingest=result.output.get("auto_ingest", True),
+            needs_review=result.output.get("needs_review", False),
+            rationale=(result.output.get("rationale") or "")[:2000],
+            was_ingested=False,  # updated later when we know the outcome
+        ))
+        await db.commit()
+        return result.output
+
+    except Exception as exc:
+        logger.warning("[TRIAGE] Failed for %s: %s — falling back to regex defaults",
+                       candidate.get("source_url", "")[:80], str(exc)[:200])
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────
 # Core dispatch
 # ─────────────────────────────────────────────────────────────────
 
@@ -143,9 +237,38 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
                 summary["skipped"] += 1
                 continue
 
-            period_label  = c.get("period_label") or _fallback_period(c.get("published_at"))
+            # Run Document Triage Agent to classify period + document type
+            # and decide auto-ingest vs review. Falls back to regex defaults
+            # on any failure so the weekly harvest never blocks on LLM issues.
+            triage = await _run_triage(db, c, company)
+
+            if triage and triage.get("priority") == "skip":
+                logger.info("[DISPATCH] Triage marked %s — %s as skip: %s",
+                            ticker, headline[:60], (triage.get("rationale") or "")[:100])
+                summary["skipped"] += 1
+                continue
+
+            if triage and triage.get("needs_review") and not triage.get("auto_ingest", True):
+                # Record for analyst review in the Harvester tab. Don't download.
+                logger.info("[DISPATCH] Triage flagged %s — %s for review: %s",
+                            ticker, headline[:60], (triage.get("rationale") or "")[:100])
+                await _record(db, c, company.id, None, False,
+                              f"pending_triage_review: {(triage.get('rationale') or '')[:200]}")
+                summary["skipped"] += 1
+                continue
+
+            if triage:
+                # Prefer the agent's classification — fall back to regex only if empty
+                period_label  = (triage.get("period_label") or "").strip() \
+                                or c.get("period_label") \
+                                or _fallback_period(c.get("published_at"))
+                document_type = (triage.get("document_type") or "").strip() \
+                                or c.get("document_type", "earnings_release")
+            else:
+                period_label  = c.get("period_label") or _fallback_period(c.get("published_at"))
+                document_type = c.get("document_type", "earnings_release")
+
             c["period_label"] = period_label  # Ensure period is stored in harvested_documents
-            document_type = c.get("document_type", "earnings_release")
 
             # Skip if manual document already exists for this company + period
             # Manual uploads should never be overwritten by harvester
@@ -213,6 +336,24 @@ async def dispatch_candidates(candidates: list[dict]) -> dict:
             # Document ingested — do NOT auto-trigger analysis pipeline.
             # User triggers analysis manually from the Results tab to control LLM costs.
             await _record(db, c, company.id, doc.id, True)
+
+            # Close the loop on the triage audit row: mark it as ingested
+            # and link the resulting Document. Best-effort — a failure here
+            # is a logging miss, not a blocker.
+            if triage is not None:
+                try:
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(IngestionTriage)
+                        .where(IngestionTriage.source_url == c.get("source_url", ""))
+                        .where(IngestionTriage.company_id == company.id)
+                        .where(IngestionTriage.was_ingested == False)  # noqa: E712
+                        .values(was_ingested=True, document_id=doc.id)
+                    )
+                    await db.commit()
+                except Exception as exc:
+                    logger.warning("[TRIAGE] Failed to mark ingested for %s: %s",
+                                   c.get("source_url", "")[:80], str(exc)[:150])
 
             logger.info(
                 "[DISPATCH] ✓ %s — %s (%s) → doc %s",

@@ -17,9 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 async def run_weekly_harvest() -> dict:
-    """Run a cost-controlled harvest (no LLM) and return enriched result."""
-    from services.harvester import run_harvest
-    return await run_harvest(skip_llm=True)
+    """Run a cost-controlled harvest (no LLM) and return enriched result.
+    Routed through the Ingestion Orchestrator so Document Triage runs on
+    each candidate and future source-quality logic has a single hook point.
+    """
+    from agents.ingestion.orchestrator import IngestionOrchestrator
+    return await IngestionOrchestrator().run_scheduled_scan(
+        tier="portfolio", skip_llm=True
+    )
 
 
 async def save_report(harvest_result: dict, trigger: str = "auto_weekly") -> str:

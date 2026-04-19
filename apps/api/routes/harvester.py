@@ -148,6 +148,88 @@ async def harvester_status(db: AsyncSession = Depends(get_db)):
     return result
 
 
+# ── GET /harvester/pending-review ────────────────────────────────
+
+_PENDING_REVIEW_PREFIX = "pending_triage_review:"
+
+
+@router.get("/harvester/pending-review")
+async def pending_review(db: AsyncSession = Depends(get_db)):
+    """List harvested candidates flagged by the Document Triage Agent as
+    needing analyst review. These were NOT downloaded — the analyst decides
+    whether to manually ingest or dismiss."""
+    from apps.api.models import IngestionTriage
+
+    q = await db.execute(
+        select(HarvestedDocument, Company.ticker, Company.name)
+        .join(Company, Company.id == HarvestedDocument.company_id)
+        .where(HarvestedDocument.error.like(_PENDING_REVIEW_PREFIX + "%"))
+        .order_by(desc(HarvestedDocument.discovered_at))
+        .limit(200)
+    )
+
+    rows = []
+    for hd, ticker, name in q.all():
+        # Try to pull the matching triage audit row for richer context
+        t_q = await db.execute(
+            select(IngestionTriage)
+            .where(IngestionTriage.source_url == hd.source_url)
+            .where(IngestionTriage.company_id == hd.company_id)
+            .order_by(desc(IngestionTriage.created_at))
+            .limit(1)
+        )
+        triage = t_q.scalar_one_or_none()
+
+        rationale = (hd.error or "")[len(_PENDING_REVIEW_PREFIX):].strip()
+        rows.append({
+            "id":             str(hd.id),
+            "ticker":         ticker,
+            "company_name":   name,
+            "source":         hd.source,
+            "source_url":     hd.source_url,
+            "headline":       hd.headline,
+            "discovered_at":  hd.discovered_at.isoformat() if hd.discovered_at else None,
+            "rationale":      rationale,
+            "document_type":  triage.document_type if triage else None,
+            "period_label":   triage.period_label if triage else None,
+            "priority":       triage.priority if triage else None,
+            "relevance_score": triage.relevance_score if triage else None,
+        })
+
+    return {"count": len(rows), "items": rows}
+
+
+@router.delete("/harvester/pending-review/{hd_id}")
+async def dismiss_pending_review(hd_id: str, db: AsyncSession = Depends(get_db)):
+    """Dismiss a triage-flagged candidate. Removes the HarvestedDocument row
+    so the analyst's review panel clears. The IngestionTriage audit row is
+    retained (updated with analyst_override='skipped') so we can learn from
+    dismissals over time."""
+    from apps.api.models import IngestionTriage
+    from sqlalchemy import delete as sa_delete, update as sa_update
+
+    try:
+        hd_uuid = uuid.UUID(hd_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid id")
+
+    hd_q = await db.execute(select(HarvestedDocument).where(HarvestedDocument.id == hd_uuid))
+    hd = hd_q.scalar_one_or_none()
+    if not hd:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Mark the triage audit row so calibration can learn from dismissals
+    await db.execute(
+        sa_update(IngestionTriage)
+        .where(IngestionTriage.source_url == hd.source_url)
+        .where(IngestionTriage.company_id == hd.company_id)
+        .values(analyst_override="skipped")
+    )
+    await db.execute(sa_delete(HarvestedDocument).where(HarvestedDocument.id == hd_uuid))
+    await db.commit()
+    return {"ok": True}
+
+
 # ── GET /harvester/coverage ───────────────────────────────────────
 
 @router.get("/harvester/coverage")
