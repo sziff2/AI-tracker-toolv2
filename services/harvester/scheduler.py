@@ -258,6 +258,24 @@ def format_teams_message(harvest_result: dict) -> dict:
             f"{triage.get('skipped_by_triage', 0)} dropped as junk"
         )
 
+    # Parity — one-line validation signal between old and new coverage
+    # engines. Omitted entirely once the old engine is retired.
+    parity = harvest_result.get("parity_stats") or {}
+    if parity and parity.get("total", 0) > 0:
+        total = parity.get("total", 0)
+        agree = parity.get("agree", 0)
+        if parity.get("disagree", 0) == 0:
+            lines.append("")
+            lines.append(f"**Parity:** all {total} companies agree (old ↔ new coverage)")
+        else:
+            lines.append("")
+            lines.append(
+                f"**Parity:** {agree}/{total} agree — "
+                f"{parity.get('new_flagged_old_clean', 0)} new-flagged-old-clean, "
+                f"{parity.get('old_flagged_new_clean', 0)} old-flagged-new-clean "
+                f"(see /harvester/coverage-compare)"
+            )
+
     # Coverage Monitor — current gap snapshot + last-week rescan activity
     cov_mon = harvest_result.get("coverage_monitor_stats") or {}
     if cov_mon:
@@ -369,6 +387,18 @@ async def run_and_report(trigger: str = "auto_weekly") -> dict:
         logger.info("[REPORT] Coverage Monitor: %s", result["coverage_monitor_stats"])
     except Exception as exc:
         logger.warning("[REPORT] Coverage Monitor stats collection failed: %s", exc)
+
+    # Parity check — validation window comparing old static check vs new
+    # learned-cadence monitor. Drop this section once the migration is done.
+    try:
+        from apps.api.database import AsyncSessionLocal
+        from services.harvester.coverage_compare import compare_coverage
+        async with AsyncSessionLocal() as db:
+            parity = await compare_coverage(db)
+        result["parity_stats"] = parity.to_dict()["summary"]
+        logger.info("[REPORT] Parity: %s", result["parity_stats"])
+    except Exception as exc:
+        logger.warning("[REPORT] Parity check failed: %s", exc)
 
     # Append legacy static coverage gap summary so it lands in the Teams message
     try:

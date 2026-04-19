@@ -122,6 +122,40 @@ class TestCoverageMonitorSection:
         assert "Coverage Monitor:" not in body
 
 
+class TestParitySection:
+    def test_all_agree_renders_short_line(self):
+        result = _minimal_harvest_result()
+        result["parity_stats"] = {
+            "total": 39, "agree": 39, "disagree": 0,
+            "new_flagged_old_clean": 0, "old_flagged_new_clean": 0,
+        }
+        body = _body_text(format_teams_message(result))
+        assert "**Parity:** all 39 companies agree" in body
+
+    def test_disagreements_render_breakdown(self):
+        result = _minimal_harvest_result()
+        result["parity_stats"] = {
+            "total": 39, "agree": 35, "disagree": 4,
+            "new_flagged_old_clean": 1, "old_flagged_new_clean": 3,
+        }
+        body = _body_text(format_teams_message(result))
+        assert "**Parity:** 35/39 agree" in body
+        assert "1 new-flagged-old-clean" in body
+        assert "3 old-flagged-new-clean" in body
+        assert "/harvester/coverage-compare" in body
+
+    def test_omitted_when_total_zero(self):
+        result = _minimal_harvest_result()
+        result["parity_stats"] = {"total": 0, "agree": 0, "disagree": 0,
+                                  "new_flagged_old_clean": 0, "old_flagged_new_clean": 0}
+        body = _body_text(format_teams_message(result))
+        assert "Parity:" not in body
+
+    def test_omitted_when_key_absent(self):
+        body = _body_text(format_teams_message(_minimal_harvest_result()))
+        assert "Parity:" not in body
+
+
 class TestBothSectionsTogether:
     def test_triage_above_coverage(self):
         """Reading order: harvest summary → new docs → triage → coverage monitor →

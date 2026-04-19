@@ -264,6 +264,25 @@ async def rescan_gap(
         raise HTTPException(status_code=500, detail=str(exc)[:200])
 
 
+# ── GET /harvester/coverage-compare ──────────────────────────────
+
+@router.get("/harvester/coverage-compare")
+async def coverage_compare(db: AsyncSession = Depends(get_db)):
+    """Side-by-side parity check: runs the old static 75-day-lag coverage
+    check and the new learned-cadence Coverage Monitor and reports per-
+    company agreement. Use this during the validation window (2-3 weeks)
+    before retiring the old logic. Returns a summary (total / agree /
+    disagree breakdown) plus per-company detail with a reason string
+    explaining every disagreement.
+
+    Warning-severity gaps from the new system are deliberately ignored
+    for parity — they mean 'approaching, not yet overdue' and the old
+    system has no equivalent concept."""
+    from services.harvester.coverage_compare import compare_coverage
+    report = await compare_coverage(db)
+    return report.to_dict()
+
+
 # ── GET /harvester/coverage ───────────────────────────────────────
 
 @router.get("/harvester/coverage")
