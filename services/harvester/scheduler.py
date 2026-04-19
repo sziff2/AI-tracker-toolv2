@@ -7,7 +7,7 @@ Called by Celery Beat (weekly Monday 06:00 UTC) or manually via API.
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -82,6 +82,126 @@ def _classify_details(details: list[dict]) -> dict:
     }
 
 
+# ─────────────────────────────────────────────────────────────────
+# Triage + Coverage Monitor stats for the weekly Teams report
+# ─────────────────────────────────────────────────────────────────
+
+async def collect_triage_stats(since_ts: datetime) -> dict:
+    """Count Document Triage decisions made during this harvest window.
+    Returns {total, auto_ingested, needs_review, skipped_by_triage}.
+    Safe fallback: returns zeros if the query fails — never blocks the
+    weekly report."""
+    from apps.api.database import AsyncSessionLocal
+    from apps.api.models import IngestionTriage
+    from sqlalchemy import and_, func, select as sa_select
+
+    stats = {"total": 0, "auto_ingested": 0, "needs_review": 0, "skipped_by_triage": 0}
+    try:
+        async with AsyncSessionLocal() as db:
+            total_q = await db.execute(
+                sa_select(func.count(IngestionTriage.id))
+                .where(IngestionTriage.created_at >= since_ts)
+            )
+            stats["total"] = total_q.scalar() or 0
+
+            auto_q = await db.execute(
+                sa_select(func.count(IngestionTriage.id))
+                .where(and_(
+                    IngestionTriage.created_at >= since_ts,
+                    IngestionTriage.was_ingested == True,  # noqa: E712
+                ))
+            )
+            stats["auto_ingested"] = auto_q.scalar() or 0
+
+            review_q = await db.execute(
+                sa_select(func.count(IngestionTriage.id))
+                .where(and_(
+                    IngestionTriage.created_at >= since_ts,
+                    IngestionTriage.needs_review == True,  # noqa: E712
+                    IngestionTriage.was_ingested == False,  # noqa: E712
+                ))
+            )
+            stats["needs_review"] = review_q.scalar() or 0
+
+            skip_q = await db.execute(
+                sa_select(func.count(IngestionTriage.id))
+                .where(and_(
+                    IngestionTriage.created_at >= since_ts,
+                    IngestionTriage.priority == "skip",
+                ))
+            )
+            stats["skipped_by_triage"] = skip_q.scalar() or 0
+    except Exception as exc:
+        logger.warning("[REPORT] collect_triage_stats failed: %s", exc)
+
+    return stats
+
+
+async def collect_coverage_monitor_stats(lookback_days: int = 7) -> dict:
+    """Live Coverage Monitor snapshot + last-N-days auto-rescan activity.
+    Returns {total_gaps, by_severity, rescans, rescan_successes,
+    rescan_errors, lookback_days}. Safe fallback on query failure."""
+    from apps.api.database import AsyncSessionLocal
+    from apps.api.models import CoverageRescanLog
+    from sqlalchemy import and_, func, select as sa_select
+
+    stats: dict = {
+        "total_gaps":      0,
+        "by_severity":     {"warning": 0, "overdue": 0, "critical": 0, "source_broken": 0},
+        "rescans":         0,
+        "rescan_successes": 0,
+        "rescan_errors":   0,
+        "lookback_days":   lookback_days,
+    }
+    try:
+        # Live gap snapshot (no auto-trigger — we're just reporting).
+        from agents.ingestion.coverage_monitor import CoverageMonitor
+        cm_result = await CoverageMonitor().run_daily_check(auto_trigger=False)
+        stats["total_gaps"] = cm_result.gaps_found
+        for g in cm_result.gap_details:
+            sev = g.get("severity", "warning")
+            if sev in stats["by_severity"]:
+                stats["by_severity"][sev] += 1
+    except Exception as exc:
+        logger.warning("[REPORT] coverage gap snapshot failed: %s", exc)
+
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        async with AsyncSessionLocal() as db:
+            total_q = await db.execute(
+                sa_select(func.count(CoverageRescanLog.id))
+                .where(and_(
+                    CoverageRescanLog.triggered_at >= cutoff,
+                    CoverageRescanLog.triggered_by == "auto",
+                ))
+            )
+            stats["rescans"] = total_q.scalar() or 0
+
+            succ_q = await db.execute(
+                sa_select(func.count(CoverageRescanLog.id))
+                .where(and_(
+                    CoverageRescanLog.triggered_at >= cutoff,
+                    CoverageRescanLog.triggered_by == "auto",
+                    CoverageRescanLog.result == "success",
+                ))
+            )
+            stats["rescan_successes"] = succ_q.scalar() or 0
+
+            err_q = await db.execute(
+                sa_select(func.count(CoverageRescanLog.id))
+                .where(and_(
+                    CoverageRescanLog.triggered_at >= cutoff,
+                    CoverageRescanLog.triggered_by == "auto",
+                    CoverageRescanLog.result == "error",
+                ))
+            )
+            stats["rescan_errors"] = err_q.scalar() or 0
+    except Exception as exc:
+        logger.warning("[REPORT] rescan log query failed: %s", exc)
+
+    return stats
+
+
 def format_teams_message(harvest_result: dict) -> dict:
     """Build a Microsoft Teams Adaptive Card payload."""
     summary = {
@@ -127,7 +247,38 @@ def format_teams_message(harvest_result: dict) -> dict:
         lines.append(f"**No new documents ({len(gap_companies)} companies):** "
                       + ", ".join(d["ticker"] for d in sorted(gap_companies, key=lambda x: x["ticker"])))
 
-    # Coverage gaps — which companies are missing expected-period documents?
+    # Triage summary — how the Document Triage Agent handled this harvest
+    triage = harvest_result.get("triage_stats") or {}
+    if triage.get("total", 0) > 0:
+        lines.append("")
+        lines.append(
+            f"**Triage:** {triage.get('total', 0)} candidates classified — "
+            f"{triage.get('auto_ingested', 0)} auto-ingested, "
+            f"{triage.get('needs_review', 0)} flagged for review, "
+            f"{triage.get('skipped_by_triage', 0)} dropped as junk"
+        )
+
+    # Coverage Monitor — current gap snapshot + last-week rescan activity
+    cov_mon = harvest_result.get("coverage_monitor_stats") or {}
+    if cov_mon:
+        sev = cov_mon.get("by_severity") or {}
+        total = cov_mon.get("total_gaps", 0)
+        rescans = cov_mon.get("rescans", 0)
+        lookback = cov_mon.get("lookback_days", 7)
+        lines.append("")
+        lines.append(
+            f"**Coverage Monitor:** {total} gaps "
+            f"({sev.get('critical', 0)} critical, "
+            f"{sev.get('overdue', 0)} overdue, "
+            f"{sev.get('source_broken', 0)} source-broken, "
+            f"{sev.get('warning', 0)} approaching) — "
+            f"{rescans} auto-rescans in last {lookback}d "
+            f"({cov_mon.get('rescan_successes', 0)} found new docs, "
+            f"{cov_mon.get('rescan_errors', 0)} errors)"
+        )
+
+    # Legacy static coverage check — kept until the new Coverage Monitor
+    # has several weeks of production validation. See the plan §8 / CLAUDE.md.
     coverage_text = harvest_result.get("coverage_text")
     if coverage_text:
         lines.append("")
@@ -197,11 +348,29 @@ async def post_teams_report(harvest_result: dict, report_id: str | None = None) 
 
 async def run_and_report(trigger: str = "auto_weekly") -> dict:
     """Full weekly flow: harvest → save report → run coverage check → post to Teams."""
+    # Capture harvest start so we can count the triage decisions that this
+    # specific harvest produced (IngestionTriage.created_at >= this).
+    harvest_start = datetime.now(timezone.utc)
+
     result = await run_weekly_harvest()
     logger.info("[REPORT] Harvest complete — new=%d skipped=%d failed=%d, saving report...",
                 result.get("new", 0), result.get("skipped", 0), result.get("failed", 0))
 
-    # Append coverage gap summary so it lands in the Teams message
+    # Triage stats for candidates classified during this harvest
+    try:
+        result["triage_stats"] = await collect_triage_stats(harvest_start)
+        logger.info("[REPORT] Triage: %s", result["triage_stats"])
+    except Exception as exc:
+        logger.warning("[REPORT] Triage stats collection failed: %s", exc)
+
+    # Coverage Monitor snapshot (learned-cadence gaps + 7d rescan activity)
+    try:
+        result["coverage_monitor_stats"] = await collect_coverage_monitor_stats(lookback_days=7)
+        logger.info("[REPORT] Coverage Monitor: %s", result["coverage_monitor_stats"])
+    except Exception as exc:
+        logger.warning("[REPORT] Coverage Monitor stats collection failed: %s", exc)
+
+    # Append legacy static coverage gap summary so it lands in the Teams message
     try:
         from apps.api.database import AsyncSessionLocal
         from services.harvester.coverage import (
