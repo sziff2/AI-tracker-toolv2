@@ -2,7 +2,21 @@
 Document Triage Agent — classify and prioritise harvester candidates
 before they enter the main ingestion flow.
 
-Tier: META (layer -1 conceptually — runs before the analysis pipeline)
+╔══════════════════════════════════════════════════════════════════╗
+║  NOT A REGISTERED PIPELINE AGENT.                                  ║
+║                                                                    ║
+║  Despite the class name and BaseAgent inheritance, this module    ║
+║  is NOT decorated with @AgentRegistry.register. It runs at         ║
+║  INGESTION TIME from services/harvester/dispatcher.py::_run_triage ║
+║  on each candidate, not as part of any pipeline run.               ║
+║                                                                    ║
+║  If you came here looking for the pipeline agents that produce     ║
+║  Bear / Bull / Debate output, see agents/task/ and agents/meta/.   ║
+║  If you came here looking for where harvest candidates get         ║
+║  classified, you are in the right place — read on.                 ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Tier: META (conceptually — runs before the analysis pipeline)
 Model: Haiku (short prompt, fast dispatch)
 
 Purpose:
@@ -13,10 +27,6 @@ Purpose:
     amendments, re-issues)
   - Is it thesis-relevant? (priority signal to surface urgent reads)
   - Auto-ingest or flag for analyst review?
-
-  Unlike pipeline agents, this runs at ingestion time, BEFORE documents
-  enter the DB. It is NOT registered via @AgentRegistry.register — it is
-  invoked directly by services/harvester/dispatcher.py.
 
 Design notes:
   - Stateless; receives candidate + company + thesis, returns classification.
