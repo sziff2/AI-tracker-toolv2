@@ -390,25 +390,11 @@ async def _has_dual_comparators(
 
 
 def _shift_period(period_label: str, *, quarters: int) -> Optional[str]:
-    """Shift a YYYY_QN label by N quarters. Returns None for unsupported
-    formats (FY, H1/H2, malformed)."""
-    try:
-        year_s, rest = period_label.split("_", 1)
-        year = int(year_s)
-    except (ValueError, IndexError):
-        return None
-    if not rest.startswith("Q"):
-        return None
-    try:
-        q = int(rest[1:])
-    except ValueError:
-        return None
-
-    # Convert to absolute quarter index, shift, re-expand
-    abs_q = year * 4 + (q - 1) + quarters
-    new_year = abs_q // 4
-    new_q = (abs_q % 4) + 1
-    return f"{new_year}_Q{new_q}"
+    """Re-export of services.period_utils.shift_period for tests that
+    import this symbol from this module. Prefer importing from
+    period_utils directly in new code."""
+    from services.period_utils import shift_period
+    return shift_period(period_label, quarters=quarters)
 
 
 async def _has_mgmt_language(

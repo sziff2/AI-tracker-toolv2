@@ -59,22 +59,11 @@ class CompanyCadence:
 
 
 def _period_end(period_label: str) -> Optional[date]:
-    """Convert e.g. '2025_Q1' or '2025_FY' → date(year, 3, 31) / (year, 12, 31)."""
-    try:
-        year_s, rest = period_label.split("_", 1)
-        year = int(year_s)
-    except (ValueError, IndexError):
-        return None
-    if rest == "FY":
-        return date(year, 12, 31)
-    if rest.startswith("Q"):
-        q = int(rest[1:])
-        month = {1: 3, 2: 6, 3: 9, 4: 12}.get(q)
-        if month is None:
-            return None
-        last_day = {3: 31, 6: 30, 9: 30, 12: 31}[month]
-        return date(year, month, last_day)
-    return None
+    """Re-export of services.period_utils.period_end_date.
+    Kept as a local symbol for backwards compatibility with imports
+    elsewhere in the coverage pipeline."""
+    from services.period_utils import period_end_date
+    return period_end_date(period_label)
 
 
 def _infer_frequency(periods: list[str]) -> str:

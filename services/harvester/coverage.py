@@ -42,12 +42,10 @@ def expected_period(today: Optional[date] = None) -> str:
 
 
 def _period_to_tuple(period: str) -> tuple[int, int]:
-    """Convert ``'2025_Q4'`` to ``(2025, 4)`` for ordering."""
-    try:
-        parts = period.split("_Q")
-        return (int(parts[0]), int(parts[1]))
-    except (ValueError, IndexError):
-        return (0, 0)
+    """Re-export of services.period_utils.period_to_tuple.
+    Kept as a local symbol for backwards compatibility."""
+    from services.period_utils import period_to_tuple
+    return period_to_tuple(period)
 
 
 def period_behind(latest: str, expected: str) -> int:

@@ -102,9 +102,10 @@ async def _record(
 # ─────────────────────────────────────────────────────────────────
 
 def _fallback_period(published_at: Optional[datetime]) -> str:
-    dt = published_at or datetime.now(timezone.utc)
-    q = ((dt.month - 1) // 3) + 1
-    return f"{dt.year}_Q{q}"
+    """Thin wrapper kept for call-site stability.
+    Delegates to services.period_utils.quarter_from_date."""
+    from services.period_utils import quarter_from_date
+    return quarter_from_date(published_at)
 
 
 # ─────────────────────────────────────────────────────────────────
