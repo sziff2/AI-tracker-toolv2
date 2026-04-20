@@ -91,6 +91,7 @@ async def build_agent_context(
         transcript_analysis,
         presentation_analysis,
         annual_report_analysis,
+        metrics_history_result,
     ) = await asyncio.gather(
         _with_session(_build_company_meta, company_id),
         _with_session(build_thesis_context, company_id),
@@ -104,6 +105,7 @@ async def build_agent_context(
         _with_session(_load_document_analysis, company_id, period, "transcript_analysis"),
         _with_session(_load_document_analysis, company_id, period, "presentation_analysis"),
         _with_session(_load_document_analysis, company_id, period, "annual_report_analysis"),
+        _with_session(_build_metrics_history, company_id, period),
     )
 
     # Fix 2a — only load raw transcript/presentation text as fallback
@@ -146,6 +148,10 @@ async def build_agent_context(
         # Shared macro assumptions — injected into every agent prompt
         # No agent may contradict these assumptions (enforced by QC agent)
         "context_contract":    context_contract,
+        # Structured QoQ/YoY comparator table (Tier 1.1 — Sprint C).
+        # Agents should read period-over-period moves from here, not
+        # synthesise them from BRIDGE_GAP rows in extracted_metrics.
+        "metrics_history":     metrics_history_result,
     }
 
 
@@ -272,6 +278,23 @@ async def _load_document_analysis(
         logger.warning("Failed to load %s for %s %s: %s",
                        output_type, company_id, period, str(e)[:100])
     return {}
+
+
+async def _build_metrics_history(db: AsyncSession, company_id, period: str) -> str:
+    """Render the metric_store QoQ/YoY table for prompt injection.
+
+    Returns a preformatted text block (ready to substitute into the
+    `{metrics_history}` placeholder). Failures fall back to an empty
+    fallback string so agents still run.
+    """
+    try:
+        from services.metric_store import format_for_prompt, get_metrics_history
+        result = await get_metrics_history(db, company_id, period)
+        return format_for_prompt(result)
+    except Exception as e:
+        logger.warning("Failed to build metrics_history for %s %s: %s",
+                       company_id, period, str(e)[:100])
+        return "No prior-period metrics available for comparison."
 
 
 async def _build_company_meta(db: AsyncSession, company_id) -> dict:

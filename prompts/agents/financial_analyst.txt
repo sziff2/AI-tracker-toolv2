@@ -42,6 +42,9 @@ financial metrics (revenue, margins, FCF, leverage).
 EXTRACTED METRICS (current period):
 {extracted_metrics}
 
+METRICS HISTORY — QoQ / YoY comparator table (USE THIS FOR TEMPORAL COMPARISONS):
+{metrics_history}
+
 GUIDANCE (management forward statements):
 {guidance}
 
