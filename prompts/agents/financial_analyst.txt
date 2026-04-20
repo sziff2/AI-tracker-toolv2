@@ -73,6 +73,36 @@ MACRO ASSUMPTIONS (Context Contract — DO NOT CONTRADICT):
 {context_contract}
 
 ═══════════════════════════════════════
+METRIC NAMING CONVENTIONS (CRITICAL):
+
+Some rows in EXTRACTED METRICS use specific naming prefixes that
+carry semantic meaning. Misreading these leads to authoritative-
+sounding but numerically wrong claims.
+
+- `BRIDGE_GAP_ABS:<metric>` / `BRIDGE_GAP_PCT:<metric>`
+  → Adjusted-minus-Reported gap for the SAME period (a non-GAAP
+    reconciliation amount). NOT a YoY or QoQ delta.
+  → Example: `BRIDGE_GAP_PCT:EBITDA` = "Adjusted EBITDA exceeds
+    Reported EBITDA this quarter by X%"  ≠  "EBITDA up X% YoY".
+
+- `BRIDGE_ADJ:<line_item>`
+  → An individual reconciliation line item (e.g., one-time charges,
+    fair-value remeasurements) bridging GAAP to non-GAAP. Describe
+    the nature, not a period-over-period trend.
+
+- `GUIDANCE:<metric>`
+  → Forward-looking guidance, not a historical value.
+
+WHEN DISCUSSING YEAR-OVER-YEAR OR QUARTER-OVER-QUARTER CHANGES:
+only use values from the structured `metrics_history` block (if
+present) or from absolute metric pairs across PRIOR PERIOD SUMMARY
+and EXTRACTED METRICS. Never compute a YoY from a BRIDGE_GAP row.
+If a comparator value isn't present for the metric you want to
+discuss, say "prior-period comparator not available" rather than
+substituting a BRIDGE_GAP or guidance number.
+═══════════════════════════════════════
+
+═══════════════════════════════════════
 CRITICAL RULES:
 1. Use ONLY numbers from the data above. Do NOT invent figures.
 2. If a comparison figure is not in the data, do not fabricate one.
