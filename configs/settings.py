@@ -87,6 +87,35 @@ class Settings(BaseSettings):
     # Env: COMPLETENESS_GATE_MODE=halt
     completeness_gate_mode: str = "warn"
 
+    # ── Harvester operational thresholds (env-overridable in Tier 7.8) ──
+    # Max download size in bytes; files larger than this are rejected by
+    # dispatcher._download(). Default 50 MB — annual reports sometimes
+    # exceed 20 MB so don't drop below 30.
+    # Env: HARVESTER_MAX_FILE_BYTES=104857600 (100 MB)
+    harvester_max_file_bytes: int = 50 * 1024 * 1024
+
+    # Per-company timeout for a single harvest scan (all sources). Protects
+    # the weekly cron from a slow IR site blocking the whole run.
+    # Env: HARVESTER_COMPANY_TIMEOUT_SECONDS=120
+    harvester_company_timeout_seconds: int = 90
+
+    # Max number of IR sub-pages to crawl per company during a scan. The
+    # IR scraper finds a main page then follows links to results-archive
+    # sub-pages — this caps the crawl width.
+    # Env: HARVESTER_MAX_SUBPAGES=20
+    harvester_max_subpages: int = 10
+
+    # Coverage Monitor auto-rescan policy.
+    # Minimum hours between auto-rescans of the same gap. Protects broken
+    # sources from being hammered every day.
+    # Env: COVERAGE_MIN_RESCAN_INTERVAL_HOURS=48
+    coverage_min_rescan_interval_hours: int = 24
+
+    # Max auto-rescan attempts per gap, lifetime. After this cap the
+    # analyst has to trigger manually.
+    # Env: COVERAGE_MAX_RESCAN_ATTEMPTS=5
+    coverage_max_rescan_attempts: int = 3
+
     # ── Budget ───────────────────────────────────────────────────
     autorun_budget_usd: float = 10.0
     # Override via env: AUTORUN_BUDGET_USD=20

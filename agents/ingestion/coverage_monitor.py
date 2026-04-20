@@ -37,9 +37,11 @@ from services.harvester.coverage_advanced import (
 logger = logging.getLogger(__name__)
 
 
-# Auto-rescan policy
-_MIN_AUTO_RESCAN_INTERVAL_HOURS = 24
-_MAX_AUTO_RESCAN_ATTEMPTS_PER_GAP = 3
+# Auto-rescan policy — read from settings (env-overridable).
+# Module-level constants kept for tests / callers that import them.
+from configs.settings import settings as _settings
+_MIN_AUTO_RESCAN_INTERVAL_HOURS = _settings.coverage_min_rescan_interval_hours
+_MAX_AUTO_RESCAN_ATTEMPTS_PER_GAP = _settings.coverage_max_rescan_attempts
 # Severities eligible for auto-rescan (source_broken stays manual — no
 # point hammering a clearly-dead source; analyst should investigate)
 _AUTO_RESCAN_SEVERITIES = {"overdue", "critical"}

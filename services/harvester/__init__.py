@@ -58,7 +58,8 @@ async def run_harvest(
 
     logger.info("[HARVEST] Starting harvest for %d companies (skip_llm=%s)", len(companies), skip_llm)
 
-    COMPANY_TIMEOUT = 90  # seconds per company
+    from configs.settings import settings
+    COMPANY_TIMEOUT = settings.harvester_company_timeout_seconds  # env-overridable
 
     all_candidates = []
     all_details = []

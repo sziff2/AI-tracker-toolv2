@@ -32,7 +32,10 @@ _DOWNLOAD_HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; ResearchBot/1.0)",
     "Accept": "application/pdf,*/*",
 }
-_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
+# Max download size — read from settings (env-overridable). Fallback
+# constant preserved for callers that import the module symbol directly.
+from configs.settings import settings as _settings
+_MAX_FILE_BYTES = _settings.harvester_max_file_bytes
 
 
 # ─────────────────────────────────────────────────────────────────
