@@ -462,14 +462,12 @@ async def process_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     company = company_result.scalar_one_or_none()
     ticker = company.ticker if company else "UNKNOWN"
 
-    # Restore file from DB if missing on disk (Railway redeploys wipe filesystem)
+    # Railway redeploys wipe the ephemeral filesystem. If the file is gone
+    # there's no recovery path (raw PDFs are no longer stored in the DB per
+    # CLAUDE.md) — the analyst has to re-upload.
     file_path = Path(doc.file_path)
-    if not file_path.exists() and doc.file_content:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_bytes(doc.file_content)
-
     if not file_path.exists():
-        raise HTTPException(400, "File not found on disk and no content stored in DB. Please re-upload.")
+        raise HTTPException(400, "File not found on disk (likely wiped by a redeploy). Please re-upload this document.")
 
     summary = await process_document(db, doc, ticker=ticker)
     return summary
