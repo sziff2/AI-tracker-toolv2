@@ -17,13 +17,78 @@ Tickers use Bloomberg format with exchange suffix: `LKQ US`, `BNZL LN`, `3679 JP
 Priority: SEC EDGAR → Investegate RNS → IR regex scraper → LLM scraper
 - EDGAR: CIK configured per company in `EDGAR_SOURCES` dict (`services/harvester/sources/sec_edgar.py`)
 - Investegate: UK RNS announcements, configured in `INVESTEGATE_SOURCES` dict (`services/harvester/sources/investegate.py`)
-- IR scraper: regex-based, fast but breaks on SPA pages. Supports multiple URLs per company. 90s per-company timeout.
+- IR scraper: regex-based, fast but breaks on SPA pages. Supports multiple URLs per company. 90s per-company timeout (env-overridable via `HARVESTER_COMPANY_TIMEOUT_SECONDS`).
 - LLM scraper: sends page HTML to Claude, handles complex sites, costs ~$0.01-0.05/scan. Skipped in auto-runs.
 - ScrapingBee: optional JS rendering for Cloudflare-blocked IR pages (API key in env)
 - BP LN and SHEL LN run both EDGAR and Investegate (dual source)
 - IR scraper runs for all companies with `ir_docs_url` set, even if EDGAR/Investegate also runs
 - robots.txt compliance: `services/harvester/sources/robots_check.py` checks before scraping
 - Retry logic: `services/harvester/http_retry.py` with exponential backoff on 429/502/503/504
+
+## Ingestion Pipeline — what each file does
+
+End-to-end flow from harvester candidate → Document row ready for analysis:
+
+```
+Weekly Beat (Mon 00:00 UTC) / manual /harvester/run
+       │
+       ▼
+ agents/ingestion/orchestrator.py::IngestionOrchestrator
+   • Tier filter (portfolio / watchlist / all)
+   • Calls services/harvester::run_harvest(tickers=...)
+       │
+       ▼
+ services/harvester/__init__.py::run_harvest
+   • For each company, runs sources in priority order:
+       services/harvester/sources/sec_edgar.py      (EDGAR API)
+       services/harvester/sources/investegate.py    (UK RNS)
+       services/harvester/sources/ir_scraper.py     (regex + Cloudflare-aware)
+       services/harvester/sources/ir_llm_scraper.py (Claude HTML classification)
+   • Each returns a list[HarvestCandidate]
+   • 90s per-company timeout (COMPANY_TIMEOUT — settings-driven)
+       │
+       ▼
+ services/harvester/dispatcher.py::dispatch_candidates
+   ① _seen(source_url) → URL dedup against harvested_documents
+   ② _run_triage(candidate, company)  ──► agents/ingestion/document_triage.py
+       (NOT a registered pipeline agent — invoked directly. Writes an
+        IngestionTriage audit row for every decision.)
+       • Classifies document_type + period_label + priority + relevance
+       • Decides auto_ingest vs needs_review vs skip
+   ③ priority=skip → drop candidate
+      needs_review + !auto_ingest → save as HarvestedDocument with
+        error="pending_triage_review:<reason>", do NOT download
+      otherwise → proceed
+   ④ _download() → temp file (50 MB cap via HARVESTER_MAX_FILE_BYTES)
+   ⑤ services/document_ingestion.py::ingest_document →
+        Document row + file written to storage/raw/...
+   ⑥ _record() → HarvestedDocument row (dedup key)
+   ⑦ Post-ingest: updates matching IngestionTriage row with
+        was_ingested=True and document_id
+       │
+       ▼
+ Analyst clicks "Process" in Documents tab
+       │
+       ▼
+ services/background_processor.py
+   • document_parser.py → text + sections
+   • parallel: extract_by_document_type + _analyse_document_with_llm
+     ├── _analyse_document_with_llm dispatches by dtype:
+     │     transcript      → prompts/agents/transcript_deep_dive.txt
+     │     presentation    → prompts/agents/presentation_analysis.txt
+     │     annual_report   → prompts/agents/annual_report_deep_read.txt
+     │   Output persisted as ResearchOutput rows (cached — never re-run
+     │   per pipeline; consumer agents read the cached output)
+     └── extract → ExtractedMetric + ExtractionProfile rows
+```
+
+**Ingestion-layer agents (NOT registered with `AgentRegistry`):**
+- `agents/ingestion/orchestrator.py` — tier-based scan coordinator
+- `agents/ingestion/document_triage.py` — candidate classifier (see banner at top of file)
+- `agents/ingestion/coverage_monitor.py` — daily gap detection + auto-rescan
+
+**Shared period utilities:**
+- `services/period_utils.py` — `quarter_from_date`, `period_end_date`, `period_to_tuple`, `shift_period`. All the module-local `_fallback_period` / `_period_end` / `_period_to_tuple` / `_shift_period` functions in harvester and coverage code delegate to this.
 
 ## Harvester Coverage Monitor
 - `services/harvester/coverage.py` — checks each company's latest document period vs expected period
@@ -82,15 +147,16 @@ text = await call_llm_async(prompt)
 ## Agent Architecture
 The platform is transitioning to a modular agent architecture where each analysis step is an independent agent.
 
-### Status (2026-04-19)
-- **Foundation ✅** — `agents/base.py`, `agents/registry.py`, `agents/orchestrator.py`, DB tables (`agent_outputs`, `pipeline_runs`, `agent_calibration`, `context_contracts`)
+### Status (2026-04-20)
+- **Foundation ✅** — `agents/base.py`, `agents/registry.py`, `agents/orchestrator.py`, DB tables (`agent_outputs`, `pipeline_runs`, `agent_calibration`, `context_contracts`, `ingestion_triage`, `coverage_rescan_log`)
 - **Analysis agents ✅** — `task/financial_analyst.py`, `task/bear_case.py`, `task/bull_case.py`, `meta/debate_agent.py`, `meta/quality_control.py`
-- **Document agents 🟡 partial** — deep reads run at ingestion-time via prompt files under `prompts/agents/` (not registered pipeline agents). `transcript_deep_dive.txt`, `presentation_analysis.txt`, `annual_report_deep_read.txt` wired into `services/background_processor._analyse_document_with_llm()`. `broker_note_synthesis.txt` not built (and may not be needed).
+- **Document deep-reads ✅** — run at ingestion-time via prompt files under `prompts/agents/` (NOT registered pipeline agents — `agents/document/` directory removed in Tier 7.1 cleanup as the class files were schema-only stubs never instantiated). `transcript_deep_dive.txt`, `presentation_analysis.txt`, `annual_report_deep_read.txt` wired into `services/background_processor._analyse_document_with_llm()`. `broker_note_synthesis.txt` not built (and may not be needed).
 - **Specialist agents 🟡 partial** — `specialist/guidance_tracker.py` built. Reads guidance rows across periods to score management accountability.
-- **Ingestion agents 🟡 partial** — `ingestion/orchestrator.py` (simple tier-based wrapper) + `ingestion/document_triage.py` (classifies candidates, decides auto-ingest vs review) built. Hooked into `services/harvester/dispatcher.py`. Table `ingestion_triage` created. Pending-review UI panel at Data Hub → Document Harvester. Still missing: `coverage_monitor` (as agent), `event_scanner`, `source_quality`. Table `source_quality` still missing.
-- **Macro / Portfolio agents ❌** — not started
+- **Ingestion layer ✅** — `ingestion/orchestrator.py` (tier-based wrapper) + `ingestion/document_triage.py` (candidate classifier) + `ingestion/coverage_monitor.py` (daily learned-cadence gap detection + auto-rescan) all live. Hooked into `services/harvester/dispatcher.py`. Pending-review UI panel + Coverage Gap panel in Data Hub.
+- **Tier 0 quality gates ✅ (warn-only)** — `services/completeness_gate.py` runs between Phase A and agent pipeline. `pipeline_runs.warnings` JSONB captures both completeness + source-coverage reports. Flag `COMPLETENESS_GATE_MODE=halt` to escalate once validation window completes.
+- **Macro / Portfolio agents ❌** — deferred per user direction (correctness focus first)
 - **Calibration worker ❌** — `agent_calibration` table exists, no worker populates it
-- **Cleanup debt** — `services/context_builder.py` and `services/background_processor.py` still exist; scheduled for deletion per `_agent-architecture-clean-break.md` §8
+- **Remaining cleanup** — `services/context_builder.py` and `services/background_processor.py` still exist; they're load-bearing and cannot be deleted as the original plan assumed. See `Dev plans/_consolidated_roadmap.md` §7 for accurate state.
 
 ### Directory Structure
 - `agents/` — agent package
