@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     # Env: COMPLETENESS_GATE_MODE=halt
     completeness_gate_mode: str = "warn"
 
+    # Reconciliation gate (Tier 1.2) — "warn" attaches the report to
+    # pipeline_run.warnings but never halts; "halt" halts on critical
+    # severity issues (fabricated denominators, out-of-range values).
+    # Ship in warn for ~2 weeks to tune bounds, then flip to "halt".
+    # Env: RECONCILIATION_MODE=halt
+    reconciliation_mode: str = "warn"
+
     # ── Harvester operational thresholds (env-overridable in Tier 7.8) ──
     # Max download size in bytes; files larger than this are rejected by
     # dispatcher._download(). Default 50 MB — annual reports sometimes

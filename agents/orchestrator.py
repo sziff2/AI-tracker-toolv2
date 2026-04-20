@@ -638,6 +638,23 @@ class AgentOrchestrator:
             logger.warning("Source coverage gate failed (skipping): %s", str(exc)[:200])
             warnings["source_coverage_error"] = str(exc)[:500]
 
+        # ── Third gate: reconciliation (Tier 1.2, Sprint C) ──
+        # Validates extracted metrics against universal + sector rules,
+        # surfaces QoQ anomalies, cross-source disagreements, structural
+        # mismatches. Halt only if settings.reconciliation_mode == "halt"
+        # AND at least one critical issue is raised.
+        try:
+            from services.reconciliation import compute_reconciliation
+            rec_report = await compute_reconciliation(db, company_id, period_label)
+            warnings["reconciliation"] = rec_report.to_dict()
+            if rec_report.status == HALT_INCOMPLETE:
+                rec_mode = getattr(settings, "reconciliation_mode", "warn")
+                if rec_mode == "halt":
+                    halt_reasons.append(f"reconciliation: {rec_report.reason}")
+        except Exception as exc:
+            logger.warning("Reconciliation gate failed (skipping): %s", str(exc)[:200])
+            warnings["reconciliation_error"] = str(exc)[:500]
+
         mode = getattr(settings, "completeness_gate_mode", "warn")
         if halt_reasons and mode == "halt":
             logger.warning(

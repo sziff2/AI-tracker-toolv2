@@ -38,6 +38,26 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "IFRS 9 / CECL impairment, Basel III/IV capital",
         "notes": "Distinguish between reported and underlying NIM. Watch for RWA inflation from Basel IV.",
+        "kpi_validation": {
+            # Ranges expressed in the metric's native extracted unit.
+            # Bank NIM is almost always reported as a percentage (e.g.
+            # 3.45 not 0.0345). Keep bounds generous to accommodate
+            # digital-only banks (~1.8%) through to credit-card-heavy
+            # specialists (~8%).
+            "nim": {"reasonable_range": (1.5, 8.0), "unit": "%",
+                    "valid_denominators": ["average_earning_assets", "average_interest_earning_assets"]},
+            "cet1 ratio": {"reasonable_range": (4.0, 25.0), "unit": "%",
+                           "valid_denominators": ["risk_weighted_assets"]},
+            "charge_off_rate": {"reasonable_range": (0.0, 5.0), "unit": "%",
+                                "valid_denominators": ["average_loans", "average_loans_outstanding", "average_loans_and_leases"],
+                                "invalid_denominators": ["revenue", "total_revenue", "total_assets", "deposits", "net_income"]},
+            "npl ratio": {"reasonable_range": (0.0, 15.0), "unit": "%",
+                          "valid_denominators": ["total_loans", "gross_loans"]},
+            "cost/income ratio": {"reasonable_range": (30.0, 80.0), "unit": "%"},
+            "rote": {"reasonable_range": (0.0, 30.0), "unit": "%"},
+            "loan-to-deposit ratio": {"reasonable_range": (50.0, 140.0), "unit": "%"},
+            "coverage ratio": {"reasonable_range": (20.0, 200.0), "unit": "%"},
+        },
     },
     "insurance": {
         "display_name": "Insurance",
@@ -51,6 +71,14 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "Solvency II, IFRS 17",
         "notes": "Separate life vs P&C. Prior-year reserve releases distort combined ratio.",
+        "kpi_validation": {
+            "combined ratio": {"reasonable_range": (70.0, 120.0), "unit": "%",
+                               "notes": ">100 means underwriting loss"},
+            "loss ratio": {"reasonable_range": (40.0, 90.0), "unit": "%"},
+            "expense ratio": {"reasonable_range": (15.0, 45.0), "unit": "%"},
+            "solvency ratio": {"reasonable_range": (120.0, 300.0), "unit": "%",
+                               "notes": "Regulator-defined; below 100 is critical"},
+        },
     },
     "asset_management": {
         "display_name": "Asset Management",
@@ -87,6 +115,12 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "EPRA metrics, IFRS fair value",
         "notes": "NAV vs share price discount/premium is key. Distinguish EPRA NTA from IFRS NAV.",
+        "kpi_validation": {
+            "occupancy rate": {"reasonable_range": (70.0, 100.0), "unit": "%"},
+            "ltv": {"reasonable_range": (10.0, 70.0), "unit": "%"},
+            "wault": {"reasonable_range": (2.0, 20.0), "unit": "years"},
+            "cost of debt": {"reasonable_range": (1.0, 10.0), "unit": "%"},
+        },
     },
 
     # ── Consumer ──────────────────────────────────────────────────
@@ -140,6 +174,11 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "IFRS / US GAAP",
         "notes": "Calendar shift effects. Distinguish food vs non-food LFL. Watch Clubcard/loyalty data.",
+        "kpi_validation": {
+            "like-for-like sales growth": {"reasonable_range": (-20.0, 30.0), "unit": "%"},
+            "gross margin": {"reasonable_range": (15.0, 55.0), "unit": "%"},
+            "operating margin": {"reasonable_range": (-5.0, 15.0), "unit": "%"},
+        },
     },
     "luxury_apparel": {
         "display_name": "Luxury / Apparel",
@@ -208,6 +247,12 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "US GAAP / IFRS, ASC 606 subscription revenue",
         "notes": "Separate subscription from licence + services. Watch for RPO duration shifts.",
+        "kpi_validation": {
+            "net revenue retention": {"reasonable_range": (90.0, 135.0), "unit": "%"},
+            "gross margin": {"reasonable_range": (60.0, 90.0), "unit": "%"},
+            "churn rate": {"reasonable_range": (0.0, 20.0), "unit": "%"},
+            "free cash flow margin": {"reasonable_range": (-20.0, 50.0), "unit": "%"},
+        },
     },
     "semiconductors": {
         "display_name": "Semiconductors",
@@ -249,6 +294,10 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "IFRS / US GAAP, core vs reported earnings distinction",
         "notes": "Exclude restructuring/impairment for core earnings. Pipeline probability-weight adjustments.",
+        "kpi_validation": {
+            "core operating margin": {"reasonable_range": (15.0, 50.0), "unit": "%"},
+            "r&d as % of revenue": {"reasonable_range": (8.0, 30.0), "unit": "%"},
+        },
     },
     "medtech": {
         "display_name": "Medical Devices / Medtech",
@@ -278,6 +327,12 @@ SUBSECTOR_KPIS: dict[str, dict] = {
         ],
         "reporting_standards": "IFRS / US GAAP, SEC reserve rules",
         "notes": "Distinguish organic vs inorganic production growth. Watch for impairment triggers.",
+        "kpi_validation": {
+            # Ranges cover all cycle regimes including stress
+            "reserve replacement ratio": {"reasonable_range": (0.0, 300.0), "unit": "%"},
+            "net debt/ebitdax": {"reasonable_range": (0.0, 6.0), "unit": "x"},
+            "breakeven oil price": {"reasonable_range": (15.0, 90.0), "unit": "USD/bbl"},
+        },
     },
     "oilfield_services": {
         "display_name": "Oilfield Services",
