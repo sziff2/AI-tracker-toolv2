@@ -50,7 +50,7 @@ class BullCaseAgent(BaseAgent):
     model_override = "claude-sonnet-4-6"
 
     depends_on = ["financial_analyst"]
-    feeds_into = ["debate_agent", "pm_agent"]
+    feeds_into = ["debate_agent"]   # pm_agent removed — doesn't exist (Tier 7.6)
 
     cache_ttl_hours = 24
     tracks_predictions = True

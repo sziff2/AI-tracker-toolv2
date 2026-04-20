@@ -81,8 +81,11 @@ class FinancialAnalystAgent(BaseAgent):
 
     # Orchestration
     depends_on = []  # transcript + presentation analyses are pre-built during ingestion
-    feeds_into = ["bear_case", "bull_case", "pm_agent", "consensus_comparison",
-                  "earnings_quality", "guidance_tracker"]
+    feeds_into = ["bear_case", "bull_case", "guidance_tracker"]
+    # Note: `feeds_into` is informational only — the registry uses
+    # `depends_on` for topological sort. Ghost references to unbuilt
+    # agents (pm_agent, consensus_comparison, earnings_quality) were
+    # removed in Tier 7.6 cleanup to avoid misleading future readers.
 
     # Cache for 24h — same quarter results don't change
     cache_ttl_hours = 24

@@ -61,7 +61,7 @@ class DebateAgent(BaseAgent):
     model_override = "claude-sonnet-4-6"
 
     depends_on = ["bear_case", "bull_case", "financial_analyst"]
-    feeds_into = ["quality_control", "pm_agent"]
+    feeds_into = ["quality_control"]   # pm_agent removed — doesn't exist (Tier 7.6)
 
     cache_ttl_hours = 24
     tracks_predictions = True
