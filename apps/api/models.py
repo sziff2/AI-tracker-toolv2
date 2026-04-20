@@ -773,7 +773,7 @@ class PipelineRun(Base, TimestampMixin):
     # What triggered this run
     trigger = Column(Text, nullable=False, default="manual")  # manual | auto | scheduled
     # Execution state
-    status = Column(Text, nullable=False, default="running")  # running | completed | failed | cancelled
+    status = Column(Text, nullable=False, default="running")  # running | completed | failed | cancelled | halted_incomplete | phase_a_incomplete | budget_exceeded | aborted
     started_at = Column(DateTime(timezone=True), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     duration_ms = Column(Integer, nullable=True)
@@ -794,6 +794,10 @@ class PipelineRun(Base, TimestampMixin):
     # Full per-agent execution log — JSONB array of
     # {agent_id, status, duration_ms, cost_usd, error} for the UI timeline view
     agent_execution_log = Column(JSONB, nullable=True)
+    # Structured warnings from pre-flight gates (completeness, source coverage)
+    # and any other non-fatal signals attached during the run.
+    # Shape: {"completeness": CompletenessReport, "source_coverage": SourceCoverageReport, ...}
+    warnings = Column(JSONB, nullable=True)
     # Which context contract version was active for this run
     contract_version = Column(Integer, nullable=True)
 

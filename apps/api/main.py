@@ -278,6 +278,26 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS ix_ingestion_triage_source_url ON ingestion_triage(source_url)"
         ))
 
+        # ── Pipeline runs: warnings column (gates output goes here) ──
+        await conn.execute(sa_text(
+            "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS warnings JSONB"
+        ))
+
+        # ── Harvest reports schema drift ─────────────────────────
+        # Scheduler writes run_at/summary_json/details_json/teams_sent but
+        # the ORM model (HarvestReport) was refactored to use started_at /
+        # per_company etc. Railway DB was created from the older schema, so
+        # ensure the columns the scheduler expects actually exist.
+        for col_def in [
+            "run_at TIMESTAMPTZ",
+            "summary_json TEXT",
+            "details_json TEXT",
+            "teams_sent BOOLEAN DEFAULT FALSE",
+        ]:
+            await conn.execute(sa_text(
+                f"ALTER TABLE harvest_reports ADD COLUMN IF NOT EXISTS {col_def}"
+            ))
+
         # ── Coverage rescan log ──────────────────────────────────
         await conn.execute(sa_text("""
             CREATE TABLE IF NOT EXISTS coverage_rescan_log (

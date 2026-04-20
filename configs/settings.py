@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # Keys are agent_id strings; values are model name strings.
     agent_model_overrides: dict = {}
 
+    # Data Completeness + Source Coverage gate mode (per-assessment pre-flight).
+    # "warn"  — gates run, reports attached to pipeline_run.warnings, pipeline
+    #           still proceeds. Use this for the 2-week validation window.
+    # "halt"  — halt_incomplete status terminates the pipeline before any agent
+    #           runs. Flip to this once false-positive rate is known.
+    # Env: COMPLETENESS_GATE_MODE=halt
+    completeness_gate_mode: str = "warn"
+
     # ── Budget ───────────────────────────────────────────────────
     autorun_budget_usd: float = 10.0
     # Override via env: AUTORUN_BUDGET_USD=20

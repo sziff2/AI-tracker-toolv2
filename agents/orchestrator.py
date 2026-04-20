@@ -22,7 +22,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +106,25 @@ class AgentOrchestrator:
                 ),
             )
 
+        # Pre-flight gates (Data Completeness + Source Coverage).
+        # Default mode = "warn": gates run, reports attach to pipeline_run.
+        # warnings, pipeline still proceeds. Flip settings.completeness_gate_mode
+        # to "halt" once false-positive rate is known (2-week validation).
+        gate_halt, gate_warnings = await self._run_preflight_gates(
+            db, company_id, period_label
+        )
+        if gate_halt is not None:
+            # Halt path — create an audit pipeline_run row so the halt is
+            # visible in the UI + reports, then return early.
+            pr = await self._create_pipeline_run(
+                db, company_id, period_label, trigger="manual"
+            )
+            await self._persist_pipeline_run_warnings(db, pr.id, gate_warnings, status="halted_incomplete")
+            if own_session:
+                await db.close()
+            gate_halt.pipeline_run_id = str(pr.id)
+            return gate_halt
+
         # Cache short-circuit: reuse a recent completed run unless the
         # analyst explicitly forced a re-run.
         if not force_rerun:
@@ -133,6 +152,12 @@ class AgentOrchestrator:
         )
         run_id = str(pipeline_run.id)
         logger.info("Document pipeline %s started: %s %s", run_id, company_id, period_label)
+
+        # Attach any gate warnings (warn-mode path) to this pipeline_run before
+        # agents start — visible in the UI timeline even if the run is still
+        # executing.
+        if gate_warnings:
+            await self._persist_pipeline_run_warnings(db, pipeline_run.id, gate_warnings)
 
         return await self._execute_pipeline(
             db=db,
@@ -573,6 +598,100 @@ class AgentOrchestrator:
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:200])
             return False
+
+    async def _run_preflight_gates(
+        self, db: AsyncSession, company_id: str, period_label: str,
+    ) -> tuple[Optional[PipelineRunResult], dict]:
+        """Run both pre-flight gates (Data Completeness + Source Coverage).
+
+        Returns a tuple of (halt_result, warnings_dict):
+          - halt_result: a PipelineRunResult if we're in "halt" mode AND a
+            gate says HALT_INCOMPLETE. None otherwise.
+          - warnings_dict: structured reports from both gates, always
+            populated so callers can persist to pipeline_run.warnings.
+
+        Gates never raise — a query failure logs + skips the gate rather
+        than blocking the pipeline. Correctness tooling must not itself be
+        a source of outages."""
+        from services.completeness_gate import (
+            compute_completeness, compute_source_coverage, HALT_INCOMPLETE,
+        )
+
+        warnings: dict = {}
+        halt_reasons: list[str] = []
+
+        try:
+            comp_report = await compute_completeness(db, company_id, period_label)
+            warnings["completeness"] = comp_report.to_dict()
+            if comp_report.status == HALT_INCOMPLETE:
+                halt_reasons.append(f"completeness: {comp_report.reason}")
+        except Exception as exc:
+            logger.warning("Completeness gate failed (skipping): %s", str(exc)[:200])
+            warnings["completeness_error"] = str(exc)[:500]
+
+        try:
+            cov_report = await compute_source_coverage(db, company_id, period_label)
+            warnings["source_coverage"] = cov_report.to_dict()
+            if cov_report.status == HALT_INCOMPLETE:
+                halt_reasons.append(f"source_coverage: {cov_report.reason}")
+        except Exception as exc:
+            logger.warning("Source coverage gate failed (skipping): %s", str(exc)[:200])
+            warnings["source_coverage_error"] = str(exc)[:500]
+
+        mode = getattr(settings, "completeness_gate_mode", "warn")
+        if halt_reasons and mode == "halt":
+            logger.warning(
+                "[GATE] Halting pipeline for %s %s — %s",
+                company_id, period_label, "; ".join(halt_reasons),
+            )
+            return (
+                PipelineRunResult(
+                    pipeline_run_id="",  # caller fills this in after creating the row
+                    status="halted_incomplete",
+                    error_message=(
+                        "Pre-flight gates halted this analysis. "
+                        + "; ".join(halt_reasons)
+                    ),
+                ),
+                warnings,
+            )
+        elif halt_reasons:
+            # warn mode — log but don't halt
+            logger.info(
+                "[GATE] Warnings (non-halting) for %s %s — %s",
+                company_id, period_label, "; ".join(halt_reasons),
+            )
+
+        return (None, warnings)
+
+    async def _persist_pipeline_run_warnings(
+        self,
+        db: AsyncSession,
+        pipeline_run_id,
+        warnings: dict,
+        status: Optional[str] = None,
+    ) -> None:
+        """Write the gate warnings JSONB to pipeline_runs.warnings. If
+        status is provided, also update pipeline_runs.status (used on the
+        halt path to mark the row as halted_incomplete immediately)."""
+        from sqlalchemy import update
+        from apps.api.models import PipelineRun
+        try:
+            values: dict = {"warnings": warnings}
+            if status:
+                values["status"] = status
+                values["completed_at"] = datetime.now(timezone.utc)
+            await db.execute(
+                update(PipelineRun)
+                .where(PipelineRun.id == pipeline_run_id)
+                .values(**values)
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist warnings to pipeline_run %s: %s",
+                pipeline_run_id, str(exc)[:200],
+            )
 
     def _group_by_layer(self, agents: list) -> list[tuple[int, list]]:
         """Group agents into execution layers based on dependency depth.
