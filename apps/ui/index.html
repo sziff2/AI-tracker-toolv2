@@ -1398,7 +1398,11 @@ async function updateDocMeta(docId,fields,ticker){
 }
 async function deleteDoc(docId,ticker){
   if(!confirm('Remove this document?'))return;
-  try{await fetch('/api/v1/documents/'+docId,{method:'DELETE'});window._ckActiveTab=window._ckActiveTab||'results';_ckReload();}catch(e){toast('Failed: '+e.message);}
+  try{
+    const r=await fetch('/api/v1/documents/'+docId,{method:'DELETE'});
+    if(!r.ok){const t=await r.text();throw new Error('HTTP '+r.status+': '+t.slice(0,200));}
+    window._ckActiveTab=window._ckActiveTab||'results';_ckReload();
+  }catch(e){toast('Failed: '+e.message);}
 }
 
 async function askGlobal(ticker){

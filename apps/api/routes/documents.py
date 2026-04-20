@@ -672,15 +672,22 @@ async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get
         raise HTTPException(404, "Document not found")
 
     # Delete related records first (all tables with document_id FK)
-    from apps.api.models import HarvestedDocument, ManagementStatement
+    from apps.api.models import (
+        HarvestedDocument, ManagementStatement,
+        IngestionTriage, AgentOutput, ExtractionFeedback,
+    )
     await db.execute(delete(ReviewQueueItem).where(ReviewQueueItem.entity_id == document_id))
     await db.execute(delete(EventAssessment).where(EventAssessment.document_id == document_id))
     await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id == document_id))
     await db.execute(delete(DocumentSection).where(DocumentSection.document_id == document_id))
     await db.execute(delete(ManagementStatement).where(ManagementStatement.document_id == document_id))
-    # Unlink harvested documents (don't delete — keep the harvest record)
-    from sqlalchemy import update
+    # ExtractionProfile has nullable=False FK — must delete, not unlink
+    await db.execute(delete(ExtractionProfile).where(ExtractionProfile.document_id == document_id))
+    # Nullable FKs — unlink to preserve audit/history rows
     await db.execute(update(HarvestedDocument).where(HarvestedDocument.document_id == document_id).values(document_id=None, ingested=False))
+    await db.execute(update(IngestionTriage).where(IngestionTriage.document_id == document_id).values(document_id=None))
+    await db.execute(update(AgentOutput).where(AgentOutput.document_id == document_id).values(document_id=None))
+    await db.execute(update(ExtractionFeedback).where(ExtractionFeedback.document_id == document_id).values(document_id=None))
     await db.delete(doc)
     await db.commit()
     return {"status": "deleted", "document_id": str(document_id)}
@@ -693,7 +700,9 @@ async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get
 async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await get_company_or_404(db, ticker)
 
-    from apps.api.models import HarvestedDocument
+    from apps.api.models import (
+        HarvestedDocument, IngestionTriage, AgentOutput, ExtractionFeedback,
+    )
     try:
         docs = await db.execute(select(Document).where(Document.company_id == company.id))
         doc_ids = [d.id for d in docs.scalars().all()]
@@ -709,11 +718,27 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
             await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
             await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
             await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
-            # Null out harvester pointers so the documents FK doesn't block deletion
+            await db.execute(delete(ExtractionProfile).where(ExtractionProfile.document_id.in_(doc_ids)))
+            # Null out nullable FKs so the documents delete isn't blocked
             await db.execute(
                 update(HarvestedDocument)
                 .where(HarvestedDocument.document_id.in_(doc_ids))
                 .values(document_id=None, ingested=False)
+            )
+            await db.execute(
+                update(IngestionTriage)
+                .where(IngestionTriage.document_id.in_(doc_ids))
+                .values(document_id=None)
+            )
+            await db.execute(
+                update(AgentOutput)
+                .where(AgentOutput.document_id.in_(doc_ids))
+                .values(document_id=None)
+            )
+            await db.execute(
+                update(ExtractionFeedback)
+                .where(ExtractionFeedback.document_id.in_(doc_ids))
+                .values(document_id=None)
             )
             await db.execute(delete(Document).where(Document.company_id == company.id))
 
@@ -738,7 +763,9 @@ async def delete_all_documents(ticker: str, db: AsyncSession = Depends(get_db)):
 async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depends(get_db)):
     company = await get_company_or_404(db, ticker)
 
-    from apps.api.models import HarvestedDocument
+    from apps.api.models import (
+        HarvestedDocument, IngestionTriage, AgentOutput, ExtractionFeedback,
+    )
     try:
         # Find documents for this period
         docs = await db.execute(
@@ -757,11 +784,27 @@ async def delete_period(ticker: str, period_label: str, db: AsyncSession = Depen
             await db.execute(delete(EventAssessment).where(EventAssessment.document_id.in_(doc_ids)))
             await db.execute(delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids)))
             await db.execute(delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids)))
-            # Null out harvester pointers so the documents FK doesn't block deletion
+            await db.execute(delete(ExtractionProfile).where(ExtractionProfile.document_id.in_(doc_ids)))
+            # Null out nullable FKs so the documents delete isn't blocked
             await db.execute(
                 update(HarvestedDocument)
                 .where(HarvestedDocument.document_id.in_(doc_ids))
                 .values(document_id=None, ingested=False)
+            )
+            await db.execute(
+                update(IngestionTriage)
+                .where(IngestionTriage.document_id.in_(doc_ids))
+                .values(document_id=None)
+            )
+            await db.execute(
+                update(AgentOutput)
+                .where(AgentOutput.document_id.in_(doc_ids))
+                .values(document_id=None)
+            )
+            await db.execute(
+                update(ExtractionFeedback)
+                .where(ExtractionFeedback.document_id.in_(doc_ids))
+                .values(document_id=None)
             )
             await db.execute(delete(Document).where(Document.id.in_(doc_ids)))
 
