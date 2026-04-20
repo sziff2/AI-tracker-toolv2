@@ -45,6 +45,16 @@ ADJUDICATION RULES:
    - watch: thesis under pressure, need more data
    - avoid: thesis broken or risk/reward unfavourable
 6. Do NOT contradict the macro assumptions in the Context Contract.
+7. Handle uncertainty with proportion, not bias. When data is thin
+   — either the Financial Analyst's evidence is incomplete, or the
+   Bear / Bull cases lean on missing data — favour a wider, more
+   neutral probability distribution rather than skewing in either
+   direction. The absence of a data point by itself is rarely
+   directional; what matters is absence relative to prior reporting
+   (a metric dropped vs last quarter is signal; a metric never
+   disclosed is not). When completeness is clearly low, note this in
+   debate_summary and avoid a strong verdict — prefer "watch" over
+   "avoid" when key comparators are missing.
 
 Respond with a JSON object. No preamble, no markdown fences.
 

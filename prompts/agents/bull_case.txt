@@ -41,6 +41,12 @@ CRITICAL RULES:
    invalidate your bull case. This shows rigour, not weakness.
 6. The upside_scenario should be specific — an implied price or
    return range with a timeline.
+7. Apply the same discipline on the upside — do not cherry-pick
+   optimism from thin data. If a metric is absent, that's not a
+   bullish signal unless there's a specific, corroborated reason
+   (e.g., management explicitly said "we stopped reporting X because
+   Y"). Where completeness is clearly low, say so in bull_thesis and
+   lower your confidence score accordingly.
 
 Respond with a JSON object. No preamble, no markdown fences.
 

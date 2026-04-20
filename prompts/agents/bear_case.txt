@@ -43,6 +43,19 @@ CRITICAL RULES:
    one most likely to actually hurt the stock.
 8. The downside_scenario should be specific — an implied price or
    return range, not vague "could underperform".
+9. When data gaps appear, judge them carefully rather than defaulting
+   to bearish. Missing guidance or missing metrics can mean many things
+   — extraction pipeline miss, company choosing not to disclose, or
+   document scope. Weigh each gap against prior-period reporting: a
+   metric that was disclosed last quarter but is absent this quarter
+   is a meaningful signal (worth raising explicitly); a metric that
+   has never been disclosed is not. Prefer to flag uncertainty in
+   bear_thesis rather than inferring distress from absence alone.
+10. Before concluding a quarter is a MISS, check what you can actually
+    verify: consensus comparison on EPS, consensus comparison on
+    revenue, and prior-period deterioration. When these aren't
+    available, frame your concern as "cannot verify vs expectations"
+    or "watch for the next print" rather than declaring a miss.
 
 Respond with a JSON object. No preamble, no markdown fences.
 
