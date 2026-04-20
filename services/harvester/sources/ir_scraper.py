@@ -187,6 +187,50 @@ def _base(url: str) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
+# Common "uninformative" anchor texts used by IR CMS templates. When a
+# link's visible text is one of these we treat it as noise and fall back
+# to the PDF filename slug for the document title.
+_GENERIC_ANCHOR_TEXTS = {
+    "open", "download", "pdf", "view", "click here", "read more",
+    "see more", "document", "file", "link", "here",
+}
+
+
+# Mojibake — UTF-8 bytes incorrectly decoded as Latin-1 and then
+# re-encoded as UTF-8. The characters below are the Latin-1 triads that
+# result from the UTF-8 bytes of common punctuation (em-dash, en-dash,
+# smart quotes, ellipsis). Seen in the wild on NWC CN's IR site where
+# an em-dash in a filename produced a %C3%A2%C2%80%C2%93 URL that
+# 404s. Replacing the triad with the correct single character lets
+# httpx URL-encode it properly.
+_MOJIBAKE_FIXES = {
+    "\u00e2\u0080\u0093": "\u2013",  # en-dash
+    "\u00e2\u0080\u0094": "\u2014",  # em-dash
+    "\u00e2\u0080\u0098": "\u2018",  # left single quote
+    "\u00e2\u0080\u0099": "\u2019",  # right single quote
+    "\u00e2\u0080\u009c": "\u201c",  # left double quote
+    "\u00e2\u0080\u009d": "\u201d",  # right double quote
+    "\u00e2\u0080\u00a6": "\u2026",  # ellipsis
+    "\u00e2\u0080\u00a2": "\u2022",  # bullet
+    "\u00c3\u00a9":       "\u00e9",  # é
+    "\u00c3\u00a8":       "\u00e8",  # è
+    "\u00c3\u00a0":       "\u00e0",  # à
+}
+
+
+def _fix_mojibake(s: str) -> str:
+    """Reverse UTF-8-as-Latin-1-as-UTF-8 double-encoding of common
+    punctuation. Conservative — only fixes the specific triads above,
+    does not touch anything else. Safe to apply to URLs, titles, and
+    arbitrary scraped text."""
+    if not s:
+        return s
+    for wrong, right in _MOJIBAKE_FIXES.items():
+        if wrong in s:
+            s = s.replace(wrong, right)
+    return s
+
+
 def _infer_period(text: str) -> Optional[str]:
     for pattern, fmt in _PERIOD_PATTERNS:
         m = re.search(pattern, text, re.IGNORECASE)
@@ -201,12 +245,28 @@ def _infer_period(text: str) -> Optional[str]:
     return None
 
 
-def _classify_doc_type(text: str) -> str:
-    t = text.lower()
+def _classify_doc_type(slug: str = "", headline: str = "", url_path: str = "") -> str:
+    """Classify using ONLY the PDF's own identifiers — filename slug,
+    link text, and URL path. Deliberately excludes surrounding page
+    context (IR page titles like "Investor Presentations" would
+    otherwise make every PDF on that page look like a presentation).
+
+    Order matters: more specific / unambiguous keywords are checked
+    first. "press release" is checked before "presentation" because
+    IR CMS templates often nest press releases inside a section titled
+    "Presentations & News", and a PDF whose filename or link text says
+    "press release" should always win.
+    """
+    t = " ".join(s.lower() for s in (slug, headline, url_path) if s)
+
     if any(k in t for k in ["transcript", "call transcript", "q&a", "questions and answers"]):
         return "transcript"
-    if any(k in t for k in ["presentation", "slides", "investor day", "capital markets", "analyst slides"]):
-        return "presentation"
+    # press release wins over presentation — a PDF named "Press Release"
+    # on an IR "Presentations" page is NOT a presentation. Triage
+    # catches these but the misclassification burns an LLM call every
+    # time, which adds up across a backfill.
+    if any(k in t for k in ["press release", "press-release", "earnings release", "quarterly report"]):
+        return "earnings_release"
     if any(k in t for k in ["annual report", "annual-report", "20-f", "40-f"]):
         return "annual_report"
     if any(k in t for k in ["proxy", "def 14", "agm", "general meeting"]):
@@ -219,7 +279,12 @@ def _classify_doc_type(text: str) -> str:
         return "10-K"
     if any(k in t for k in ["10-q", "10q"]):
         return "10-Q"
-    if any(k in t for k in ["press release", "earnings release", "results", "quarterly report"]):
+    if any(k in t for k in ["presentation", "slides", "investor day", "capital markets", "analyst slides"]):
+        return "presentation"
+    # "results" alone is genuinely ambiguous (could be a press release
+    # OR a results presentation). Default to earnings_release only if
+    # no stronger signal matched above.
+    if "results" in t:
         return "earnings_release"
     return "other"
 
@@ -410,15 +475,31 @@ async def scrape_ir_page(
 
 def _make_candidate(ticker: str, pdf_url: str, link_text: str, context: str) -> dict:
     """Build a HarvestCandidate dict from a found PDF link."""
-    # Build a readable headline from link text + URL slug
-    slug = urlparse(pdf_url).path.split('/')[-1].replace('-', ' ').replace('_', ' ')
-    slug = re.sub(r'\.pdf$', '', slug, flags=re.IGNORECASE)
-    headline = link_text.strip() if link_text.strip() else slug.title()
+    # Fix any mojibake in the URL itself before it gets URL-encoded by
+    # the HTTP client. Seen on NWC CN where an em-dash in a filename
+    # was double-UTF-8-encoded and 404'd.
+    pdf_url = _fix_mojibake(pdf_url)
 
-    # Use full context (page title + link text + URL path + slug) for inference
+    # Build a readable headline from link text + URL slug
+    url_path = urlparse(pdf_url).path
+    slug = url_path.split('/')[-1].replace('-', ' ').replace('_', ' ')
+    slug = re.sub(r'\.pdf$', '', slug, flags=re.IGNORECASE)
+    slug = _fix_mojibake(slug)
+
+    # Clean the link text and fall back to the slug when it's an
+    # uninformative CMS default like "Open", "Download", "View", etc.
+    link_text_clean = _fix_mojibake((link_text or "").strip())
+    if (not link_text_clean) or link_text_clean.lower() in _GENERIC_ANCHOR_TEXTS:
+        headline = slug.title()
+    else:
+        headline = link_text_clean
+
+    # Use full context (page title + link text + URL path + slug) for
+    # period inference. For document_type classification, deliberately
+    # use only the PDF's own identifiers — see _classify_doc_type.
     full_context = f"{context} {pdf_url} {slug} {headline}"
     period_label = _infer_period(full_context)
-    doc_type = _classify_doc_type(full_context)
+    doc_type = _classify_doc_type(slug=slug, headline=headline, url_path=url_path)
 
     # Try to extract a real publication date from URL/filename
     published_at = _extract_date(full_context) or datetime.now(timezone.utc)
