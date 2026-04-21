@@ -4258,6 +4258,21 @@ function renderAttrTable(title, groups, portExpRet) {
 let OP_DATA = null; // cached portfolio data
 let OP_CORR = null; // cached correlation matrix (server-computed)
 let OP_RISK = null; // cached realised-vol batch
+// Sort state for the Weight Comparison table. Default: by Kelly % desc,
+// which matches the "concentrated weights first" behaviour the UI used to
+// hardcode. Click a <th> to change column or toggle direction.
+let OP_SORT = { col: 'kelly', dir: 'desc' };
+
+function sortOptTable(col) {
+  if (OP_SORT.col === col) {
+    OP_SORT.dir = OP_SORT.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    OP_SORT.col = col;
+    // Numeric cols default to desc (biggest first); text cols default asc
+    OP_SORT.dir = (col === 'ticker' || col === 'name') ? 'asc' : 'desc';
+  }
+  if (typeof renderOptimise === 'function') renderOptimise();
+}
 
 async function initOptimisePage() {
   await loadPortfolios();
@@ -4373,48 +4388,78 @@ function renderOptimise() {
   h += renderOptSummaryCard('CVaR', cvarResult, holdings, corrMatrix, '#818CF8');
   h += '</div>';
 
-  // ── Full comparison table ────────────────────────────────────
-  h += '<h2>Weight Comparison</h2>';
-  h += '<div style="overflow-x:auto"><table class="kt"><thead><tr>';
-  h += '<th>Ticker</th><th>Name</th>';
-  h += '<th style="text-align:right">Current Wt%</th>';
-  h += '<th style="text-align:right;color:var(--gold)">Kelly %</th>';
-  h += '<th style="text-align:right;color:var(--teal)">MV %</th>';
-  h += '<th style="text-align:right;color:#818CF8">CVaR %</th>';
-  h += '<th style="text-align:right">Exp.Ret%</th>';
-  h += '<th style="text-align:right">Vol(impl)</th>';
-  h += '</tr></thead><tbody>';
-
+  // ── Full comparison table (sortable by any column) ───────────
+  // Build one row-object per ticker with every sortable field, then
+  // sort once according to OP_SORT before rendering.
   const allTickers = [...new Set([
     ...Object.keys(kellyResult.weights),
     ...Object.keys(mvResult.weights),
     ...Object.keys(cvarResult.weights),
     ...holdings.map(h => h.ticker)
   ])];
-  allTickers.sort((a, b) => (kellyResult.weights[b] || 0) - (kellyResult.weights[a] || 0));
-
+  const compareRows = [];
   allTickers.forEach(ticker => {
     const ho = holdings.find(h => h.ticker === ticker);
     if (!ho) return;
-    const cur  = ho.w.toFixed(1) + '%';
-    const kw   = kellyResult.weights[ticker];
-    const mw   = mvResult.weights[ticker];
-    const cv   = cvarResult.weights[ticker];
-    const fmtW = (v, cur) => {
-      if (v == null) return '—';
-      const diff = v - parseFloat(cur);
-      const clr  = diff > 0.5 ? 'var(--green)' : diff < -0.5 ? 'var(--red)' : 'var(--text)';
-      return '<span style="color:' + clr + '">' + v.toFixed(1) + '%</span>';
-    };
+    compareRows.push({
+      ticker,
+      tickerShort: ticker.replace(/\s+(equity|eq)$/i,'').trim(),
+      name:   ho.name || '',
+      curW:   ho.w,
+      kelly:  kellyResult.weights[ticker] ?? null,
+      mv:     mvResult.weights[ticker]    ?? null,
+      cvar:   cvarResult.weights[ticker]  ?? null,
+      expRet: ho.expRet,
+      vol:    ho.vol,
+    });
+  });
+  const { col: sortCol, dir: sortDir } = OP_SORT;
+  const sign = sortDir === 'asc' ? 1 : -1;
+  compareRows.sort((a, b) => {
+    const va = a[sortCol], vb = b[sortCol];
+    // Nulls always sink to the bottom, regardless of direction.
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') return sign * va.localeCompare(vb);
+    return sign * (va - vb);
+  });
+
+  const sortArrow = col => col === sortCol ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  const sortableTh = (col, label, extraCSS = '') =>
+    '<th style="cursor:pointer;user-select:none;' + extraCSS + '" onclick="sortOptTable(\'' + col + '\')" title="Click to sort">'
+    + label + '<span style="color:var(--gold);font-size:10px">' + sortArrow(col) + '</span></th>';
+
+  h += '<h2>Weight Comparison</h2>';
+  h += '<div style="font-size:11px;color:var(--text3);margin:-8px 0 8px">Click any column header to sort. Current sort: <span style="color:var(--gold)">' + sortCol + ' ' + sortDir + '</span>.</div>';
+  h += '<div style="overflow-x:auto"><table class="kt"><thead><tr>';
+  h += sortableTh('ticker', 'Ticker');
+  h += sortableTh('name', 'Name');
+  h += sortableTh('curW',  'Current Wt%', 'text-align:right');
+  h += sortableTh('kelly', 'Kelly %',     'text-align:right;color:var(--gold)');
+  h += sortableTh('mv',    'MV %',        'text-align:right;color:var(--teal)');
+  h += sortableTh('cvar',  'CVaR %',      'text-align:right;color:#818CF8');
+  h += sortableTh('expRet','Exp.Ret%',    'text-align:right');
+  h += sortableTh('vol',   'Vol(impl)',   'text-align:right');
+  h += '</tr></thead><tbody>';
+
+  const fmtW = (v, cur) => {
+    if (v == null) return '—';
+    const diff = v - cur;
+    const clr  = diff > 0.5 ? 'var(--green)' : diff < -0.5 ? 'var(--red)' : 'var(--text)';
+    return '<span style="color:' + clr + '">' + v.toFixed(1) + '%</span>';
+  };
+
+  compareRows.forEach(r => {
     h += '<tr>';
-    h += '<td class="kn">' + esc(ticker.replace(/\s+(equity|eq)$/i,'').trim()) + '</td>';
-    h += '<td style="font-size:11px;color:var(--text2)">' + esc(ho.name || '') + '</td>';
-    h += '<td style="text-align:right;font-weight:600">' + cur + '</td>';
-    h += '<td style="text-align:right">' + fmtW(kw, cur) + '</td>';
-    h += '<td style="text-align:right">' + fmtW(mw, cur) + '</td>';
-    h += '<td style="text-align:right">' + fmtW(cv, cur) + '</td>';
-    h += '<td style="text-align:right;color:' + colourPct(ho.expRet) + '">' + pctFmt(ho.expRet) + '</td>';
-    h += '<td style="text-align:right;color:var(--text3)">' + (ho.vol * 100).toFixed(0) + '%</td>';
+    h += '<td class="kn">' + esc(r.tickerShort) + '</td>';
+    h += '<td style="font-size:11px;color:var(--text2)">' + esc(r.name) + '</td>';
+    h += '<td style="text-align:right;font-weight:600">' + r.curW.toFixed(1) + '%</td>';
+    h += '<td style="text-align:right">' + fmtW(r.kelly, r.curW) + '</td>';
+    h += '<td style="text-align:right">' + fmtW(r.mv,    r.curW) + '</td>';
+    h += '<td style="text-align:right">' + fmtW(r.cvar,  r.curW) + '</td>';
+    h += '<td style="text-align:right;color:' + colourPct(r.expRet) + '">' + pctFmt(r.expRet) + '</td>';
+    h += '<td style="text-align:right;color:var(--text3)">' + (r.vol * 100).toFixed(0) + '%</td>';
     h += '</tr>';
   });
   h += '</tbody></table></div>';
