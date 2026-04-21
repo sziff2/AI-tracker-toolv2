@@ -198,7 +198,7 @@ async def merge_companies(
 # ─────────────────────────────────────────────────────────────────
 # Thesis
 # ─────────────────────────────────────────────────────────────────
-@router.post("/{ticker}/thesis", response_model=ThesisOut, status_code=201)
+@router.post("/{ticker:path}/thesis", response_model=ThesisOut, status_code=201)
 async def create_thesis(ticker: str, body: ThesisCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
     company = result.scalar_one_or_none()
@@ -224,7 +224,7 @@ async def create_thesis(ticker: str, body: ThesisCreate, db: AsyncSession = Depe
     return thesis
 
 
-@router.get("/{ticker}/thesis", response_model=list[ThesisOut])
+@router.get("/{ticker:path}/thesis", response_model=list[ThesisOut])
 async def list_theses(ticker: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company).where(Company.ticker == _clean_ticker(ticker)))
     company = result.scalar_one_or_none()
