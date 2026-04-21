@@ -3870,13 +3870,13 @@ function renderAnalytics(d, opts = {}) {
   h += '</tbody></table></div>';
 
   // ══════════════════════════════════════════════════════════════
-  // PAIRWISE CORRELATION MATRIX
+  // PAIRWISE CORRELATION MATRIX (all holdings, sorted by weight)
   // ══════════════════════════════════════════════════════════════
-  const top10 = [...holdings].sort((a,b)=>b.w-a.w).slice(0,10);
-  const n = top10.length;
+  const heatHoldings = [...holdings].sort((a,b)=>b.w-a.w);
+  const n = heatHoldings.length;
 
   // Build grid from the (server-backed-with-fallback) matrix assembled above.
-  const corrGrid = top10.map(a => top10.map(b => corrMatrix[a.ticker][b.ticker]));
+  const corrGrid = heatHoldings.map(a => heatHoldings.map(b => corrMatrix[a.ticker][b.ticker]));
 
   // Off-diagonal stats
   const offDiag = [];
@@ -3893,45 +3893,60 @@ function renderAnalytics(d, opts = {}) {
     return '#2DD4BF';
   }
 
-  const cellSz = Math.min(38, Math.floor(340/n));
-  const lbSz   = cellSz;
+  // Adaptive cell sizing: big cells with numbers when the portfolio is
+  // small, smaller colour-only cells for 20+ holdings (numbers stay in
+  // the hover tooltip). Labels shrink too so the whole matrix fits.
+  const cellSz = n <= 12 ? 34 : n <= 20 ? 26 : 20;
+  const showNums = cellSz >= 26;
+  const cellFont = cellSz >= 30 ? 8 : 7;
+  const lblFont = n <= 14 ? 9 : n <= 22 ? 8 : 7;
+  const lblW = n <= 14 ? 48 : n <= 22 ? 44 : 40;
+  const lblH = n <= 14 ? 38 : n <= 22 ? 44 : 52;
+  const tickerLabel = t => t.replace(/\s+(equity|eq)$/i,'').trim().slice(0,8);
 
   const corrLabel = corrData && corrData.n_months
-    ? `Top ${n} holdings · ${corrData.n_months}mo realised log-return correlation (USD)`
-    : `Top ${n} holdings · Sector/country proximity model (no price history yet)`;
+    ? `All ${n} holdings · ${corrData.n_months}mo realised log-return correlation (USD)`
+    : `All ${n} holdings · Sector/country proximity model (no price history yet)`;
   h += '<h2 style="margin-top:24px">Pairwise Correlation Matrix</h2>';
   h += '<div class="cd" style="padding:20px">';
   h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px">';
   h += '<span style="font-size:11px;color:var(--text3)">'+corrLabel+'</span></div>';
-  h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start">';
+  // For large portfolios the heatmap alone is wide enough that the right
+  // panel belongs below it rather than beside. Stack vertically above 14.
+  const useSideBySide = n <= 14;
+  h += useSideBySide
+    ? '<div style="display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start">'
+    : '<div style="display:flex;flex-direction:column;gap:20px">';
 
   // ── Heatmap ────────────────────────────────────────────────────
   h += '<div style="overflow-x:auto"><div style="display:inline-block">';
-  // Column headers (rotated via inline style)
-  h += '<div style="display:flex;margin-left:'+(lbSz+4)+'px;margin-bottom:4px">';
-  top10.forEach(ho => {
-    const lbl = ho.ticker.replace(/\s+(equity|eq)$/i,'').trim().slice(0,6);
-    h += '<div style="width:'+cellSz+'px;text-align:center;font-size:9px;color:var(--gold);font-family:var(--mono);'
-       + 'writing-mode:vertical-rl;transform:rotate(180deg);height:36px;line-height:1;overflow:hidden">'+esc(lbl)+'</div>';
+  // Column headers (rotated)
+  h += '<div style="display:flex;margin-left:'+(lblW+4)+'px;margin-bottom:4px">';
+  heatHoldings.forEach(ho => {
+    const lbl = tickerLabel(ho.ticker);
+    h += '<div style="width:'+cellSz+'px;text-align:center;font-size:'+lblFont+'px;color:var(--gold);font-family:var(--mono);'
+       + 'writing-mode:vertical-rl;transform:rotate(180deg);height:'+lblH+'px;line-height:1;overflow:hidden">'+esc(lbl)+'</div>';
   });
   h += '</div>';
   // Rows
-  top10.forEach((a,i) => {
-    const rowLbl = a.ticker.replace(/\s+(equity|eq)$/i,'').trim().slice(0,6);
+  heatHoldings.forEach((a,i) => {
+    const rowLbl = tickerLabel(a.ticker);
     h += '<div style="display:flex;align-items:center;margin-bottom:2px">';
-    h += '<div style="width:'+lbSz+'px;font-size:9px;color:var(--gold);font-family:var(--mono);'
+    h += '<div style="width:'+lblW+'px;font-size:'+lblFont+'px;color:var(--gold);font-family:var(--mono);'
        + 'text-align:right;padding-right:6px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(rowLbl)+'</div>';
-    top10.forEach((b,j) => {
+    heatHoldings.forEach((b,j) => {
       const v   = corrGrid[i][j];
       const col = corrColor(v);
       const bg  = col + (i===j ? '40' : '25');
       const bdr = col + (i===j ? '90' : '50');
-      h += '<div title="'+esc(rowLbl)+' / '+esc(b.ticker.replace(/\s+(equity|eq)$/i,'').trim().slice(0,6))+': '+v.toFixed(2)+'"'
+      h += '<div title="'+esc(rowLbl)+' / '+esc(tickerLabel(b.ticker))+': '+v.toFixed(2)+'"'
          + ' style="width:'+(cellSz-2)+'px;height:'+(cellSz-2)+'px;margin-right:2px;border-radius:3px;'
          + 'display:flex;align-items:center;justify-content:center;'
-         + 'background:'+bg+';border:1px solid '+bdr+'">'
-         + '<span style="font-size:8px;color:'+col+';font-family:var(--mono);font-weight:'+(i===j?700:400)+'">'+v.toFixed(2)+'</span>'
-         + '</div>';
+         + 'background:'+bg+';border:1px solid '+bdr+'">';
+      if (showNums) {
+        h += '<span style="font-size:'+cellFont+'px;color:'+col+';font-family:var(--mono);font-weight:'+(i===j?700:400)+'">'+v.toFixed(2)+'</span>';
+      }
+      h += '</div>';
     });
     h += '</div>';
   });
