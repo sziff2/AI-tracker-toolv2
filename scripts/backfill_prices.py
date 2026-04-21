@@ -113,12 +113,26 @@ async def _fetch_yahoo_history(
     start: date,
     end: date,
 ) -> list[tuple[date, float, str]]:
-    """Fetch monthly-interval chart from Yahoo. Returns (price_date, close, currency)
-    tuples. Uses period1/period2 unix timestamps + interval=1mo."""
+    """Fetch monthly-EOM history via Yahoo's DAILY chart and resample.
+
+    We deliberately do NOT use Yahoo's interval=1mo endpoint: its candle
+    timestamps are anchored at the exchange's local midnight which, for
+    non-US exchanges (CET, KST, HKT, ...), lands on the PRIOR day in UTC.
+    Bucketing those timestamps by `_month_end(date)` mis-labels every
+    non-US monthly close by one calendar month, destroying cross-market
+    correlations.
+
+    Daily candles are timezone-safe: each daily timestamp is within the
+    actual trading day. Bucketing by calendar (year, month) and keeping
+    the last observation gives a correctly-labelled month-end series.
+
+    Returns (last_trading_date, adj_close, currency) tuples — one row per
+    calendar month that had any trading activity in the window.
+    """
     period1 = int(datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp())
-    period2 = int(datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp())
+    period2 = int(datetime(end.year, end.month, end.day, 23, 59, tzinfo=timezone.utc).timestamp())
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}"
-    params = {"period1": period1, "period2": period2, "interval": "1mo"}
+    params = {"period1": period1, "period2": period2, "interval": "1d"}
     headers = {"User-Agent": "Mozilla/5.0"}
 
     resp = await client.get(url, params=params, headers=headers)
@@ -132,23 +146,30 @@ async def _fetch_yahoo_history(
     r = results[0]
     meta = r.get("meta", {}) or {}
     currency = meta.get("currency", "USD")
+    gmtoff = int(meta.get("gmtoffset") or 0)   # seconds east of UTC
     timestamps = r.get("timestamp") or []
     indicators = r.get("indicators", {}) or {}
-    # Prefer adjusted close if present; fall back to raw close.
+    # Prefer adjusted close (total-return series) where available.
     adj = (indicators.get("adjclose") or [{}])[0].get("adjclose")
     raw = (indicators.get("quote") or [{}])[0].get("close")
     closes = adj if adj else raw
     if not timestamps or not closes:
         return []
-    rows: list[tuple[date, float, str]] = []
+
+    # Bucket daily observations by (year, month) IN THE EXCHANGE'S LOCAL
+    # TIME and keep the latest date in each bucket.
+    by_month: dict[tuple[int, int], tuple[date, float]] = {}
     for ts, cl in zip(timestamps, closes):
         if cl is None:
             continue
-        d_trade = datetime.fromtimestamp(ts, tz=timezone.utc).date()
-        # Yahoo monthly candles are anchored at the first trading day of
-        # the month; we want the calendar month-end for dedup parity with
-        # the reference script's resample("ME").last() semantics.
-        rows.append((_month_end(d_trade), float(cl), currency))
+        d_local = datetime.fromtimestamp(ts + gmtoff, tz=timezone.utc).date()
+        key = (d_local.year, d_local.month)
+        if key not in by_month or d_local > by_month[key][0]:
+            by_month[key] = (d_local, float(cl))
+
+    rows: list[tuple[date, float, str]] = [
+        (d, cl, currency) for _, (d, cl) in sorted(by_month.items())
+    ]
     return rows
 
 
@@ -319,11 +340,42 @@ async def _insert_fx(currency: str, rows: list[tuple[date, float]]) -> int:
     return len(rows)
 
 
+async def _wipe_backfill(company_id, ticker: str | None = None) -> int:
+    """Delete all source='backfill' rows for a company (or all companies
+    if company_id is None). Used before re-running with corrected logic."""
+    from sqlalchemy import text
+    from apps.api.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        if company_id is None:
+            rs = await db.execute(text(
+                "DELETE FROM price_records WHERE source = 'backfill'"
+            ))
+        else:
+            rs = await db.execute(
+                text("DELETE FROM price_records WHERE source = 'backfill' AND company_id = :cid"),
+                {"cid": str(company_id)},
+            )
+        await db.commit()
+        return rs.rowcount or 0
+
+
+async def _wipe_fx() -> int:
+    """Delete all fx_rates (they were written with the same timezone bug).
+    Regenerated on next backfill from corrected fetch function."""
+    from sqlalchemy import text
+    from apps.api.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        rs = await db.execute(text("DELETE FROM fx_rates"))
+        await db.commit()
+        return rs.rowcount or 0
+
+
 async def run_backfill(
     *,
     ticker: str | None = None,
     years: float = 5.0,
     apply: bool = False,
+    clean: bool = False,
 ) -> dict:
     """Backfill entry point — callable from CLI or from a FastAPI route.
     Returns a summary dict with counts and skipped tickers."""
@@ -339,15 +391,30 @@ async def run_backfill(
         "window_end": end_date.isoformat(),
         "companies_scoped": len(companies),
         "price_rows_written": 0,
+        "price_rows_deleted": 0,
         "fx_rows_written": 0,
+        "fx_rows_deleted": 0,
         "per_ticker": [],
         "skipped": [],
         "fx_currencies": [],
         "mode": "APPLIED" if apply else "DRY-RUN",
+        "clean": clean,
     }
     if not companies:
         logger.warning("No companies matched — nothing to do.")
         return summary
+
+    # Optional: wipe existing backfill rows so a corrected run doesn't
+    # leave stale data alongside freshly-inserted rows.
+    if clean and apply:
+        if ticker is None:
+            summary["price_rows_deleted"] = await _wipe_backfill(None)
+            summary["fx_rows_deleted"] = await _wipe_fx()
+        else:
+            for cid, _ in [(c.id, c.ticker) for c in companies]:
+                summary["price_rows_deleted"] += await _wipe_backfill(cid)
+        logger.info("Cleaned %d backfill price rows, %d fx rows",
+                    summary["price_rows_deleted"], summary["fx_rows_deleted"])
 
     currencies_seen: set[str] = set()
 
@@ -431,5 +498,10 @@ if __name__ == "__main__":
     ap.add_argument("--ticker", help="Only backfill this Bloomberg ticker")
     ap.add_argument("--years", type=float, default=5.0, help="Lookback window in years (default 5)")
     ap.add_argument("--apply", action="store_true", help="Write to DB (default: dry-run)")
+    ap.add_argument("--clean", action="store_true",
+                    help="Delete existing source='backfill' rows first (and all fx_rates if no --ticker)")
     cli_args = ap.parse_args()
-    asyncio.run(run_backfill(ticker=cli_args.ticker, years=cli_args.years, apply=cli_args.apply))
+    asyncio.run(run_backfill(
+        ticker=cli_args.ticker, years=cli_args.years,
+        apply=cli_args.apply, clean=cli_args.clean,
+    ))

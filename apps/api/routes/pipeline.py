@@ -931,23 +931,22 @@ async def admin_backfill_prices(
     ticker: str | None = None,
     years: float = 5.0,
     apply: bool = False,
+    clean: bool = False,
 ):
     """Backfill monthly EOM price history + FX rates from Yahoo Finance.
-
-    Phase A of the portfolio analytics roadmap — populates `price_records`
-    and `fx_rates` with 5 years of history so Phase B (real correlation
-    / vol / risk) has data to work on.
-
-    Idempotent: checks existing rows before inserting.
 
     Query params:
       - ticker: optional Bloomberg ticker to scope to a single company
       - years:  lookback window (default 5.0)
       - apply:  false → dry-run (no writes); true → commit to DB
+      - clean:  true → delete existing source='backfill' rows first.
+                Use this after fixing bucketing bugs to overwrite bad data.
     """
     from scripts.backfill_prices import run_backfill
     try:
-        summary = await run_backfill(ticker=ticker, years=years, apply=apply)
+        summary = await run_backfill(
+            ticker=ticker, years=years, apply=apply, clean=clean,
+        )
         return {"status": "ok", **summary}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
