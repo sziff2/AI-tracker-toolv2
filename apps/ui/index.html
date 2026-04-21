@@ -3731,15 +3731,35 @@ async function loadAnalytics() {
   if (!id) { c.innerHTML = '<div class="ld">Select a portfolio above.</div>'; return; }
   c.innerHTML = '<div class="ld">Loading…</div>';
   try {
-    const r = await fetch('/api/v1/portfolios/' + id);
-    if (!r.ok) throw new Error('Failed to load portfolio');
-    const d = await r.json();
-    renderAnalytics(d);
+    // Fetch portfolio + real correlation + real risk-metrics in parallel.
+    // Correlation / risk-metrics are best-effort — if they 500 or time
+    // out we still render with the heuristic fallback.
+    const [pRes, cRes, rmRes] = await Promise.all([
+      fetch('/api/v1/portfolios/' + id),
+      fetch('/api/v1/portfolios/' + id + '/correlation?window=60').catch(() => null),
+      fetch('/api/v1/portfolios/' + id + '/risk-metrics?window=36').catch(() => null),
+    ]);
+    if (!pRes.ok) throw new Error('Failed to load portfolio');
+    const d = await pRes.json();
+    const corrData = cRes && cRes.ok ? await cRes.json() : null;
+    const riskData = rmRes && rmRes.ok ? await rmRes.json() : null;
+    renderAnalytics(d, { corrData, riskData });
   } catch(e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
 }
 
-function renderAnalytics(d) {
+function renderAnalytics(d, opts = {}) {
   const c = E('an-content');
+  const { corrData = null, riskData = null } = opts;
+
+  // Build ticker → realised vol (decimal, e.g. 0.28 for 28% annualised).
+  // Falls back to scenario-spread proxy when the server has <12 months.
+  const volByTicker = {};
+  if (riskData && riskData.metrics) {
+    for (const [t, m] of Object.entries(riskData.metrics)) {
+      if (m.status === 'ok' && m.annualised_vol) volByTicker[t] = m.annualised_vol;
+    }
+  }
+
   const holdings = d.holdings.filter(h => h.weight > 0).map(h => {
     // API already pre-calculates these at the top level of each holding:
     //   h.upside          = return % of bull/base target
@@ -3748,11 +3768,13 @@ function renderAnalytics(d) {
     const bullRet = h.upside ?? 0;
     const bearRet = h.downside ?? 0;
     const expRet  = h.expected_return ?? 0;
+    const realVol = volByTicker[h.ticker];
     return {
       ...h,
       w: h.weight,
       expRet, bullRet, bearRet,
-      vol: scenarioVol(h.scenarios, h.current_price),
+      vol: realVol ?? scenarioVol(h.scenarios, h.current_price),
+      volSource: realVol != null ? 'realised' : 'proxy',
       contribution: h.weight / 100 * expRet,
     };
   });
@@ -3762,7 +3784,25 @@ function renderAnalytics(d) {
     return;
   }
 
-  const corrMatrix = buildCorrMatrix(holdings);
+  // Build correlation lookup from server matrix, with per-pair heuristic
+  // fallback when a ticker has insufficient history.
+  const serverCorr = {};
+  let serverCorrCoverage = 0;
+  if (corrData && corrData.tickers && corrData.corr) {
+    corrData.tickers.forEach((t, i) => {
+      serverCorr[t] = {};
+      corrData.tickers.forEach((u, j) => { serverCorr[t][u] = corrData.corr[i][j]; });
+    });
+    serverCorrCoverage = corrData.tickers.length;
+  }
+  const corrMatrix = {};
+  holdings.forEach(a => {
+    corrMatrix[a.ticker] = {};
+    holdings.forEach(b => {
+      const rho = serverCorr[a.ticker]?.[b.ticker];
+      corrMatrix[a.ticker][b.ticker] = rho != null ? rho : defaultCorr(a, b);
+    });
+  });
   const metrics    = portfolioMetrics(holdings, corrMatrix);
   const sectorGroups  = groupBy(holdings, 'sector');
   const countryGroups = groupBy(holdings, 'country');
@@ -3833,8 +3873,8 @@ function renderAnalytics(d) {
   const top10 = [...holdings].sort((a,b)=>b.w-a.w).slice(0,10);
   const n = top10.length;
 
-  // Build grid
-  const corrGrid = top10.map(a => top10.map(b => defaultCorr(a,b)));
+  // Build grid from the (server-backed-with-fallback) matrix assembled above.
+  const corrGrid = top10.map(a => top10.map(b => corrMatrix[a.ticker][b.ticker]));
 
   // Off-diagonal stats
   const offDiag = [];
@@ -3854,10 +3894,13 @@ function renderAnalytics(d) {
   const cellSz = Math.min(38, Math.floor(340/n));
   const lbSz   = cellSz;
 
+  const corrLabel = corrData && corrData.n_months
+    ? `Top ${n} holdings · ${corrData.n_months}mo realised log-return correlation (USD)`
+    : `Top ${n} holdings · Sector/country proximity model (no price history yet)`;
   h += '<h2 style="margin-top:24px">Pairwise Correlation Matrix</h2>';
   h += '<div class="cd" style="padding:20px">';
   h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px">';
-  h += '<span style="font-size:11px;color:var(--text3)">Top '+n+' holdings by weight · Sector/country proximity model</span></div>';
+  h += '<span style="font-size:11px;color:var(--text3)">'+corrLabel+'</span></div>';
   h += '<div style="display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:start">';
 
   // ── Heatmap ────────────────────────────────────────────────────
@@ -3899,11 +3942,22 @@ function renderAnalytics(d) {
   });
   h += '</div></div></div>';
 
-  // ── Right panel: avg corr over time + summary stats ───────────
+  // ── Right panel: source summary + summary stats ───────────
   h += '<div>';
-  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Average Pairwise Correlation Over Time</div>';
-  h += '<div style="height:160px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:6px;background:rgba(10,28,52,0.4);color:var(--text3);font-size:12px;text-align:center;padding:12px">'
-     + 'Correlation trend will appear as daily snapshots accumulate.</div>';
+  h += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Data Source</div>';
+  const srcBox = corrData && corrData.n_months
+    ? '<div><span style="color:var(--green);font-weight:600">Real</span> — '
+      + corrData.n_months + ' months of log-return overlap in USD, '
+      + corrData.tickers.length + '/' + holdings.length + ' holdings covered.'
+      + (corrData.dropped && corrData.dropped.length
+          ? '<br><span style="color:var(--amber);font-size:10px">Dropped: '
+            + corrData.dropped.map(x => esc(x.ticker)).join(', ') + '</span>'
+          : '')
+      + '</div>'
+    : '<div><span style="color:var(--amber);font-weight:600">Proxy</span> — server correlation endpoint '
+      + 'unavailable or no price history yet; showing sector/country proximity estimate.</div>';
+  h += '<div style="height:160px;display:flex;flex-direction:column;justify-content:center;border:1px solid var(--border);border-radius:6px;background:rgba(10,28,52,0.4);color:var(--text2);font-size:12px;padding:14px;line-height:1.5">'
+     + srcBox + '</div>';
   // Summary stats 2×2
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">';
   [
@@ -4092,6 +4146,8 @@ function renderAttrTable(title, groups, portExpRet) {
 // ═══════════════════════════════════════════════════════════════
 
 let OP_DATA = null; // cached portfolio data
+let OP_CORR = null; // cached correlation matrix (server-computed)
+let OP_RISK = null; // cached realised-vol batch
 
 async function initOptimisePage() {
   await loadPortfolios();
@@ -4108,9 +4164,17 @@ async function loadOptimise() {
   if (!id) { c.innerHTML = '<div class="ld">Select a portfolio above.</div>'; return; }
   c.innerHTML = '<div class="ld">Loading…</div>';
   try {
-    const r = await fetch('/api/v1/portfolios/' + id);
-    if (!r.ok) throw new Error('Failed');
-    OP_DATA = await r.json();
+    // Cache portfolio + real correlation + vol alongside OP_DATA so the
+    // slider re-renders don't re-fetch each time.
+    const [pRes, cRes, rmRes] = await Promise.all([
+      fetch('/api/v1/portfolios/' + id),
+      fetch('/api/v1/portfolios/' + id + '/correlation?window=60').catch(() => null),
+      fetch('/api/v1/portfolios/' + id + '/risk-metrics?window=36').catch(() => null),
+    ]);
+    if (!pRes.ok) throw new Error('Failed');
+    OP_DATA = await pRes.json();
+    OP_CORR = cRes && cRes.ok ? await cRes.json() : null;
+    OP_RISK = rmRes && rmRes.ok ? await rmRes.json() : null;
     renderOptimise();
   } catch(e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
 }
@@ -4118,12 +4182,25 @@ async function loadOptimise() {
 function renderOptimise() {
   const c = E('op-content');
   if (!OP_DATA) return;
-  const holdings = OP_DATA.holdings.filter(h => h.weight > 0).map(h => ({
-    ...h, w: h.weight,
-    vol: scenarioVol(h.scenarios, h.current_price),
-    // API pre-calculates expected_return (probability-weighted) per holding
-    expRet: h.expected_return ?? 0,
-  }));
+
+  // Build ticker → realised vol from cached batch risk-metrics.
+  const volByTicker = {};
+  if (OP_RISK && OP_RISK.metrics) {
+    for (const [t, m] of Object.entries(OP_RISK.metrics)) {
+      if (m.status === 'ok' && m.annualised_vol) volByTicker[t] = m.annualised_vol;
+    }
+  }
+
+  const holdings = OP_DATA.holdings.filter(h => h.weight > 0).map(h => {
+    const realVol = volByTicker[h.ticker];
+    return {
+      ...h, w: h.weight,
+      vol: realVol ?? scenarioVol(h.scenarios, h.current_price),
+      volSource: realVol != null ? 'realised' : 'proxy',
+      // API pre-calculates expected_return (probability-weighted) per holding
+      expRet: h.expected_return ?? 0,
+    };
+  });
 
   if (!holdings.length) {
     c.innerHTML = '<div class="ld">No holdings with weights in this portfolio.</div>';
@@ -4138,7 +4215,24 @@ function renderOptimise() {
   const countryCap = parseFloat(E('op-ccap')?.value    ?? 60);
   const mvLambda   = parseFloat(E('op-lambda')?.value  ?? 5);
 
-  const corrMatrix = buildCorrMatrix(holdings);
+  // Server correlation with per-pair heuristic fallback for any ticker
+  // the server dropped (insufficient overlap / new position).
+  const serverCorr = {};
+  if (OP_CORR && OP_CORR.tickers && OP_CORR.corr) {
+    OP_CORR.tickers.forEach((t, i) => {
+      serverCorr[t] = {};
+      OP_CORR.tickers.forEach((u, j) => { serverCorr[t][u] = OP_CORR.corr[i][j]; });
+    });
+  }
+  const corrMatrix = {};
+  holdings.forEach(a => {
+    corrMatrix[a.ticker] = {};
+    holdings.forEach(b => {
+      const rho = serverCorr[a.ticker]?.[b.ticker];
+      corrMatrix[a.ticker][b.ticker] = rho != null ? rho : defaultCorr(a, b);
+    });
+  });
+
   const tickers    = holdings.map(h => h.ticker);
   const mus        = holdings.map(h => h.expRet / 100);
   const vols       = holdings.map(h => h.vol);

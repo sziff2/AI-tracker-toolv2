@@ -783,3 +783,34 @@ async def get_company_risk_metrics(
         db, company.id, company.ticker,
         window_months=window, min_months=min_months,
     )
+
+
+@router.get("/portfolios/{portfolio_id}/risk-metrics")
+async def get_portfolio_risk_metrics(
+    portfolio_id: str,
+    window: int = 36,
+    min_months: int = 12,
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch realised vol for every holding in the portfolio — avoids N
+    round-trips from the UI. Keyed by Bloomberg ticker."""
+    from services.portfolio_analytics import compute_realised_vol
+    if window < 12 or window > 120:
+        raise HTTPException(400, "window must be between 12 and 120 months")
+    rs = await db.execute(
+        select(Company.id, Company.ticker)
+        .join(PortfolioHolding, PortfolioHolding.company_id == Company.id)
+        .where(PortfolioHolding.portfolio_id == portfolio_id)
+    )
+    holdings = [(row[0], row[1]) for row in rs]
+    metrics = {}
+    for cid, ticker in holdings:
+        metrics[ticker] = await compute_realised_vol(
+            db, cid, ticker, window_months=window, min_months=min_months,
+        )
+    return {
+        "portfolio_id": portfolio_id,
+        "window_months": window,
+        "min_months": min_months,
+        "metrics": metrics,
+    }
