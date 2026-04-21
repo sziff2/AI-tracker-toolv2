@@ -3787,25 +3787,27 @@ async function loadAnalytics() {
   if (!id) { c.innerHTML = '<div class="ld">Select a portfolio above.</div>'; return; }
   c.innerHTML = '<div class="ld">Loading…</div>';
   try {
-    // Fetch portfolio + real correlation + real risk-metrics in parallel.
-    // Correlation / risk-metrics are best-effort — if they 500 or time
-    // out we still render with the heuristic fallback.
-    const [pRes, cRes, rmRes] = await Promise.all([
+    // Fetch portfolio + correlation + per-ticker vol + portfolio tail-risk
+    // in parallel. Everything downstream is best-effort — if a call fails
+    // we fall back to heuristics or just omit the strip.
+    const [pRes, cRes, rmRes, rdRes] = await Promise.all([
       fetch('/api/v1/portfolios/' + id),
       fetch('/api/v1/portfolios/' + id + '/correlation?window=60').catch(() => null),
       fetch('/api/v1/portfolios/' + id + '/risk-metrics?window=36').catch(() => null),
+      fetch('/api/v1/portfolios/' + id + '/risk-dashboard?window=60&confidence=0.95').catch(() => null),
     ]);
     if (!pRes.ok) throw new Error('Failed to load portfolio');
     const d = await pRes.json();
     const corrData = cRes && cRes.ok ? await cRes.json() : null;
     const riskData = rmRes && rmRes.ok ? await rmRes.json() : null;
-    renderAnalytics(d, { corrData, riskData });
+    const riskDash = rdRes && rdRes.ok ? await rdRes.json() : null;
+    renderAnalytics(d, { corrData, riskData, riskDash });
   } catch(e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
 }
 
 function renderAnalytics(d, opts = {}) {
   const c = E('an-content');
-  const { corrData = null, riskData = null } = opts;
+  const { corrData = null, riskData = null, riskDash = null } = opts;
 
   // Build ticker → realised vol (decimal, e.g. 0.28 for 28% annualised).
   // Falls back to scenario-spread proxy when the server has <12 months.
@@ -3880,6 +3882,34 @@ function renderAnalytics(d, opts = {}) {
     h += '<div class="ck-stat-val" style="color:'+clr+'">'+k.fmt(k.val)+'</div></div>';
   });
   h += '</div>';
+
+  // ── Tail Risk strip (Phase E — historical VaR/CVaR/max drawdown) ───────────
+  if (riskDash && riskDash.n_months >= 12) {
+    const pctFmt3 = v => (v * 100).toFixed(1) + '%';
+    const tailItems = [
+      { label: 'Realised Vol (ann)',  val: pctFmt3(riskDash.annualised_vol),   clr: 'var(--amber)',
+        sub: riskDash.n_months + 'mo window' },
+      { label: '95% VaR (monthly)',   val: '−' + pctFmt3(riskDash.var_monthly),clr: 'var(--red)',
+        sub: 'worst 5% of months' },
+      { label: '95% CVaR (monthly)',  val: '−' + pctFmt3(riskDash.cvar_monthly), clr: 'var(--red)',
+        sub: 'avg loss in tail' },
+      { label: 'Max Drawdown',        val: '−' + pctFmt3(riskDash.max_drawdown), clr: 'var(--red)',
+        sub: 'peak-to-trough in window' },
+      { label: 'Best Month',          val: '+' + pctFmt3(Math.expm1(riskDash.best_month)), clr: 'var(--green)',
+        sub: 'realised log ret' },
+      { label: 'Worst Month',         val: pctFmt3(Math.expm1(riskDash.worst_month)), clr: 'var(--red)',
+        sub: 'realised log ret' },
+    ];
+    h += '<h2 style="margin-top:24px;display:flex;align-items:baseline;gap:10px">Tail Risk <span style="font-size:11px;color:var(--text3);font-weight:400">realised USD log-returns · '
+      + riskDash.tickers_used.length + '/' + holdings.length + ' holdings covered</span></h2>';
+    h += '<div class="ck-strip">';
+    tailItems.forEach(k => {
+      h += '<div class="ck-stat"><div class="ck-stat-label">'+k.label+'</div>';
+      h += '<div class="ck-stat-val" style="color:'+k.clr+'">'+k.val+'</div>';
+      h += '<div style="font-size:9px;color:var(--text3);margin-top:2px">'+k.sub+'</div></div>';
+    });
+    h += '</div>';
+  }
 
   // ── Attribution ─────────────────────────────────────────────────────────────
   h += '<h2 style="margin-top:24px">Return Attribution</h2>';

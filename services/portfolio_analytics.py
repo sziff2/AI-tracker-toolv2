@@ -53,6 +53,7 @@ class _CacheEntry:
 
 _CORR_CACHE: dict[tuple[str, int], _CacheEntry] = {}
 _VOL_CACHE: dict[tuple[str, int], _CacheEntry] = {}
+_RISK_DASH_CACHE: dict[tuple[str, int, str], _CacheEntry] = {}
 
 
 def _cache_get(cache: dict, key: tuple) -> dict | None:
@@ -71,6 +72,7 @@ def _cache_put(cache: dict, key: tuple, payload: dict) -> None:
 
 def flush_cache() -> None:
     """Drop all cached results — call after portfolio/holding edits."""
+    _RISK_DASH_CACHE.clear()
     _CORR_CACHE.clear()
     _VOL_CACHE.clear()
 
@@ -392,4 +394,181 @@ async def compute_realised_vol(
     }
     if use_cache:
         _cache_put(_VOL_CACHE, key, payload)
+    return payload
+
+
+# ─────────────────────────────────────────────────────────────────
+# Risk dashboard (Phase E)
+# ─────────────────────────────────────────────────────────────────
+def _percentile(values: list[float], pct: float) -> float:
+    """Linear-interpolated percentile. `pct` in [0, 100]."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * (pct / 100.0)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return s[int(k)]
+    return s[f] * (c - k) + s[c] * (k - f)
+
+
+def _max_drawdown(returns: list[float]) -> float:
+    """Return the largest peak-to-trough drawdown (as a positive decimal)
+    over the cumulative return path of a log-return series. Starts at 0."""
+    if not returns:
+        return 0.0
+    level = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for r in returns:
+        level += r                                # cumulative log-return
+        if level > peak:
+            peak = level
+        dd = peak - level                         # positive when below peak
+        if dd > max_dd:
+            max_dd = dd
+    return 1.0 - math.exp(-max_dd)                # convert log-drawdown to pct
+
+
+async def compute_portfolio_risk_dashboard(
+    db: AsyncSession,
+    portfolio_id: str | UUID,
+    window_months: int = 60,
+    min_months: int = 12,
+    confidence: float = 0.95,
+    use_cache: bool = True,
+) -> dict:
+    """Return tail-risk metrics for the portfolio computed from its
+    weighted monthly USD log returns over the trailing window:
+      - realised vol (annualised, from the *portfolio's* return series)
+      - Value-at-Risk (historical, at `confidence`, monthly + annualised)
+      - Conditional VaR (mean of returns in the tail below VaR)
+      - Max drawdown over the window (cumulative path, one-off)
+      - Best / worst monthly return in the window
+
+    Uses the portfolio's current holding weights (from `portfolio_holdings`),
+    re-normalised to sum to 1 across tickers that have sufficient history.
+    Tickers excluded from the matrix are listed in `excluded_tickers`.
+    """
+    pid = str(portfolio_id)
+    conf_key = f"{confidence:.3f}"
+    cache_key = (pid, int(window_months), conf_key)
+    if use_cache:
+        cached = _cache_get(_RISK_DASH_CACHE, cache_key)
+        if cached:
+            return cached
+
+    rs = await db.execute(text("""
+        SELECT c.id AS cid, c.ticker, h.weight
+          FROM portfolio_holdings h
+          JOIN companies c ON c.id = h.company_id
+         WHERE h.portfolio_id = :pid AND COALESCE(h.weight, 0) > 0
+         ORDER BY h.weight DESC NULLS LAST
+    """), {"pid": pid})
+    holdings = [(row.cid, row.ticker, float(row.weight or 0)) for row in rs]
+    if not holdings:
+        return {
+            "portfolio_id": pid, "window_months": window_months, "confidence": confidence,
+            "n_months": 0, "tickers_used": [], "excluded_tickers": [],
+            "annualised_vol": None, "monthly_vol": None,
+            "var_monthly": None, "var_annualised": None,
+            "cvar_monthly": None, "cvar_annualised": None,
+            "max_drawdown": None, "best_month": None, "worst_month": None,
+            "mean_monthly": None,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        }
+
+    fx = await _load_fx_by_month(db)
+
+    returns_by_ticker: dict[str, dict[tuple[int, int], float]] = {}
+    weight_by_ticker: dict[str, float] = {}
+    excluded: list[dict] = []
+    for cid, ticker, weight in holdings:
+        series = await _load_monthly_series_usd(db, cid, window_months, fx)
+        if len(series) < min_months + 1:
+            excluded.append({"ticker": ticker, "reason": f"only {len(series)} months of prices"})
+            continue
+        rets = _log_returns(series)
+        if len(rets) < min_months:
+            excluded.append({"ticker": ticker, "reason": f"only {len(rets)} monthly returns"})
+            continue
+        returns_by_ticker[ticker] = rets
+        weight_by_ticker[ticker] = weight
+
+    if len(returns_by_ticker) < 2:
+        return {
+            "portfolio_id": pid, "window_months": window_months, "confidence": confidence,
+            "n_months": 0, "tickers_used": list(returns_by_ticker.keys()),
+            "excluded_tickers": excluded,
+            "annualised_vol": None, "monthly_vol": None,
+            "var_monthly": None, "var_annualised": None,
+            "cvar_monthly": None, "cvar_annualised": None,
+            "max_drawdown": None, "best_month": None, "worst_month": None,
+            "mean_monthly": None,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # Align returns onto the common set of months across surviving tickers.
+    kept, months, matrix = _aligned_returns(returns_by_ticker, min_months)
+    for t in set(returns_by_ticker) - set(kept):
+        excluded.append({"ticker": t, "reason": "alignment dropped — overlap below min_months"})
+
+    # Re-normalise weights across kept tickers (sum to 1).
+    w_kept = [weight_by_ticker[t] for t in kept]
+    total_w = sum(w_kept)
+    if total_w <= 0:
+        total_w = 1.0
+    w_norm = [w / total_w for w in w_kept]
+
+    # Portfolio monthly return series = Σᵢ wᵢ × rᵢ,m
+    n_mo = len(months)
+    port_returns = [
+        sum(w_norm[i] * matrix[i][m] for i in range(len(kept)))
+        for m in range(n_mo)
+    ]
+
+    mean_m = _mean(port_returns)
+    sd_m = _stdev(port_returns)
+
+    # Historical VaR / CVaR. Convention: positive number = loss at the
+    # given confidence (e.g. 95% VaR of 0.06 means "5% of months we
+    # expect to lose at least 6%"). Compute on raw log returns, then
+    # convert to loss pct via 1 - e^r.
+    alpha_pct = (1.0 - confidence) * 100.0
+    var_log = _percentile(port_returns, alpha_pct)      # left-tail threshold (log-return, likely negative)
+    tail = [r for r in port_returns if r <= var_log]
+    cvar_log = (sum(tail) / len(tail)) if tail else var_log
+
+    # Convert to loss percentages
+    var_monthly = max(0.0, 1.0 - math.exp(var_log))
+    cvar_monthly = max(0.0, 1.0 - math.exp(cvar_log))
+    # Scale to annualised (√12 for vol-style scaling)
+    var_annualised = var_monthly * math.sqrt(12)
+    cvar_annualised = cvar_monthly * math.sqrt(12)
+
+    payload = {
+        "portfolio_id": pid,
+        "window_months": window_months,
+        "confidence": confidence,
+        "n_months": n_mo,
+        "months_used": [f"{y:04d}-{m:02d}" for y, m in months],
+        "tickers_used": kept,
+        "excluded_tickers": excluded,
+        "mean_monthly": mean_m,
+        "monthly_vol": sd_m,
+        "annualised_vol": sd_m * math.sqrt(12),
+        "var_monthly": var_monthly,
+        "var_annualised": var_annualised,
+        "cvar_monthly": cvar_monthly,
+        "cvar_annualised": cvar_annualised,
+        "max_drawdown": _max_drawdown(port_returns),
+        "best_month": max(port_returns),
+        "worst_month": min(port_returns),
+        "as_of": datetime.now(timezone.utc).isoformat(),
+    }
+    if use_cache:
+        _cache_put(_RISK_DASH_CACHE, cache_key, payload)
     return payload

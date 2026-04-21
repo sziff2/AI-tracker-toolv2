@@ -785,6 +785,28 @@ async def get_company_risk_metrics(
     )
 
 
+@router.get("/portfolios/{portfolio_id}/risk-dashboard")
+async def get_portfolio_risk_dashboard(
+    portfolio_id: str,
+    window: int = 60,
+    min_months: int = 12,
+    confidence: float = 0.95,
+    db: AsyncSession = Depends(get_db),
+):
+    """Phase E — portfolio-level tail risk from USD monthly log returns:
+    realised vol, historical VaR + CVaR, max drawdown, best/worst month.
+    """
+    from services.portfolio_analytics import compute_portfolio_risk_dashboard
+    if window < 12 or window > 120:
+        raise HTTPException(400, "window must be between 12 and 120 months")
+    if not (0.80 <= confidence <= 0.999):
+        raise HTTPException(400, "confidence must be between 0.80 and 0.999")
+    return await compute_portfolio_risk_dashboard(
+        db, portfolio_id,
+        window_months=window, min_months=min_months, confidence=confidence,
+    )
+
+
 @router.get("/portfolios/{portfolio_id}/risk-metrics")
 async def get_portfolio_risk_metrics(
     portfolio_id: str,
