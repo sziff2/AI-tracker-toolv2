@@ -4472,7 +4472,7 @@ function renderOptimise() {
 
   // ── Run all three methods ───────────────────────────────────
   const kellyResult  = runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap);
-  const mvResult     = runMV(holdings, mus, cov, corrMatrix, mvLambda, maxPos / 100, sectorCap, countryCap);
+  const mvResult     = runMV(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap, mvLambda);
   const cvarResult   = runCVaR(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap);
 
   let h = '';
@@ -4685,9 +4685,9 @@ function runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap) {
   return applyCaps(holdings.map(h => h.ticker), rawArr, holdings, sectorCap, countryCap, maxPos);
 }
 
-function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
+function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap, lambda = 5) {
   try {
-    const w = mvOptimize(mus, cov, 5, maxW, 2000);
+    const w = mvOptimize(mus, cov, lambda, maxW, 2000);
     return applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap, maxW * 100);
   } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set(), invested: 0, cashPct: 100 }; }
 }
