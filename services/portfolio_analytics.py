@@ -280,7 +280,7 @@ async def compute_correlation_matrix(
 
     # Holdings for this portfolio.
     rs = await db.execute(text("""
-        SELECT c.id AS cid, c.ticker, c.currency AS company_ccy
+        SELECT c.id AS cid, c.ticker
           FROM portfolio_holdings h
           JOIN companies c ON c.id = h.company_id
          WHERE h.portfolio_id = :pid
