@@ -3603,6 +3603,154 @@ async function importPortfolioCSV(input){
 // SHARED MATHS ENGINE (ported from investment-tracker.jsx)
 // ═══════════════════════════════════════════════════════════════
 
+// ── Historical stress tests (Phase 2a) ──────────────────────────────
+// Lazy-loaded on first Analytics render: fetch the preset list, render
+// clickable chips. Click a chip → POST /stress-test, expand a card with
+// cumulative return + per-holding breakdown.
+let __STRESS_PRESETS__ = null;
+
+async function loadStressPresets() {
+  const card = document.getElementById('stress-card');
+  const slot = document.getElementById('stress-presets');
+  if (!card || !slot) return;
+  const pid = card.dataset.portfolioId;
+  if (!pid) return;
+  if (__STRESS_PRESETS__) { renderStressPresetChips(); return; }
+  try {
+    const r = await fetch('/api/v1/portfolios/' + pid + '/stress-test/presets');
+    if (!r.ok) throw new Error('presets ' + r.status);
+    const j = await r.json();
+    __STRESS_PRESETS__ = j.presets || [];
+    renderStressPresetChips();
+  } catch (e) {
+    slot.innerHTML = '<span style="color:var(--red);font-size:11px">Could not load stress presets: ' + esc(e.message) + '</span>';
+  }
+}
+
+function renderStressPresetChips() {
+  const slot = document.getElementById('stress-presets');
+  if (!slot) return;
+  let h = '<span style="font-size:11px;color:var(--text3);margin-right:4px;align-self:center">Click a scenario:</span>';
+  for (const p of (__STRESS_PRESETS__ || [])) {
+    h += '<button class="btn2" style="padding:4px 10px;font-size:11px"'
+       + ' onclick="runStressScenario(\'' + p.key + '\')" title="' + esc(p.description || '') + '">'
+       + esc(p.label) + ' <span style="color:var(--text3);font-size:10px">(' + p.start.slice(0,7) + ')</span></button>';
+  }
+  h += '<button class="btn2" style="padding:4px 10px;font-size:11px;border-color:var(--gold);color:var(--gold)"'
+     + ' onclick="runAllStressScenarios()" title="Run every preset against the portfolio">Run all</button>';
+  slot.innerHTML = h;
+}
+
+async function runStressScenario(key) {
+  const card = document.getElementById('stress-card');
+  const slot = document.getElementById('stress-results');
+  if (!card || !slot) return;
+  const pid = card.dataset.portfolioId;
+  slot.innerHTML = '<div class="ld">Running ' + esc(key) + '…</div>';
+  try {
+    const r = await fetch('/api/v1/portfolios/' + pid + '/stress-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenarios: [key] }),
+    });
+    if (!r.ok) throw new Error('stress-test ' + r.status);
+    const j = await r.json();
+    slot.innerHTML = renderStressResults(j.results || []);
+  } catch (e) {
+    slot.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+  }
+}
+
+async function runAllStressScenarios() {
+  const card = document.getElementById('stress-card');
+  const slot = document.getElementById('stress-results');
+  if (!card || !slot) return;
+  const pid = card.dataset.portfolioId;
+  const keys = (__STRESS_PRESETS__ || []).map(p => p.key);
+  if (!keys.length) return;
+  slot.innerHTML = '<div class="ld">Running ' + keys.length + ' scenarios…</div>';
+  try {
+    const r = await fetch('/api/v1/portfolios/' + pid + '/stress-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenarios: keys }),
+    });
+    if (!r.ok) throw new Error('stress-test ' + r.status);
+    const j = await r.json();
+    slot.innerHTML = renderStressResults(j.results || []);
+  } catch (e) {
+    slot.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+  }
+}
+
+function renderStressResults(results) {
+  if (!results.length) return '<div class="ld">No results.</div>';
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
+  const clr = v => v == null ? 'var(--text3)' : v >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Summary strip
+  let h = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">';
+  for (const r of results) {
+    if (r.error) {
+      h += '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:rgba(239,68,68,0.08);min-width:180px">'
+        +  '<div style="font-size:11px;color:var(--red)">' + esc(r.label || r.scenario_key) + '</div>'
+        +  '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + esc(r.error) + '</div></div>';
+      continue;
+    }
+    const pr = r.portfolio_return;
+    h += '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:rgba(10,28,52,0.4);min-width:200px">'
+      +  '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">' + esc(r.label || r.scenario_key) + '</div>'
+      +  '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:' + clr(pr) + ';margin-top:3px">' + pct(pr) + '</div>'
+      +  '<div style="font-size:9px;color:var(--text3);margin-top:2px">' + r.start.slice(0,7) + ' → ' + r.end.slice(0,7) + ' · '
+      +  r.n_months + 'mo · ' + r.holdings_included.length + '/' + (r.holdings_included.length + r.holdings_excluded.length) + ' covered'
+      +  '</div></div>';
+  }
+  h += '</div>';
+
+  // Detail block — per-holding for each scenario
+  for (const r of results) {
+    if (r.error) continue;
+    h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--text2)"><b>' + esc(r.label) + '</b> · portfolio ' + pct(r.portfolio_return)
+      +  ' · best month ' + pct(r.portfolio_best_month) + ' · worst month ' + pct(r.portfolio_worst_month) + '</summary>';
+    if (r.holdings_excluded.length) {
+      h += '<div style="margin:8px 0;font-size:11px;color:var(--amber)">Excluded (no data in window): '
+        +  r.holdings_excluded.map(x => esc(x.ticker.replace(/\s+(equity|eq)$/i,'').trim())).join(', ') + '</div>';
+    }
+    // Table: top contributors + worst detractors
+    h += '<table class="kt" style="margin-top:8px;font-size:11px"><thead><tr>';
+    h += '<th>Ticker</th><th>Sector</th><th style="text-align:right">Weight</th><th style="text-align:right">Window ret</th><th style="text-align:right">Contrib</th><th style="text-align:right">Months</th>';
+    h += '</tr></thead><tbody>';
+    for (const ph of r.per_holding) {
+      h += '<tr>';
+      h += '<td class="kn">' + esc(ph.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + '</td>';
+      h += '<td style="color:var(--text3)">' + esc(ph.sector || '—') + '</td>';
+      h += '<td style="text-align:right">' + ph.weight_pct.toFixed(1) + '%</td>';
+      h += '<td style="text-align:right;color:' + clr(ph.window_return) + '">' + pct(ph.window_return) + '</td>';
+      h += '<td style="text-align:right;color:' + clr(ph.contribution) + '">' + pct(ph.contribution) + '</td>';
+      h += '<td style="text-align:right;color:var(--text3)">' + ph.n_months + '</td>';
+      h += '</tr>';
+    }
+    h += '</tbody></table></details>';
+  }
+  return h;
+}
+
+// Kick off preset loading once the Analytics tab renders.
+(function () {
+  if (typeof window.__stressInit === 'undefined') {
+    window.__stressInit = true;
+    const tryLoad = () => {
+      if (document.getElementById('stress-card')) loadStressPresets();
+    };
+    // Run after the current microtask so renderAnalytics has finished.
+    setTimeout(tryLoad, 50);
+    // Also re-run when the portfolio selector changes (renderAnalytics
+    // re-creates the card). MutationObserver is lighter than polling.
+    const obs = new MutationObserver(() => { if (document.getElementById('stress-card')) tryLoad(); });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+})();
+
 // ── Data quality banner (Phase F) ───────────────────────────────────
 // Surfaces three kinds of bookkeeping gaps so the analyst can see what's
 // being silently dropped from calculations. Collapsed by default; click
@@ -3958,6 +4106,20 @@ function renderAnalytics(d, opts = {}) {
     h += '<div class="ck-stat"><div class="ck-stat-label">'+k.label+'</div>';
     h += '<div class="ck-stat-val" style="color:'+clr+'">'+k.fmt(k.val)+'</div></div>';
   });
+  h += '</div>';
+
+  // ── Stress Test panel (Phase 2a — historical windows) ──────────────────
+  // Rendered below the KPI strip, above Tail Risk. Presets + per-portfolio
+  // results are fetched on first click to avoid slowing the initial render.
+  h += '<h2 style="margin-top:24px;display:flex;align-items:baseline;gap:10px">'
+     + 'Historical Stress Tests '
+     + '<span style="font-size:11px;color:var(--text3);font-weight:400">replay named episodes against current weights</span>'
+     + '</h2>';
+  h += '<div class="cd" id="stress-card" style="padding:16px"'
+     + ' data-portfolio-id="' + esc(d.id) + '">';
+  h += '<div id="stress-presets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">'
+     + '<span style="color:var(--text3);font-size:11px">Loading presets…</span></div>';
+  h += '<div id="stress-results"></div>';
   h += '</div>';
 
   // ── Tail Risk strip (Phase E — historical VaR/CVaR/max drawdown) ───────────

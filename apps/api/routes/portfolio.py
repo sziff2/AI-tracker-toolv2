@@ -785,6 +785,36 @@ async def get_company_risk_metrics(
     )
 
 
+@router.get("/portfolios/{portfolio_id}/stress-test/presets")
+async def list_stress_presets(portfolio_id: str):
+    """Return the catalogue of historical stress windows available to
+    replay against a portfolio. `portfolio_id` is not used today but is
+    kept in the path so future user-specific custom scenarios can slot
+    in without a URL change."""
+    from services.stress_scenarios import list_presets
+    return {"presets": list_presets()}
+
+
+@router.post("/portfolios/{portfolio_id}/stress-test")
+async def run_stress_test(
+    portfolio_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run one or more preset historical stress windows against the
+    portfolio's current weights. Body: {"scenarios": ["gfc_crash", "covid_crash"]}.
+    Returns one result per scenario under `results`.
+    """
+    from services.stress_scenarios import compute_historical_stress
+    keys = body.get("scenarios") or []
+    if not keys:
+        raise HTTPException(400, "body.scenarios must be a non-empty list of preset keys")
+    out = []
+    for k in keys:
+        out.append(await compute_historical_stress(db, portfolio_id, k))
+    return {"portfolio_id": portfolio_id, "results": out}
+
+
 @router.get("/portfolios/{portfolio_id}/risk-dashboard")
 async def get_portfolio_risk_dashboard(
     portfolio_id: str,
