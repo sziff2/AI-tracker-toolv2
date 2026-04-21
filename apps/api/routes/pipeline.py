@@ -810,6 +810,7 @@ async def admin_debug_series(
             for (y, m), r in sorted(rets.items())
         ],
         "raw_rows_sample": raw_rows[:5] + (raw_rows[-5:] if len(raw_rows) > 10 else []),
+        "raw_rows": raw_rows,
     }
 
 
