@@ -264,6 +264,8 @@ async def add_holding(portfolio_id: uuid.UUID, body: HoldingCreate, db: AsyncSes
     )
     db.add(h)
     await db.commit()
+    from services.portfolio_analytics import flush_cache
+    flush_cache()
     return {"id": str(h.id), "ticker": company.ticker}
 
 
@@ -285,6 +287,8 @@ async def update_holding(portfolio_id: uuid.UUID, holding_id: uuid.UUID, body: H
 async def remove_holding(portfolio_id: uuid.UUID, holding_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     await db.execute(delete(PortfolioHolding).where(PortfolioHolding.id == holding_id))
     await db.commit()
+    from services.portfolio_analytics import flush_cache
+    flush_cache()
     return {"status": "deleted"}
 
 
@@ -736,3 +740,46 @@ async def portfolio_dashboard(portfolio_id: uuid.UUID, db: AsyncSession = Depend
         "sector_weights": dict(sorted(sector_weights.items(), key=lambda x: -x[1])),
         "country_weights": dict(sorted(country_weights.items(), key=lambda x: -x[1])),
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Analytics (Phase B — real correlation + risk metrics)
+# ─────────────────────────────────────────────────────────────────
+@router.get("/portfolios/{portfolio_id}/correlation")
+async def get_portfolio_correlation(
+    portfolio_id: str,
+    window: int = 60,
+    min_months: int = 12,
+    db: AsyncSession = Depends(get_db),
+):
+    """Monthly log-return correlation + covariance matrix, in USD,
+    over the trailing `window` months. Tickers with fewer than
+    `min_months` of overlapping history are dropped from the matrix
+    and reported under `dropped`.
+    """
+    from services.portfolio_analytics import compute_correlation_matrix
+    if window < 12 or window > 120:
+        raise HTTPException(400, "window must be between 12 and 120 months")
+    if min_months < 6 or min_months > window:
+        raise HTTPException(400, "min_months must be between 6 and window")
+    return await compute_correlation_matrix(
+        db, portfolio_id, window_months=window, min_months=min_months
+    )
+
+
+@router.get("/companies/{ticker:path}/risk-metrics")
+async def get_company_risk_metrics(
+    ticker: str,
+    window: int = 36,
+    min_months: int = 12,
+    db: AsyncSession = Depends(get_db),
+):
+    """Annualised realised volatility from monthly USD log returns."""
+    from services.portfolio_analytics import compute_realised_vol
+    if window < 12 or window > 120:
+        raise HTTPException(400, "window must be between 12 and 120 months")
+    company = await _get_company(db, ticker)
+    return await compute_realised_vol(
+        db, company.id, company.ticker,
+        window_months=window, min_months=min_months,
+    )
