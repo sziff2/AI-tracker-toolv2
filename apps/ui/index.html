@@ -3603,6 +3603,60 @@ async function importPortfolioCSV(input){
 // SHARED MATHS ENGINE (ported from investment-tracker.jsx)
 // ═══════════════════════════════════════════════════════════════
 
+// ── Correlation heatmap: live hover readout + CSV export ────────────
+function corrCellHover(ev) {
+  const cell = ev.target.closest('[data-r][data-c]');
+  const out = document.getElementById('corr-hover');
+  if (!cell || !out) return;
+  const r = cell.dataset.r, c = cell.dataset.c;
+  const v = parseFloat(cell.dataset.v);
+  const sign = v > 0 ? '+' : '';
+  out.innerHTML = '<span style="color:var(--gold)">'
+    + (r.replace(/\s+(equity|eq)$/i,'').trim()) + '</span> / <span style="color:var(--gold)">'
+    + (c.replace(/\s+(equity|eq)$/i,'').trim()) + '</span>: <span style="color:var(--text)">'
+    + sign + v.toFixed(3) + '</span>';
+}
+function corrCellReset() {
+  const out = document.getElementById('corr-hover');
+  if (out) out.textContent = 'Hover a cell to see the pair';
+}
+function downloadCorrMatrixCSV() {
+  const data = window.__CORR_EXPORT__;
+  if (!data || !data.tickers || !data.matrix) {
+    toast('Correlation matrix not available yet — load the Analytics tab first.');
+    return;
+  }
+  const { tickers, matrix, windowMonths, asOf, source, portfolioName } = data;
+  const esc = s => {
+    const str = String(s == null ? '' : s);
+    return /[,"\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+  };
+  const lines = [];
+  // Metadata rows at the top so Excel users see provenance immediately.
+  lines.push(['# Portfolio correlation matrix', esc(portfolioName)].join(','));
+  lines.push(['# Window (months)', windowMonths ?? 'n/a'].join(','));
+  lines.push(['# Source', source].join(','));
+  lines.push(['# Generated', asOf].join(','));
+  lines.push('');
+  // Header: empty corner cell, then one column per ticker.
+  lines.push(['ticker', ...tickers.map(esc)].join(','));
+  // One row per ticker.
+  tickers.forEach((t, i) => {
+    lines.push([esc(t), ...matrix[i].map(v => v.toFixed(6))].join(','));
+  });
+  const csv = '﻿' + lines.join('\n');   // BOM so Excel treats as UTF-8
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safe = String(portfolioName).replace(/\s+/g, '_');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = safe + '_correlation_' + date + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 100);
+}
+
 function scenarioVol(sc, currentPrice) {
   if (!sc || !currentPrice || currentPrice <= 0) return 0.20;
   const base = sc.base, bear = sc.bear;
@@ -3907,10 +3961,28 @@ function renderAnalytics(d, opts = {}) {
   const corrLabel = corrData && corrData.n_months
     ? `All ${n} holdings · ${corrData.n_months}mo realised log-return correlation (USD)`
     : `All ${n} holdings · Sector/country proximity model (no price history yet)`;
+
+  // Stash the matrix on window so the CSV-export click handler (a global
+  // function bound to a button onclick) can find it without needing to
+  // re-derive from the DOM.
+  window.__CORR_EXPORT__ = {
+    tickers: heatHoldings.map(ho => ho.ticker),
+    matrix: corrGrid,
+    windowMonths: corrData?.n_months ?? null,
+    asOf: corrData?.as_of ?? new Date().toISOString(),
+    source: corrData && corrData.n_months ? 'realised' : 'proxy',
+    portfolioName: d.name || 'portfolio',
+  };
+
   h += '<h2 style="margin-top:24px">Pairwise Correlation Matrix</h2>';
   h += '<div class="cd" style="padding:20px">';
-  h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px">';
-  h += '<span style="font-size:11px;color:var(--text3)">'+corrLabel+'</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap">';
+  h += '<span style="font-size:11px;color:var(--text3)">'+corrLabel+'</span>';
+  // Live hover readout (filled in by corrCellHover) + CSV download button
+  h += '<div style="display:flex;align-items:center;gap:14px">';
+  h += '<span id="corr-hover" style="font-family:var(--mono);font-size:12px;color:var(--text2);min-width:220px;text-align:right">Hover a cell to see the pair</span>';
+  h += '<button class="btn2" style="padding:6px 12px;font-size:11px" onclick="downloadCorrMatrixCSV()">↓ CSV</button>';
+  h += '</div></div>';
   // For large portfolios the heatmap alone is wide enough that the right
   // panel belongs below it rather than beside. Stack vertically above 14.
   const useSideBySide = n <= 14;
@@ -3919,7 +3991,8 @@ function renderAnalytics(d, opts = {}) {
     : '<div style="display:flex;flex-direction:column;gap:20px">';
 
   // ── Heatmap ────────────────────────────────────────────────────
-  h += '<div style="overflow-x:auto"><div style="display:inline-block">';
+  // onmousemove delegated on the grid wrapper updates #corr-hover.
+  h += '<div id="corr-grid-wrap" style="overflow-x:auto" onmousemove="corrCellHover(event)" onmouseleave="corrCellReset()"><div style="display:inline-block">';
   // Column headers (rotated)
   h += '<div style="display:flex;margin-left:'+(lblW+4)+'px;margin-bottom:4px">';
   heatHoldings.forEach(ho => {
@@ -3928,7 +4001,7 @@ function renderAnalytics(d, opts = {}) {
        + 'writing-mode:vertical-rl;transform:rotate(180deg);height:'+lblH+'px;line-height:1;overflow:hidden">'+esc(lbl)+'</div>';
   });
   h += '</div>';
-  // Rows
+  // Rows — each cell carries data-r/data-c/data-v for the hover readout.
   heatHoldings.forEach((a,i) => {
     const rowLbl = tickerLabel(a.ticker);
     h += '<div style="display:flex;align-items:center;margin-bottom:2px">';
@@ -3939,9 +4012,9 @@ function renderAnalytics(d, opts = {}) {
       const col = corrColor(v);
       const bg  = col + (i===j ? '40' : '25');
       const bdr = col + (i===j ? '90' : '50');
-      h += '<div title="'+esc(rowLbl)+' / '+esc(tickerLabel(b.ticker))+': '+v.toFixed(2)+'"'
+      h += '<div data-r="'+esc(a.ticker)+'" data-c="'+esc(b.ticker)+'" data-v="'+v.toFixed(4)+'"'
          + ' style="width:'+(cellSz-2)+'px;height:'+(cellSz-2)+'px;margin-right:2px;border-radius:3px;'
-         + 'display:flex;align-items:center;justify-content:center;'
+         + 'display:flex;align-items:center;justify-content:center;cursor:crosshair;'
          + 'background:'+bg+';border:1px solid '+bdr+'">';
       if (showNums) {
         h += '<span style="font-size:'+cellFont+'px;color:'+col+';font-family:var(--mono);font-weight:'+(i===j?700:400)+'">'+v.toFixed(2)+'</span>';
