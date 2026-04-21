@@ -4582,6 +4582,27 @@ function renderOptimise() {
     h += '<td style="text-align:right;color:var(--text3)">' + (r.vol * 100).toFixed(0) + '%</td>';
     h += '</tr>';
   });
+  // Cash row — the un-invested remainder after caps are enforced per method.
+  const cashRow = {
+    kelly: kellyResult.cashPct ?? 0,
+    mv:    mvResult.cashPct    ?? 0,
+    cvar:  cvarResult.cashPct  ?? 0,
+  };
+  if (cashRow.kelly > 0.5 || cashRow.mv > 0.5 || cashRow.cvar > 0.5) {
+    const fmtCash = v => v > 0.5
+      ? '<span style="color:var(--text3)">' + v.toFixed(1) + '%</span>'
+      : '<span style="color:var(--text3)">—</span>';
+    h += '<tr style="border-top:1px solid var(--border);background:rgba(148,163,184,0.05)">';
+    h += '<td class="kn" style="color:var(--text3);font-style:italic">Cash</td>';
+    h += '<td style="font-size:11px;color:var(--text3)">remainder after caps</td>';
+    h += '<td style="text-align:right;color:var(--text3)">—</td>';
+    h += '<td style="text-align:right">' + fmtCash(cashRow.kelly) + '</td>';
+    h += '<td style="text-align:right">' + fmtCash(cashRow.mv)    + '</td>';
+    h += '<td style="text-align:right">' + fmtCash(cashRow.cvar)  + '</td>';
+    h += '<td style="text-align:right;color:var(--text3)">—</td>';
+    h += '<td style="text-align:right;color:var(--text3)">—</td>';
+    h += '</tr>';
+  }
   h += '</tbody></table></div>';
 
   // ── Constraint breach callouts ──────────────────────────────
@@ -4604,43 +4625,71 @@ function ctrlNum(id, label, val, min, max, step, onchange) {
     '<input type="number" id="' + id + '" class="fi" style="font-size:12px" value="' + val + '" min="' + min + '" max="' + max + '" step="' + step + '" onchange="' + onchange + '"></div>';
 }
 
-function applyCaps(tickers, rawWeights, companies, sectorCap, countryCap) {
+// Enforce position, sector, and country caps iteratively. No renormalisation
+// back to 100% — if the constraint set forces the total below 100%, the
+// remainder is reported as cash. Re-inflating to 100% is what caused the
+// previous per-position cap violations (sector cap cuts 15pts → multiply
+// every remaining 10% weight by 100/85 = 1.18× → 11.8% per position).
+//
+// Takes maxPos in PERCENT (e.g. 10 for 10%) and rawWeights as DECIMALS
+// (0..1) to preserve the original calling convention.
+function applyCaps(tickers, rawWeights, companies, sectorCap, countryCap, maxPos = null) {
   const w = {};
-  tickers.forEach((t, i) => { w[t] = rawWeights[i] * 100; });
+  tickers.forEach((t, i) => { w[t] = (rawWeights[i] ?? 0) * 100; });
   const sectorBreaches = new Set(), countryBreaches = new Set();
   const sectors = [...new Set(companies.map(c => c.sector))];
-  sectors.forEach(sec => {
-    const members = companies.filter(c => c.sector === sec && w[c.ticker] > 0);
-    const total = members.reduce((s, c) => s + w[c.ticker], 0);
-    if (total > sectorCap) { sectorBreaches.add(sec); const scale = sectorCap / total; members.forEach(c => { w[c.ticker] *= scale; }); }
-  });
   const countries = [...new Set(companies.map(c => c.country))];
-  countries.forEach(cty => {
-    const members = companies.filter(c => c.country === cty && w[c.ticker] > 0);
-    const total = members.reduce((s, c) => s + w[c.ticker], 0);
-    if (total > countryCap) { countryBreaches.add(cty); const scale = countryCap / total; members.forEach(c => { w[c.ticker] *= scale; }); }
-  });
-  // Normalise
-  const sum = Object.values(w).reduce((s, v) => s + v, 0);
-  if (sum > 0) Object.keys(w).forEach(k => { w[k] = w[k] / sum * 100; });
-  return { weights: w, sectorBreaches, countryBreaches };
+
+  // Two passes are enough in practice: clipping a position back to maxPos
+  // can push some sector/country totals down (never up), which never
+  // introduces new breaches. We loop 4× for defensive margin.
+  for (let iter = 0; iter < 4; iter++) {
+    // 1) Position cap
+    if (maxPos != null) {
+      Object.keys(w).forEach(k => { if (w[k] > maxPos) w[k] = maxPos; });
+    }
+    // 2) Sector cap
+    sectors.forEach(sec => {
+      const members = companies.filter(c => c.sector === sec);
+      const total = members.reduce((s, c) => s + (w[c.ticker] || 0), 0);
+      if (total > sectorCap + 1e-6) {
+        sectorBreaches.add(sec);
+        const scale = sectorCap / total;
+        members.forEach(c => { if (w[c.ticker]) w[c.ticker] *= scale; });
+      }
+    });
+    // 3) Country cap
+    countries.forEach(cty => {
+      const members = companies.filter(c => c.country === cty);
+      const total = members.reduce((s, c) => s + (w[c.ticker] || 0), 0);
+      if (total > countryCap + 1e-6) {
+        countryBreaches.add(cty);
+        const scale = countryCap / total;
+        members.forEach(c => { if (w[c.ticker]) w[c.ticker] *= scale; });
+      }
+    });
+  }
+
+  // Compute how much headroom the caps leave. If < 100%, the remainder is
+  // implicit cash. We expose it on the result so the UI can show it.
+  const invested = Object.values(w).reduce((s, v) => s + v, 0);
+  const cashPct = Math.max(0, 100 - invested);
+
+  return { weights: w, sectorBreaches, countryBreaches, invested, cashPct };
 }
 
 function runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap) {
   const raw = {};
   holdings.forEach(h => { raw[h.ticker] = computeKellyFrac(h.scenarios, h.current_price, kellyF, maxPos); });
-  const sum = Object.values(raw).reduce((s, v) => s + v, 0);
   const rawArr = holdings.map(h => (raw[h.ticker] ?? 0) / 100);
-  const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), rawArr, holdings, sectorCap, countryCap);
-  return { weights, sectorBreaches, countryBreaches };
+  return applyCaps(holdings.map(h => h.ticker), rawArr, holdings, sectorCap, countryCap, maxPos);
 }
 
 function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
   try {
     const w = mvOptimize(mus, cov, 5, maxW, 2000);
-    const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap);
-    return { weights, sectorBreaches, countryBreaches };
-  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
+    return applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap, maxW * 100);
+  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set(), invested: 0, cashPct: 100 }; }
 }
 
 function portfolioStatsFromWeights(holdings, corrMatrix, weightsByTicker) {
@@ -4671,7 +4720,7 @@ function buildEfficientFrontier(holdings, mus, cov, corrMatrix, maxW, sectorCap,
     let w;
     try { w = mvOptimize(mus, cov, lam, maxW, 1200); }
     catch (e) { continue; }
-    const capped = applyCaps(tickers, w, holdings, sectorCap, countryCap);
+    const capped = applyCaps(tickers, w, holdings, sectorCap, countryCap, maxW * 100);
     // Convert 0-1 weights to percent for stats helper
     const weightsPct = {};
     tickers.forEach((t, i) => { weightsPct[t] = (capped.weights[t] || 0); });
@@ -4702,9 +4751,8 @@ function runCVaR(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
       return mus[holdings.indexOf(h)] + bearP * bearDn * 0.5; // penalise for downside
     });
     const w = mvOptimize(adjustedMus, cov, 8, maxW, 2000);
-    const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap);
-    return { weights, sectorBreaches, countryBreaches };
-  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
+    return applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap, maxW * 100);
+  } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set(), invested: 0, cashPct: 100 }; }
 }
 
 function renderEfficientFrontier(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap,
@@ -4851,6 +4899,11 @@ function renderOptSummaryCard(label, result, holdings, corrMatrix, colour) {
     h += '<div style="margin-top:10px;font-size:11px;color:var(--text3)">Largest: <span style="color:var(--text2)">'
       + esc(topHolding[0].replace(/\s+(equity|eq)$/i,'').trim())
       + ' ' + topHolding[1].toFixed(1) + '%</span></div>';
+  }
+  const cash = result.cashPct ?? 0;
+  if (cash > 0.5) {
+    h += '<div style="font-size:11px;color:var(--text3)">Cash: <span style="color:var(--text2)">'
+      + cash.toFixed(1) + '%</span> <span style="color:var(--text3);font-size:10px">(remainder after caps)</span></div>';
   }
   h += '</div>';
   return h;
