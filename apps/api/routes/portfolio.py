@@ -496,7 +496,7 @@ async def backload_scenario_snapshots(
 # VALUATION SCENARIOS
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/companies/{ticker}/scenarios")
+@router.get("/companies/{ticker:path}/scenarios")
 async def get_scenarios(ticker: str, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     result = await db.execute(
@@ -514,7 +514,7 @@ async def get_scenarios(ticker: str, db: AsyncSession = Depends(get_db)):
     } for s in result.scalars().all()]
 
 
-@router.put("/companies/{ticker}/scenarios")
+@router.put("/companies/{ticker:path}/scenarios")
 async def set_scenarios(ticker: str, body: ScenariosUpdate, db: AsyncSession = Depends(get_db)):
     company = await _get_company(db, ticker)
     # Get current price for snapshot
