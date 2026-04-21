@@ -323,6 +323,22 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS ix_coverage_rescan_triggered_at ON coverage_rescan_log(triggered_at)"
         ))
 
+        # ── FX rates (Phase A: historical-price backbone) ───────
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS fx_rates (
+                id UUID PRIMARY KEY,
+                currency TEXT NOT NULL,
+                rate_date DATE NOT NULL,
+                rate_to_usd NUMERIC(18, 8) NOT NULL,
+                source TEXT DEFAULT 'yahoo',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_fx_ccy_date ON fx_rates(currency, rate_date)"
+        ))
+
     # ── Agent registry autodiscovery ─────────────────────────────
     from agents.registry import AgentRegistry
     AgentRegistry.autodiscover()

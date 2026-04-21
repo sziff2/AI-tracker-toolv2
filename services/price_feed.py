@@ -24,7 +24,7 @@ Bloomberg ticker → Yahoo ticker mapping:
 
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 import httpx
 
@@ -60,6 +60,36 @@ _TICKER_OVERRIDES = {
     "BP/ LN": "BP.L",         # Slash in Bloomberg ticker
     "BT/A LN": "BT-A.L",     # Slash in Bloomberg ticker
     "RYA ID": "RYA.IR",        # Ryanair on Irish exchange
+}
+
+
+# Currencies that are quoted in pence / cents on Yahoo Finance and must be
+# divided by 100 to reach the major unit before FX conversion. UK LSE is
+# the dominant case; Israel (.TA) and South Africa (.JO) are similar but
+# no current holdings trip those.
+_PENCE_EXCHANGES = {"LN"}     # Bloomberg exchange codes
+
+
+def is_pence_quoted(ticker: str) -> bool:
+    """True if the Yahoo quote for this Bloomberg ticker will arrive in
+    minor units (pence / cents) and must be divided by 100 before FX."""
+    parts = ticker.strip().split()
+    if len(parts) != 2:
+        return False
+    return parts[1] in _PENCE_EXCHANGES
+
+
+# Splice table for tickers that changed symbol mid-history (corporate
+# restructurings, ADR→local moves, etc.). Each entry is an ordered list
+# of legs: (yahoo_ticker, currency, is_pence, use_until).
+# use_until=None means "current leg — use up to today".
+# Lookup is by Bloomberg ticker (stored in Company.ticker).
+SPLICED_TICKERS: dict[str, list[tuple[str, str, bool, date | None]]] = {
+    # Alpha Bank: ADR (ALBKY) delisted 2025-06-30 → local Athens line
+    "ALPHA GA": [
+        ("ALBKY",    "USD", False, date(2025, 6, 30)),
+        ("ALPHA.AT", "EUR", False, None),
+    ],
 }
 
 

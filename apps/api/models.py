@@ -455,6 +455,22 @@ class PriceRecord(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
+# FX Rates (daily / monthly-EOM, for cross-currency correlation/analytics)
+# ─────────────────────────────────────────────────────────────────
+class FXRate(Base, TimestampMixin):
+    __tablename__ = "fx_rates"
+    __table_args__ = (
+        Index("ix_fx_ccy_date", "currency", "rate_date", unique=True),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    currency = Column(Text, nullable=False)          # 3-letter ISO, e.g. "GBP", "EUR"
+    rate_date = Column(Date, nullable=False)         # EOM or trade date
+    rate_to_usd = Column(Numeric(18, 8), nullable=False)   # 1 unit of <currency> in USD
+    source = Column(Text, default="yahoo")
+
+
+# ─────────────────────────────────────────────────────────────────
 # Valuation Scenarios
 # ─────────────────────────────────────────────────────────────────
 class ValuationScenario(Base, TimestampMixin):
