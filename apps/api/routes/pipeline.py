@@ -765,6 +765,54 @@ async def download_backup(db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/admin/debug-series")
+async def admin_debug_series(
+    ticker: str,
+    window: int = 60,
+    db: AsyncSession = Depends(get_db),
+):
+    """Dump raw USD monthly price series + log returns for one holding.
+    Used to diagnose why certain correlations come out suspiciously low."""
+    from sqlalchemy import text as sa_text
+    from services.portfolio_analytics import (
+        _load_fx_by_month, _load_monthly_series_usd, _log_returns,
+    )
+    rs = await db.execute(sa_text("SELECT id FROM companies WHERE ticker = :t"), {"t": ticker})
+    cid = rs.scalar_one_or_none()
+    if cid is None:
+        return {"error": f"No company for ticker {ticker}"}
+    fx = await _load_fx_by_month(db)
+    series = await _load_monthly_series_usd(db, cid, window, fx)
+    rets = _log_returns(series)
+    # Also dump the raw price_records rows for direct inspection.
+    raw = await db.execute(sa_text("""
+        SELECT price, currency, price_date, source
+          FROM price_records WHERE company_id = :cid
+         ORDER BY price_date ASC
+    """), {"cid": str(cid)})
+    raw_rows = [
+        {"price": float(r.price), "ccy": r.currency,
+         "date": r.price_date.date().isoformat() if r.price_date else None,
+         "src": r.source}
+        for r in raw
+    ]
+    return {
+        "ticker": ticker,
+        "n_raw_rows": len(raw_rows),
+        "n_monthly": len(series),
+        "n_returns": len(rets),
+        "usd_monthly": [
+            {"ym": f"{y:04d}-{m:02d}", "usd_price": p}
+            for (y, m), p in sorted(series.items())
+        ],
+        "log_returns": [
+            {"ym": f"{y:04d}-{m:02d}", "ret": r}
+            for (y, m), r in sorted(rets.items())
+        ],
+        "raw_rows_sample": raw_rows[:5] + (raw_rows[-5:] if len(raw_rows) > 10 else []),
+    }
+
+
 @router.get("/admin/benchmark-check")
 async def admin_benchmark_check(
     portfolio_id: str,
