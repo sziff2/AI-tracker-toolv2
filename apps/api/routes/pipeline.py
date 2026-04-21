@@ -765,6 +765,118 @@ async def download_backup(db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/admin/benchmark-check")
+async def admin_benchmark_check(
+    portfolio_id: str,
+    benchmarks: str = "SPY,URTH",
+    window: int = 60,
+    db: AsyncSession = Depends(get_db),
+):
+    """One-off sanity check: fetch benchmark tickers live from Yahoo,
+    compute their monthly log-return vol, and correlate them against
+    every holding in the portfolio. Does NOT persist anything.
+
+    Query:
+      portfolio_id: UUID
+      benchmarks:   comma-separated Yahoo tickers (default SPY,URTH)
+      window:       lookback months (default 60)
+    """
+    import math, httpx
+    from datetime import date, datetime, timezone, timedelta
+    from sqlalchemy import text as sa_text
+    from services.portfolio_analytics import (
+        _load_fx_by_month, _load_monthly_series_usd, _log_returns, _corr, _stdev,
+    )
+    from scripts.backfill_prices import _fetch_yahoo_history, _month_end
+
+    end_date = date.today().replace(day=1) - timedelta(days=1)
+    start_date = _month_end(end_date - timedelta(days=int(window * 31) + 62))
+
+    # 1. Fetch each benchmark from Yahoo and build its USD monthly return series.
+    bench_tickers = [b.strip() for b in benchmarks.split(",") if b.strip()]
+    bench_returns: dict[str, dict] = {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for yt in bench_tickers:
+            rows = await _fetch_yahoo_history(client, yt, start_date, end_date)
+            series = {(r[0].year, r[0].month): r[1] for r in rows}
+            rets = _log_returns(series)
+            vols = list(rets.values())
+            bench_returns[yt] = {
+                "series": rets,
+                "n_months": len(vols),
+                "monthly_vol": _stdev(vols) if vols else None,
+                "annualised_vol": (_stdev(vols) * math.sqrt(12)) if vols else None,
+            }
+
+    # 2. Holdings in the portfolio.
+    rs = await db.execute(sa_text("""
+        SELECT c.id AS cid, c.ticker
+          FROM portfolio_holdings h
+          JOIN companies c ON c.id = h.company_id
+         WHERE h.portfolio_id = :pid
+         ORDER BY h.weight DESC NULLS LAST
+    """), {"pid": portfolio_id})
+    holdings = [(row.cid, row.ticker) for row in rs]
+
+    fx = await _load_fx_by_month(db)
+
+    # 3. For each holding, compute its USD monthly returns, then correlate.
+    per_holding = []
+    corr_to_bench = {yt: [] for yt in bench_tickers}
+    for cid, ticker in holdings:
+        series = await _load_monthly_series_usd(db, cid, window, fx)
+        rets = _log_returns(series)
+        row = {"ticker": ticker, "months": len(rets), "corr": {}}
+        if len(rets) >= 12:
+            for yt in bench_tickers:
+                common = sorted(set(rets) & set(bench_returns[yt]["series"]))
+                if len(common) >= 12:
+                    x = [rets[m] for m in common]
+                    y = [bench_returns[yt]["series"][m] for m in common]
+                    c = _corr(x, y)
+                    row["corr"][yt] = round(c, 4)
+                    corr_to_bench[yt].append(c)
+                else:
+                    row["corr"][yt] = None
+        per_holding.append(row)
+
+    # 4. Benchmark cross-correlations (e.g. SPY vs URTH).
+    cross = {}
+    for i, a in enumerate(bench_tickers):
+        for b in bench_tickers[i + 1:]:
+            common = sorted(set(bench_returns[a]["series"]) & set(bench_returns[b]["series"]))
+            if len(common) >= 12:
+                x = [bench_returns[a]["series"][m] for m in common]
+                y = [bench_returns[b]["series"][m] for m in common]
+                cross[f"{a}__{b}"] = round(_corr(x, y), 4)
+
+    def _stats(vals):
+        vs = [v for v in vals if v is not None]
+        if not vs:
+            return None
+        return {"n": len(vs), "min": round(min(vs), 4), "max": round(max(vs), 4),
+                "mean": round(sum(vs) / len(vs), 4)}
+
+    return {
+        "portfolio_id": portfolio_id,
+        "window_months": window,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "benchmarks": {
+            yt: {
+                "n_months": bench_returns[yt]["n_months"],
+                "annualised_vol": round(bench_returns[yt]["annualised_vol"], 4)
+                    if bench_returns[yt]["annualised_vol"] else None,
+            }
+            for yt in bench_tickers
+        },
+        "benchmark_cross_corr": cross,
+        "holdings_vs_benchmark_summary": {
+            yt: _stats(corr_to_bench[yt]) for yt in bench_tickers
+        },
+        "per_holding": per_holding,
+    }
+
+
 @router.post("/admin/backfill-prices")
 async def admin_backfill_prices(
     ticker: str | None = None,
