@@ -118,19 +118,29 @@ async def _load_holding_monthly_returns_in_window(
     series = await _load_monthly_series_usd(db, company_id, 300, fx)
     if not series:
         return {}
-    # Keep only months inside the window (inclusive).
+    # Window returns cover months where start ≤ month ≤ end. To compute
+    # the FIRST month's return we also need the previous month's EOM
+    # price as a baseline — so include one extra month before start_key.
     start_key = (start.year, start.month)
+    # Compute "one month before start_key" for baseline.
+    if start_key[1] == 1:
+        baseline_key = (start_key[0] - 1, 12)
+    else:
+        baseline_key = (start_key[0], start_key[1] - 1)
     end_key = (end.year, end.month)
     clipped = {
         ym: v for ym, v in series.items()
-        if start_key <= ym <= end_key
+        if baseline_key <= ym <= end_key
     }
     if len(clipped) < 2:
         return {}
-    # Simple monthly returns: (p_t - p_{t-1}) / p_{t-1}
+    # Simple monthly returns: (p_t - p_{t-1}) / p_{t-1}. Only emit returns
+    # where `curr` falls inside the window [start_key, end_key].
     ordered = sorted(clipped.keys())
     out: dict[tuple[int, int], float] = {}
     for prev, curr in zip(ordered[:-1], ordered[1:]):
+        if curr < start_key:
+            continue
         p0, p1 = clipped[prev], clipped[curr]
         if p0 and p0 > 0 and p1 > 0:
             out[curr] = p1 / p0 - 1
