@@ -3940,11 +3940,19 @@ function renderAnalytics(d, opts = {}) {
   const stressCorr = Math.min(1, avgCorr * 1.3);
   const divRatio   = 1 - avgCorr;
 
+  // 9-band diverging palette — more resolution in the 0-0.7 range where
+  // most real-portfolio correlations live, and treats negative correlation
+  // as visually distinct (blues) rather than lumping with low positives.
   function corrColor(v) {
-    if (v >= 0.9) return '#EF5350';
-    if (v >= 0.6) return '#F59E0B';
-    if (v >= 0.3) return '#4ADE80';
-    return '#2DD4BF';
+    if (v >= 0.80) return '#B91C1C';   // crimson — diagonal / near-duplicate
+    if (v >= 0.65) return '#EF4444';   // red — very strong
+    if (v >= 0.50) return '#F59E0B';   // amber — strong
+    if (v >= 0.35) return '#FACC15';   // gold — moderate
+    if (v >= 0.20) return '#84CC16';   // lime — mild positive
+    if (v >= 0.05) return '#2DD4BF';   // teal — weak positive
+    if (v >= -0.10) return '#94A3B8';  // slate — near zero (mostly-independent)
+    if (v >= -0.25) return '#60A5FA';  // light blue — mild negative
+    return '#2563EB';                   // blue — clear negative
   }
 
   // Adaptive cell sizing: big cells with numbers when the portfolio is
@@ -4010,8 +4018,10 @@ function renderAnalytics(d, opts = {}) {
     heatHoldings.forEach((b,j) => {
       const v   = corrGrid[i][j];
       const col = corrColor(v);
-      const bg  = col + (i===j ? '40' : '25');
-      const bdr = col + (i===j ? '90' : '50');
+      // Higher opacity so mid-band colours are more clearly distinguishable
+      // from the dark card background. Diagonal stays brightest.
+      const bg  = col + (i===j ? '60' : '45');
+      const bdr = col + (i===j ? 'CC' : '75');
       h += '<div data-r="'+esc(a.ticker)+'" data-c="'+esc(b.ticker)+'" data-v="'+v.toFixed(4)+'"'
          + ' style="width:'+(cellSz-2)+'px;height:'+(cellSz-2)+'px;margin-right:2px;border-radius:3px;'
          + 'display:flex;align-items:center;justify-content:center;cursor:crosshair;'
@@ -4023,12 +4033,22 @@ function renderAnalytics(d, opts = {}) {
     });
     h += '</div>';
   });
-  // Legend
-  h += '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">';
-  [['≥0.9','#EF5350','High'],['0.6–0.9','#F59E0B','Med-Hi'],['0.3–0.6','#4ADE80','Med'],['<0.3','#2DD4BF','Low']].forEach(([range,col,lbl]) => {
+  // Legend — diverging scale left-to-right from negative to strong positive.
+  h += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">';
+  [
+    ['<−0.25', '#2563EB'],
+    ['−0.25 to −0.10', '#60A5FA'],
+    ['−0.10 to 0.05', '#94A3B8'],
+    ['0.05 to 0.20', '#2DD4BF'],
+    ['0.20 to 0.35', '#84CC16'],
+    ['0.35 to 0.50', '#FACC15'],
+    ['0.50 to 0.65', '#F59E0B'],
+    ['0.65 to 0.80', '#EF4444'],
+    ['≥0.80', '#B91C1C'],
+  ].forEach(([range, col]) => {
     h += '<div style="display:flex;align-items:center;gap:4px">'
-       + '<div style="width:10px;height:10px;border-radius:2px;background:'+col+'40;border:1px solid '+col+'"></div>'
-       + '<span style="font-size:10px;color:var(--text3)">'+range+' '+lbl+'</span></div>';
+       + '<div style="width:12px;height:12px;border-radius:2px;background:'+col+'55;border:1px solid '+col+'"></div>'
+       + '<span style="font-size:10px;color:var(--text3)">'+range+'</span></div>';
   });
   h += '</div></div></div>';
 
