@@ -3603,6 +3603,74 @@ async function importPortfolioCSV(input){
 // SHARED MATHS ENGINE (ported from investment-tracker.jsx)
 // ═══════════════════════════════════════════════════════════════
 
+// ── Data quality banner (Phase F) ───────────────────────────────────
+// Surfaces three kinds of bookkeeping gaps so the analyst can see what's
+// being silently dropped from calculations. Collapsed by default; click
+// the header row to toggle. A zero-issue portfolio shows a green OK bar.
+function renderDataQualityBanner({ portfolioName, holdings, corrData, riskData, riskDash }) {
+  const noScenarios = holdings.filter(h =>
+    (h.expRet === 0 && h.bullRet === 0 && h.bearRet === 0) ||
+    !(h.scenarios && (h.scenarios.bull?.target_price || h.scenarios.base?.target_price || h.scenarios.bear?.target_price))
+  );
+  const corrDropped = (corrData && corrData.dropped) ? corrData.dropped : [];
+  const volMissing = [];
+  if (riskData && riskData.metrics) {
+    for (const h of holdings) {
+      const m = riskData.metrics[h.ticker];
+      if (!m || m.status !== 'ok') {
+        volMissing.push({ ticker: h.ticker, reason: m ? m.status : 'no data' });
+      }
+    }
+  }
+  const riskDashExcluded = (riskDash && riskDash.excluded_tickers) ? riskDash.excluded_tickers : [];
+
+  const total = noScenarios.length + corrDropped.length + volMissing.length + riskDashExcluded.length;
+  const clr = total === 0 ? 'var(--green)' : total <= 3 ? 'var(--amber)' : 'var(--red)';
+  const icon = total === 0 ? '✓' : '⚠';
+  const summary = total === 0
+    ? 'All holdings fully covered — scenarios, price history, realised vol'
+    : total + ' data-quality issue' + (total === 1 ? '' : 's') + ' across ' + holdings.length + ' holdings';
+
+  const rowId = 'dq-body-' + Math.random().toString(36).slice(2, 8);
+  let html = '';
+  html += '<div class="cd" style="padding:10px 14px;margin-bottom:14px;border-left-color:' + clr + ';cursor:pointer" '
+       +  'onclick="var el=document.getElementById(\'' + rowId + '\');if(el)el.style.display=el.style.display===\'none\'?\'block\':\'none\'">';
+  html += '<div style="display:flex;align-items:center;gap:10px">';
+  html += '<span style="color:' + clr + ';font-size:14px;font-weight:700">' + icon + '</span>';
+  html += '<span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">Data quality</span>';
+  html += '<span style="font-size:12px;color:var(--text)">' + esc(summary) + '</span>';
+  html += '<span style="margin-left:auto;font-size:10px;color:var(--text3)">▾ click to expand</span>';
+  html += '</div>';
+  if (total > 0) {
+    html += '<div id="' + rowId + '" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">';
+    const section = (title, items, renderItem) => {
+      if (!items.length) return '';
+      let s = '<div style="margin-bottom:10px">';
+      s += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">'
+        + esc(title) + ' (' + items.length + ')</div>';
+      s += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      items.forEach(it => {
+        s += '<span style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);border-radius:4px;padding:3px 8px;font-size:11px;font-family:var(--mono)">'
+          + renderItem(it) + '</span>';
+      });
+      s += '</div></div>';
+      return s;
+    };
+    html += section('Holdings with no scenarios (excluded from return/vol calcs)', noScenarios,
+      h => esc(h.ticker.replace(/\s+(equity|eq)$/i,'').trim()));
+    html += section('Dropped from correlation matrix (insufficient price history)', corrDropped,
+      x => esc(x.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + ' — ' + esc(x.reason || ''));
+    html += section('No realised vol available', volMissing,
+      x => esc(x.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + ' (' + esc(x.reason) + ')');
+    html += section('Excluded from tail-risk aggregation', riskDashExcluded,
+      x => esc(x.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + ' — ' + esc(x.reason || ''));
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+
 // ── Correlation heatmap: live hover readout + CSV export ────────────
 function corrCellHover(ev) {
   const cell = ev.target.closest('[data-r][data-c]');
@@ -3866,6 +3934,15 @@ function renderAnalytics(d, opts = {}) {
   const countryGroups = groupBy(holdings, 'country');
 
   let h = '';
+
+  // ── Data quality banner (Phase F) ──────────────────────────────
+  h += renderDataQualityBanner({
+    portfolioName: d.name,
+    holdings,
+    corrData,
+    riskData,
+    riskDash,
+  });
 
   // ── KPI strip ──────────────────────────────────────────────────────────────
   h += '<div class="ck-strip">';
@@ -4399,6 +4476,15 @@ function renderOptimise() {
   const cvarResult   = runCVaR(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap);
 
   let h = '';
+
+  // ── Data quality banner (Phase F) ──────────────────────────
+  h += renderDataQualityBanner({
+    portfolioName: OP_DATA.name,
+    holdings,
+    corrData: OP_CORR,
+    riskData: OP_RISK,
+    riskDash: null,
+  });
 
   // ── Controls ────────────────────────────────────────────────
   h += '<div class="cd" style="padding:16px;margin-bottom:20px">';
