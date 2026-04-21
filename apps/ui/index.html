@@ -4388,6 +4388,10 @@ function renderOptimise() {
   h += renderOptSummaryCard('CVaR', cvarResult, holdings, corrMatrix, '#818CF8');
   h += '</div>';
 
+  // ── Efficient frontier chart ───────────────────────────────
+  h += renderEfficientFrontier(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap,
+                                kellyResult, mvResult, cvarResult);
+
   // ── Full comparison table (sortable by any column) ───────────
   // Build one row-object per ticker with every sortable field, then
   // sort once according to OP_SORT before rendering.
@@ -4523,6 +4527,54 @@ function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
   } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
 }
 
+function portfolioStatsFromWeights(holdings, corrMatrix, weightsByTicker) {
+  // weightsByTicker: map of ticker → weight in PERCENT (e.g. 7.5 for 7.5%).
+  // Returns { expRet (pct), vol (decimal), sharpe } for the weighted portfolio.
+  const wHoldings = holdings
+    .map(h => ({ ...h, w: weightsByTicker[h.ticker] ?? 0 }))
+    .filter(h => h.w > 0.01);
+  if (!wHoldings.length) return { expRet: 0, vol: 0, sharpe: 0 };
+  const m = portfolioMetrics(wHoldings, corrMatrix);
+  // portfolioMetrics returns vol as PERCENT; convert to decimal for consistency with this helper.
+  return { expRet: m.expRet, vol: m.vol / 100, sharpe: m.sharpe };
+}
+
+function buildEfficientFrontier(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap, nPoints) {
+  // Sweep risk-aversion λ on a log scale. Large λ → minimum-variance corner
+  // (defensive); small λ → maximum-return corner (aggressive). Each λ runs
+  // mvOptimize + applyCaps, giving one point on the frontier.
+  const pts = [];
+  const lambdas = [];
+  for (let i = 0; i < nPoints; i++) {
+    const t = i / (nPoints - 1);
+    // log-spaced from 0.25 to 40
+    lambdas.push(0.25 * Math.pow(40 / 0.25, t));
+  }
+  const tickers = holdings.map(h => h.ticker);
+  for (const lam of lambdas) {
+    let w;
+    try { w = mvOptimize(mus, cov, lam, maxW, 1200); }
+    catch (e) { continue; }
+    const capped = applyCaps(tickers, w, holdings, sectorCap, countryCap);
+    // Convert 0-1 weights to percent for stats helper
+    const weightsPct = {};
+    tickers.forEach((t, i) => { weightsPct[t] = (capped.weights[t] || 0); });
+    const stats = portfolioStatsFromWeights(holdings, corrMatrix, weightsPct);
+    if (stats.vol > 0 && isFinite(stats.expRet)) {
+      pts.push({ lambda: lam, vol: stats.vol, expRet: stats.expRet, sharpe: stats.sharpe, weights: weightsPct });
+    }
+  }
+  // Dedup near-identical points + keep only the Pareto frontier (for a given
+  // vol, the highest expRet wins), then sort by vol ascending for clean plotting.
+  pts.sort((a, b) => a.vol - b.vol);
+  const frontier = [];
+  let bestRet = -Infinity;
+  for (const p of pts) {
+    if (p.expRet > bestRet) { frontier.push(p); bestRet = p.expRet; }
+  }
+  return frontier;
+}
+
 function runCVaR(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
   // Simplified CVaR proxy: downside-penalised version of MV
   // Uses downside-adjusted returns (bear-weighted) as input
@@ -4537,6 +4589,126 @@ function runCVaR(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap) {
     const { weights, sectorBreaches, countryBreaches } = applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap);
     return { weights, sectorBreaches, countryBreaches };
   } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set() }; }
+}
+
+function renderEfficientFrontier(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap,
+                                  kellyResult, mvResult, cvarResult) {
+  if (holdings.length < 2) return '';
+
+  const frontier = buildEfficientFrontier(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap, 25);
+  if (!frontier.length) return '';
+
+  // Reference points to overlay.
+  const fmtPct = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const ref = [
+    { label: 'Current',  clr: '#64748B',   stats: portfolioMetricsForWeights(holdings, corrMatrix, null) },
+    { label: 'Kelly',    clr: 'var(--gold)', stats: portfolioStatsFromWeights(holdings, corrMatrix, kellyResult.weights) },
+    { label: 'MV',       clr: 'var(--teal)', stats: portfolioStatsFromWeights(holdings, corrMatrix, mvResult.weights) },
+    { label: 'CVaR',     clr: '#818CF8',     stats: portfolioStatsFromWeights(holdings, corrMatrix, cvarResult.weights) },
+  ].filter(r => r.stats && r.stats.vol > 0);
+
+  // Compute plot bounds over frontier + reference points.
+  const allPts = [...frontier, ...ref.map(r => ({ vol: r.stats.vol, expRet: r.stats.expRet }))];
+  const xMin = Math.min(...allPts.map(p => p.vol)) * 0.9;
+  const xMax = Math.max(...allPts.map(p => p.vol)) * 1.05;
+  const yMin = Math.min(...allPts.map(p => p.expRet)) - 2;
+  const yMax = Math.max(...allPts.map(p => p.expRet)) + 2;
+
+  // SVG geometry
+  const W = 680, H = 320;
+  const padL = 50, padR = 140, padT = 18, padB = 42;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const xScale = v => padL + ((v - xMin) / (xMax - xMin)) * plotW;
+  const yScale = r => padT + (1 - (r - yMin) / (yMax - yMin)) * plotH;
+
+  // Gridlines (4 x, 4 y)
+  let svg = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="font-family:var(--mono);font-size:10px">';
+  svg += '<rect x="'+padL+'" y="'+padT+'" width="'+plotW+'" height="'+plotH+'" fill="rgba(6,16,30,0.55)" stroke="var(--border)"/>';
+  for (let i = 0; i <= 4; i++) {
+    const x = padL + (i / 4) * plotW;
+    const xv = xMin + (i / 4) * (xMax - xMin);
+    svg += '<line x1="'+x+'" y1="'+padT+'" x2="'+x+'" y2="'+(padT+plotH)+'" stroke="rgba(196,164,90,0.08)"/>';
+    svg += '<text x="'+x+'" y="'+(padT+plotH+18)+'" fill="var(--text3)" text-anchor="middle">'+(xv*100).toFixed(0)+'%</text>';
+  }
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (i / 4) * plotH;
+    const yv = yMax - (i / 4) * (yMax - yMin);
+    svg += '<line x1="'+padL+'" y1="'+y+'" x2="'+(padL+plotW)+'" y2="'+y+'" stroke="rgba(196,164,90,0.08)"/>';
+    svg += '<text x="'+(padL-8)+'" y="'+(y+4)+'" fill="var(--text3)" text-anchor="end">'+yv.toFixed(0)+'%</text>';
+  }
+  // Axis labels
+  svg += '<text x="'+(padL+plotW/2)+'" y="'+(H-8)+'" fill="var(--text2)" text-anchor="middle" font-size="11">Annualised Volatility</text>';
+  svg += '<text x="15" y="'+(padT+plotH/2)+'" fill="var(--text2)" text-anchor="middle" font-size="11" transform="rotate(-90 15 '+(padT+plotH/2)+')">Expected Return</text>';
+
+  // Frontier line
+  const pathD = frontier.map((p, i) =>
+    (i ? 'L' : 'M') + xScale(p.vol).toFixed(1) + ' ' + yScale(p.expRet).toFixed(1)
+  ).join(' ');
+  svg += '<path d="'+pathD+'" fill="none" stroke="#4ADE80" stroke-width="2" stroke-dasharray="4 3" opacity="0.9"/>';
+  // Frontier points
+  frontier.forEach(p => {
+    svg += '<circle cx="'+xScale(p.vol).toFixed(1)+'" cy="'+yScale(p.expRet).toFixed(1)+'" r="3" fill="#4ADE80" opacity="0.8">'
+         + '<title>λ='+p.lambda.toFixed(2)+'  vol='+(p.vol*100).toFixed(1)+'%  ret='+fmtPct(p.expRet)+'  Sharpe='+p.sharpe.toFixed(2)+'</title></circle>';
+  });
+  // Reference point markers (Current + method stars)
+  const markers = [
+    ['Current','#64748B','diamond'], ['Kelly','var(--gold)','star'],
+    ['MV','var(--teal)','star'], ['CVaR','#818CF8','star'],
+  ];
+  ref.forEach((r, idx) => {
+    const x = xScale(r.stats.vol), y = yScale(r.stats.expRet);
+    const [_, clr, shape] = markers[idx];
+    if (shape === 'diamond') {
+      svg += '<polygon points="'+x+','+(y-7)+' '+(x+7)+','+y+' '+x+','+(y+7)+' '+(x-7)+','+y+'" fill="'+clr+'" stroke="#fff" stroke-width="1.5"/>';
+    } else {
+      // 5-pointed star
+      const pts = [];
+      for (let k = 0; k < 10; k++) {
+        const rad = k * Math.PI / 5 - Math.PI / 2;
+        const R = k % 2 === 0 ? 8 : 4;
+        pts.push((x + R*Math.cos(rad)).toFixed(1) + ',' + (y + R*Math.sin(rad)).toFixed(1));
+      }
+      svg += '<polygon points="'+pts.join(' ')+'" fill="'+clr+'" stroke="#fff" stroke-width="1"/>';
+    }
+    svg += '<text x="'+(x+12)+'" y="'+(y+4)+'" fill="'+clr+'" font-weight="600" font-size="10.5">'+r.label+'</text>';
+  });
+
+  // Legend
+  svg += '<g transform="translate('+(padL+plotW+16)+','+(padT+10)+')">';
+  svg += '<text x="0" y="0" fill="var(--text3)" font-size="10" text-transform="uppercase" letter-spacing="0.08em">LEGEND</text>';
+  const legRows = [
+    ['#4ADE80', '····', 'Efficient frontier'],
+    ['#64748B', '◆', 'Current'],
+    ['var(--gold)','★', 'Kelly'],
+    ['var(--teal)','★', 'MV'],
+    ['#818CF8','★', 'CVaR'],
+  ];
+  legRows.forEach((row, i) => {
+    const [clr, sym, lbl] = row;
+    const ly = 18 + i * 16;
+    svg += '<text x="0" y="'+ly+'" fill="'+clr+'" font-size="11">'+sym+'</text>';
+    svg += '<text x="20" y="'+ly+'" fill="var(--text2)" font-size="10.5">'+lbl+'</text>';
+  });
+  svg += '</g>';
+  svg += '</svg>';
+
+  let html = '';
+  html += '<h2 style="margin-top:24px">Efficient Frontier</h2>';
+  html += '<div class="cd" style="padding:20px">';
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">Mean-Variance frontier swept across '+frontier.length+' risk-aversion points, caps applied. '
+       +  'Your Current, Kelly, MV and CVaR portfolios are plotted for comparison — points above the frontier line are infeasible under current constraints.</div>';
+  html += svg;
+  html += '</div>';
+  return html;
+}
+
+// Tiny adapter for the "Current" point — compute stats using each holding's
+// actual `.w` weight rather than a method's output.
+function portfolioMetricsForWeights(holdings, corrMatrix, _ignored) {
+  const byTicker = {};
+  holdings.forEach(h => byTicker[h.ticker] = h.w);
+  return portfolioStatsFromWeights(holdings, corrMatrix, byTicker);
 }
 
 function renderOptSummaryCard(label, result, holdings, corrMatrix, colour) {
