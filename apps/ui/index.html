@@ -3693,10 +3693,12 @@ function computeKellyFrac(sc, currentPrice, factor, maxPos) {
 
 function portfolioMetrics(holdings, corrMatrix) {
   const weights = holdings.map(h => h.w / 100);
-  const expRet = holdings.reduce((s, h) => s + h.w / 100 * h.expRet, 0);
-  const variance = portfolioVariance(holdings, corrMatrix);
-  const vol = Math.sqrt(Math.max(variance, 0));
-  const sharpe = vol > 0 ? expRet / vol : 0;
+  const expRet = holdings.reduce((s, h) => s + h.w / 100 * h.expRet, 0);   // pct (e.g. 24.1)
+  const variance = portfolioVariance(holdings, corrMatrix);                 // decimal² (vols are decimal)
+  const vol = Math.sqrt(Math.max(variance, 0));                             // decimal (e.g. 0.139)
+  // Sharpe needs both numerator and denominator in the SAME units — expRet
+  // is a percent, vol is a decimal, so divide expRet by 100 before the ratio.
+  const sharpe = vol > 0 ? (expRet / 100) / vol : 0;
   const effN = effectiveN(weights);
   const downside = holdings.reduce((s, h) => s + h.w / 100 * (h.downside || 0), 0);
   return { expRet, vol: vol * 100, sharpe, effN, downside };
