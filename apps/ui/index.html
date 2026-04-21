@@ -4031,16 +4031,27 @@ function groupBy(holdings, field) {
   const groups = {};
   holdings.forEach(h => {
     const key = h[field] || 'Unknown';
-    if (!groups[key]) groups[key] = { name: key, weight: 0, contribution: 0, count: 0 };
+    if (!groups[key]) groups[key] = { name: key, weight: 0, contribution: 0, count: 0, holdings: [] };
     groups[key].weight += h.w;
     groups[key].contribution += h.contribution;
     groups[key].count++;
+    groups[key].holdings.push(h);
   });
   return Object.values(groups).sort((a, b) => b.weight - a.weight);
 }
 
+function toggleAttrGroup(groupId, row) {
+  const children = document.querySelectorAll('tr[data-attr-parent="' + groupId + '"]');
+  if (!children.length) return;
+  const isOpen = children[0].style.display !== 'none';
+  children.forEach(c => { c.style.display = isOpen ? 'none' : ''; });
+  const caret = row.querySelector('.attr-caret');
+  if (caret) caret.textContent = isOpen ? '▸' : '▾';
+}
+
 function renderAttrTable(title, groups, portExpRet) {
   const PALETTE = ['var(--gold)','var(--teal)','#818CF8','#FB7185','#F59E0B','#34D399','#60A5FA','#A78BFA'];
+  const slug = title.replace(/\W+/g, '').toLowerCase();
   let h = '<div class="cd" style="padding:16px">';
   h += '<div class="cd-t">' + esc(title) + '</div>';
   h += '<table class="kt" style="margin-top:8px"><thead><tr>';
@@ -4050,13 +4061,27 @@ function renderAttrTable(title, groups, portExpRet) {
   h += '</tr></thead><tbody>';
   groups.forEach((g, i) => {
     const avgRet = g.weight > 0 ? g.contribution / g.weight * 100 : 0;
-    h += '<tr>';
-    h += '<td style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;border-radius:2px;background:' + PALETTE[i % PALETTE.length] + ';flex-shrink:0"></div>' + esc(g.name) + ' <span style="color:var(--text3);font-size:10px">(' + g.count + ')</span></td>';
+    const groupId = slug + '-' + i;
+    // Parent (aggregate) row
+    h += '<tr style="cursor:pointer" onclick="toggleAttrGroup(\'' + groupId + '\', this)">';
+    h += '<td style="display:flex;align-items:center;gap:8px"><span class="attr-caret" style="display:inline-block;width:10px;color:var(--text3);font-size:9px">▸</span><div style="width:8px;height:8px;border-radius:2px;background:' + PALETTE[i % PALETTE.length] + ';flex-shrink:0"></div>' + esc(g.name) + ' <span style="color:var(--text3);font-size:10px">(' + g.count + ')</span></td>';
     h += '<td style="text-align:right">' + g.weight.toFixed(1) + '%</td>';
     h += '<td style="text-align:right;color:' + colourPct(avgRet) + '">' + pctFmt(avgRet) + '</td>';
     h += '<td style="text-align:right;color:' + colourPct(g.contribution) + '">' + pctFmt(g.contribution, 2) + '</td>';
     h += '<td style="text-align:right;color:var(--text3)">' + (portExpRet !== 0 ? (g.contribution / portExpRet * 100).toFixed(0) + '%' : '—') + '</td>';
     h += '</tr>';
+    // Child rows (one per holding in the group), hidden by default
+    [...g.holdings].sort((a, b) => b.w - a.w).forEach(ho => {
+      const tkr = ho.ticker.replace(/\s+(equity|eq)$/i, '').trim();
+      h += '<tr data-attr-parent="' + groupId + '" style="display:none;background:rgba(196,164,90,0.04)">';
+      h += '<td style="padding-left:34px"><span class="kn" style="font-size:10px">' + esc(tkr) + '</span>'
+        +  '<span style="color:var(--text3);font-size:10px;margin-left:8px">' + esc(ho.name || '') + '</span></td>';
+      h += '<td style="text-align:right;font-size:11px">' + ho.w.toFixed(1) + '%</td>';
+      h += '<td style="text-align:right;font-size:11px;color:' + colourPct(ho.expRet) + '">' + pctFmt(ho.expRet) + '</td>';
+      h += '<td style="text-align:right;font-size:11px;color:' + colourPct(ho.contribution) + '">' + pctFmt(ho.contribution, 2) + '</td>';
+      h += '<td style="text-align:right;font-size:11px;color:var(--text3)">' + (portExpRet !== 0 ? (ho.contribution / portExpRet * 100).toFixed(0) + '%' : '—') + '</td>';
+      h += '</tr>';
+    });
   });
   h += '</tbody></table></div>';
   return h;
