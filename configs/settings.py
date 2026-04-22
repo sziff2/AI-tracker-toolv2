@@ -79,6 +79,45 @@ class Settings(BaseSettings):
     # Keys are agent_id strings; values are model name strings.
     agent_model_overrides: dict = {}
 
+    # ── Native Claude PDF (Tier 1.3 extraction fallback + Tier 2.3 narrative) ──
+    # Sprint C-prep A/B showed baseline (pymupdf + pdfplumber) HANGS for
+    # 507s then returns 0 tables on Canadian condensed financial statements
+    # (NWC CN Q3 FY2025). Native Claude PDF reads the same file in 31s and
+    # recovers 28 tables with absolute metrics. See
+    # Dev plans/_sprint-c-prep-ab-results.md for the full comparison.
+    #
+    # Ship behind feature flags, default off until 2 weeks of shadow-run
+    # data confirms no regression on the US 10-Q/10-K path where baseline
+    # already works.
+
+    # Tier 1.3 — enable the table-extraction fallback when baseline
+    # returns 0 tables on a doc type that should have them.
+    native_pdf_fallback: bool = False
+
+    # Hard cap per Anthropic document-block constraint — docs over this
+    # stay on the baseline text-only path.
+    native_pdf_max_pages: int = 100
+
+    # Hard timeout on the baseline pdfplumber extraction. 507s hangs on
+    # NWC are the reason this exists — cap well below that so the
+    # fallback fires promptly instead of the pipeline stalling.
+    native_pdf_baseline_timeout_seconds: int = 60
+
+    # Model for native PDF calls. Sonnet by default — quality matters
+    # more than cost on a fallback path that fires rarely. Override to
+    # Haiku via env for the narrative (Tier 2.3) path if decks test clean.
+    native_pdf_model: str = ""  # empty = use agent_default_model
+
+    # Tier 2.3 — use native PDF for the narrative deep-read prompts
+    # (presentation_analysis etc.). Separate flag so Tier 1.3 can ship
+    # independently of Tier 2.3.
+    use_native_pdf_for_analysis: bool = False
+
+    # Stricter page cap for the narrative path — investor decks are
+    # rarely over 50 pages, and over-size docs there add cost without
+    # signal gain. Tier 2.3 scope document has the detailed reasoning.
+    native_pdf_analysis_max_pages: int = 50
+
     # Data Completeness + Source Coverage gate mode (per-assessment pre-flight).
     # "warn"  — gates run, reports attached to pipeline_run.warnings, pipeline
     #           still proceeds. Use this for the 2-week validation window.

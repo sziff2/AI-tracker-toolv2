@@ -223,6 +223,61 @@ def classify_document(text_preview: str, ticker: str = None) -> ClassifiedDocume
 
 
 # ─────────────────────────────────────────────────────────────────
+# Native Claude PDF fallback (Tier 1.3)
+# ─────────────────────────────────────────────────────────────────
+
+async def _maybe_native_pdf_fallback(
+    *, file_path: str, ext: str, tables: list, doc_type: str,
+) -> list:
+    """Decide + run the native-PDF fallback.
+
+    Triggers when:
+      - feature flag `settings.native_pdf_fallback` is on
+      - file is a PDF
+      - baseline produced 0 tables (or exactly 0 after pdfplumber timeout)
+      - doc type is one we expect tables on (SEC 10-Q/10-K, Canadian
+        condensed financial statements, etc.)
+
+    Returns either the original `tables` or the fallback-produced
+    tables coerced into pdfplumber's shape. Never raises — a fallback
+    failure degrades silently to the baseline result.
+    """
+    if not getattr(settings, "native_pdf_fallback", False):
+        return tables
+    if ext != ".pdf":
+        return tables
+    if tables:
+        # Baseline found something — trust it.
+        return tables
+
+    from services.native_pdf_fallback import (
+        extract_tables_from_pdf, tables_to_baseline_shape, DEFAULT_FALLBACK_DOC_TYPES,
+    )
+    if doc_type not in DEFAULT_FALLBACK_DOC_TYPES:
+        logger.info(
+            "native_pdf_fallback: skipped — doc_type=%r not in fallback set",
+            doc_type,
+        )
+        return tables
+
+    logger.info("native_pdf_fallback: triggered for %s (type=%s)",
+                Path(file_path).name, doc_type)
+    try:
+        result = await extract_tables_from_pdf(file_path)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("native_pdf_fallback raised: %s", str(exc)[:200])
+        return tables
+    if result.get("status") != "ok" or not result.get("tables"):
+        logger.info("native_pdf_fallback: no tables recovered (%s)",
+                    result.get("reason", "")[:150])
+        return tables
+    recovered = result["tables"]
+    logger.info("native_pdf_fallback: recovered %d tables, cost=$%s, retried=%s",
+                len(recovered), result.get("cost_usd"), result.get("retried"))
+    return tables_to_baseline_shape(recovered)
+
+
+# ─────────────────────────────────────────────────────────────────
 # Full processing pipeline
 # ─────────────────────────────────────────────────────────────────
 
@@ -281,7 +336,27 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     # 1. Extract
     if ext == ".pdf":
         pages = extract_text_pymupdf(file_path)
-        tables = extract_tables_pdfplumber(file_path)
+        # pdfplumber has been observed hanging for 500+ seconds on
+        # Canadian condensed financial statements (Sprint C-prep A/B).
+        # Cap it well below that so the native-PDF fallback can fire
+        # instead of the pipeline stalling.
+        import asyncio as _asyncio
+        _timeout = getattr(settings, "native_pdf_baseline_timeout_seconds", 60)
+        try:
+            tables = await _asyncio.wait_for(
+                _asyncio.to_thread(extract_tables_pdfplumber, file_path),
+                timeout=_timeout,
+            )
+        except _asyncio.TimeoutError:
+            logger.warning(
+                "pdfplumber exceeded %ds on %s — skipping baseline tables, "
+                "native-PDF fallback will handle if eligible",
+                _timeout, Path(file_path).name,
+            )
+            tables = []
+        except Exception as _exc:
+            logger.warning("pdfplumber failed on %s: %s", Path(file_path).name, _exc)
+            tables = []
     elif ext in (".docx", ".doc"):
         pages = extract_text_docx(file_path)
         tables = []
@@ -315,6 +390,15 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
         logger.info("Skipping LLM classification — type already known: %s", document.document_type)
     else:
         classification = classify_document(full_text, ticker=ticker)
+
+    # 2b. Native-PDF fallback (Tier 1.3) — fires when baseline returned
+    # zero tables on a doc type that should have them. Silently noops
+    # when `settings.native_pdf_fallback` is False (default during
+    # shadow-run period).
+    tables = await _maybe_native_pdf_fallback(
+        file_path=file_path, ext=ext, tables=tables,
+        doc_type=(classification.document_type or document.document_type or "").lower(),
+    )
 
     # 3. Persist sections (strip null bytes — PostgreSQL rejects \x00 in text)
     for p in pages:
