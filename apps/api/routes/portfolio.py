@@ -787,6 +787,53 @@ async def get_company_risk_metrics(
     )
 
 
+@router.post("/admin/rename-slash-tickers")
+async def rename_slash_tickers(db: AsyncSession = Depends(get_db)):
+    """One-shot migration: rename BP/ LN → BP LN and BT/A LN → BT-A LN
+    in the companies table so every FastAPI route (which uses {ticker}
+    without :path) routes cleanly. All FK-linked tables — price_records,
+    scenarios, holdings, documents, etc. — reference company_id, so
+    no other table needs to be touched.
+
+    Yahoo mapping in services/price_feed.py keeps keys for BOTH old and
+    new forms, so daily prices continue to work through the transition.
+    """
+    renames = [("BP/ LN", "BP LN"), ("BT/A LN", "BT-A LN")]
+    results = []
+    for old, new in renames:
+        rs = await db.execute(
+            text("SELECT id, ticker FROM companies WHERE ticker = :t"),
+            {"t": old},
+        )
+        row = rs.fetchone()
+        if not row:
+            # Check if already renamed
+            rs2 = await db.execute(
+                text("SELECT id FROM companies WHERE ticker = :t"),
+                {"t": new},
+            )
+            results.append({
+                "from": old, "to": new,
+                "status": "already_renamed" if rs2.scalar_one_or_none() else "not_found",
+            })
+            continue
+        # Make sure the new ticker isn't already taken by another company
+        rs2 = await db.execute(
+            text("SELECT id FROM companies WHERE ticker = :t AND id != :id"),
+            {"t": new, "id": str(row.id)},
+        )
+        if rs2.scalar_one_or_none():
+            results.append({"from": old, "to": new, "status": "conflict_new_ticker_exists"})
+            continue
+        await db.execute(
+            text("UPDATE companies SET ticker = :new WHERE id = :id"),
+            {"new": new, "id": str(row.id)},
+        )
+        results.append({"from": old, "to": new, "status": "renamed", "company_id": str(row.id)})
+    await db.commit()
+    return {"renames": results}
+
+
 @router.post("/admin/seed-factor-proxies")
 async def seed_factor_proxies(db: AsyncSession = Depends(get_db)):
     """One-shot: insert the factor-proxy ETFs as companies with

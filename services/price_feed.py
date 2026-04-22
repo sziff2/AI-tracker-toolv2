@@ -54,12 +54,17 @@ _EXCHANGE_MAP = {
 }
 
 
-# Tickers where Bloomberg symbol doesn't match Yahoo directly
+# Tickers where Bloomberg symbol doesn't match Yahoo directly.
+# Note: the original "BP/ LN" / "BT/A LN" entries keep working for legacy
+# lookups, but the DB-canonical forms are the slash-free "BP LN" / "BT-A LN"
+# (migrated in April 2026 to fix FastAPI path-routing with slash in ticker).
 _TICKER_OVERRIDES = {
     "SHBA SS": "SHB-A.ST",    # Svenska Handelsbanken A shares
-    "BP/ LN": "BP.L",         # Slash in Bloomberg ticker
-    "BT/A LN": "BT-A.L",     # Slash in Bloomberg ticker
-    "RYA ID": "RYA.IR",        # Ryanair on Irish exchange
+    "BP LN":   "BP.L",         # canonical (slash removed)
+    "BT-A LN": "BT-A.L",       # canonical (slash → dash)
+    "BP/ LN":  "BP.L",         # legacy (pre-rename)
+    "BT/A LN": "BT-A.L",       # legacy (pre-rename)
+    "RYA ID":  "RYA.IR",        # Ryanair on Irish exchange
 }
 
 
