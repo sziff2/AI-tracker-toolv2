@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.database import get_db
 from apps.api.models import (
     Company, ResearchOutput, ThesisVersion, ValuationScenario,
-    TrackedKPI, KPIScore, ExtractedMetric, DecisionLog,
+    TrackedKPI, KPIScore, ExtractedMetric, DecisionLog, AgentOutput,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,17 @@ async def download_briefing_pdf(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    # 2. Latest synthesis for period
+    # 2. Latest synthesis for period — try two sources in priority order:
+    #   a) legacy ResearchOutput (full_analysis / batch_synthesis) — the
+    #      older batch pipeline writes here; may be absent on Phase-B
+    #      agent-pipeline runs
+    #   b) the new agent_outputs table — Phase-B pipeline writes structured
+    #      outputs per agent (financial_analyst, debate_agent, bear_case,
+    #      bull_case, guidance_tracker, quality_control). We stitch those
+    #      into a briefing dict the renderer already understands.
+    briefing: dict = {}
+    agent_outs: dict[str, dict] = {}
+
     out_q = await db.execute(
         select(ResearchOutput).where(
             ResearchOutput.company_id == company.id,
@@ -58,7 +68,6 @@ async def download_briefing_pdf(
         ).order_by(desc(ResearchOutput.created_at)).limit(1)
     )
     analysis = out_q.scalar_one_or_none()
-    briefing: dict = {}
     if analysis and analysis.content_json:
         try:
             data = json.loads(analysis.content_json)
@@ -68,6 +77,22 @@ async def download_briefing_pdf(
                 briefing = data
         except Exception as exc:
             logger.warning("briefing content_json parse failed: %s", exc)
+
+    # Fallback: build from agent_outputs if legacy synthesis is absent.
+    if not briefing:
+        aoq = await db.execute(
+            select(AgentOutput).where(
+                AgentOutput.company_id == company.id,
+                AgentOutput.period_label == period,
+                AgentOutput.status == "completed",
+            ).order_by(desc(AgentOutput.created_at))
+        )
+        for ao in aoq.scalars():
+            # Keep only the most recent output per agent (order is desc)
+            if ao.agent_id not in agent_outs and isinstance(ao.output_json, dict):
+                agent_outs[ao.agent_id] = ao.output_json
+        briefing = _briefing_from_agent_outputs(agent_outs)
+
     if not briefing:
         raise HTTPException(
             status_code=409,
@@ -90,7 +115,8 @@ async def download_briefing_pdf(
             "valuation_framework":  getattr(t, "valuation_framework", None),
         }
 
-    # 4. Scenarios (bull/base/bear)
+    # 4. Scenarios — prefer analyst-set ValuationScenario rows, fall back
+    # to probabilities the debate_agent / bear_case / bull_case produced.
     scenarios: dict = {}
     vq = await db.execute(
         select(ValuationScenario).where(ValuationScenario.company_id == company.id)
@@ -104,6 +130,8 @@ async def download_briefing_pdf(
                 "currency":      s.currency,
                 "methodology":   s.methodology,
             }
+    if not scenarios and agent_outs:
+        scenarios = _scenarios_from_agent_outputs(agent_outs)
 
     # 5. Tracked KPIs with recent scores
     kpi_rows: list[dict] = []
@@ -171,3 +199,165 @@ async def download_briefing_pdf(
             "Cache-Control":       "no-store",
         },
     )
+
+
+def _briefing_from_agent_outputs(agents: dict[str, dict]) -> dict:
+    """Stitch a synthesis-shaped briefing dict out of the Phase-B agent
+    outputs (financial_analyst, debate_agent, bear_case, bull_case,
+    guidance_tracker, quality_control). Returns {} when nothing useful is
+    present.
+
+    The renderer (services/briefing_pdf.py) expects keys:
+      headline / bottom_line / what_happened / management_message /
+      thesis_impact / what_changed / thesis_status
+    Map agent fields onto these so the existing renderer works unchanged.
+    """
+    fa    = agents.get("financial_analyst", {}) or {}
+    dbt   = agents.get("debate_agent", {}) or {}
+    bear  = agents.get("bear_case", {}) or {}
+    bull  = agents.get("bull_case", {}) or {}
+    gt    = agents.get("guidance_tracker", {}) or {}
+    qc    = agents.get("quality_control", {}) or {}
+
+    out: dict = {}
+
+    # Headline: prefer debate verdict; fall back to financial_analyst grade
+    verdict = dbt.get("verdict") or dbt.get("recommendation") or ""
+    grade   = fa.get("overall_grade") or ""
+    thesis_dir = fa.get("thesis_direction") or ""
+    if verdict:
+        out["headline"] = f"Debate verdict: {verdict}" + (f" (grade: {grade})" if grade else "")
+    elif grade:
+        out["headline"] = f"Overall grade: {grade}" + (f" — thesis direction: {thesis_dir}" if thesis_dir else "")
+
+    # Bottom line: debate_summary is the strongest single paragraph
+    if dbt.get("debate_summary"):
+        out["bottom_line"] = _compact_str(dbt["debate_summary"])
+
+    # What happened: financial_analyst key surprises + revenue/margin read
+    bits = []
+    if fa.get("revenue_assessment"):
+        bits.append("Revenue: " + _compact_str(fa["revenue_assessment"]))
+    if fa.get("margin_analysis"):
+        bits.append("Margins: " + _compact_str(fa["margin_analysis"]))
+    if fa.get("key_surprises"):
+        surprises = fa["key_surprises"]
+        if isinstance(surprises, list):
+            bits.append("Surprises: " + "; ".join(_compact_str(s) for s in surprises[:5]))
+        elif isinstance(surprises, str):
+            bits.append("Surprises: " + _compact_str(surprises))
+    if bits:
+        out["what_happened"] = "\n".join(bits)
+
+    # Management message: financial_analyst.management_signals +
+    # guidance_tracker.overall_signal
+    mbits = []
+    if fa.get("management_signals"):
+        mbits.append(_compact_str(fa["management_signals"]))
+    if gt.get("overall_signal"):
+        mbits.append("Guidance signal: " + _compact_str(gt["overall_signal"]))
+    if gt.get("track_record_signal"):
+        mbits.append("Track record: " + _compact_str(gt["track_record_signal"]))
+    if mbits:
+        out["management_message"] = "\n".join(mbits)
+
+    # Thesis impact: fa.thesis_direction + debate's base-case narrative
+    tbits = []
+    if thesis_dir:
+        tbits.append(f"Thesis direction: {thesis_dir}")
+    if dbt.get("base_scenario"):
+        base = dbt["base_scenario"]
+        if isinstance(base, dict) and base.get("description"):
+            tbits.append("Base case: " + _compact_str(base["description"]))
+        elif isinstance(base, str):
+            tbits.append("Base case: " + _compact_str(base))
+    if tbits:
+        out["thesis_impact"] = "\n".join(tbits)
+
+    # What changed: guidance_tracker.methodology_changes or .notable_walkbacks
+    cbits = []
+    if gt.get("methodology_changes"):
+        mc = gt["methodology_changes"]
+        if isinstance(mc, list) and mc:
+            cbits.append("Methodology: " + "; ".join(_compact_str(x) for x in mc[:3]))
+    if gt.get("notable_walkbacks"):
+        nw = gt["notable_walkbacks"]
+        if isinstance(nw, list) and nw:
+            cbits.append("Walkbacks: " + "; ".join(_compact_str(x) for x in nw[:3]))
+    if cbits:
+        out["what_changed"] = "\n".join(cbits)
+
+    # Thesis status: QC's recommendation gives a clean one-liner
+    qc_rec = qc.get("recommendation")
+    if qc_rec:
+        out["thesis_status"] = _compact_str(qc_rec)
+
+    # Stash bear/bull theses on top-level so the PDF has narrative context
+    # even if not in the usual renderer keys.
+    if bear.get("bear_thesis"):
+        out.setdefault("what_happened", "")
+        out["what_happened"] = (out.get("what_happened","") + "\n\nBear thesis: " + _compact_str(bear["bear_thesis"])).strip()
+    if bull.get("bull_thesis"):
+        out["what_happened"] = (out.get("what_happened","") + "\n\nBull thesis: " + _compact_str(bull["bull_thesis"])).strip()
+
+    return out
+
+
+def _scenarios_from_agent_outputs(agents: dict[str, dict]) -> dict:
+    """Build scenarios block from debate / bear / bull output when DB
+    ValuationScenario rows are empty."""
+    out: dict = {}
+    dbt  = agents.get("debate_agent", {}) or {}
+    bear = agents.get("bear_case", {}) or {}
+    bull = agents.get("bull_case", {}) or {}
+
+    # debate_agent exposes base_scenario + per-side probabilities
+    base = dbt.get("base_scenario")
+    if isinstance(base, dict):
+        out["base"] = {
+            "target_price":  base.get("target_price") or base.get("price"),
+            "probability":   dbt.get("base_probability"),
+            "methodology":   base.get("description") or base.get("methodology"),
+        }
+
+    bull_s = bull.get("upside_scenario") if isinstance(bull.get("upside_scenario"), dict) else None
+    if bull_s:
+        out["bull"] = {
+            "target_price":  bull_s.get("target_price") or bull_s.get("implied_price"),
+            "probability":   dbt.get("bull_probability"),
+            "methodology":   bull_s.get("description") or bull_s.get("methodology"),
+        }
+
+    bear_s = bear.get("downside_scenario") if isinstance(bear.get("downside_scenario"), dict) else None
+    if bear_s:
+        out["bear"] = {
+            "target_price":  bear_s.get("target_price") or bear_s.get("implied_price"),
+            "probability":   dbt.get("bear_probability"),
+            "methodology":   bear_s.get("description") or bear_s.get("methodology"),
+        }
+
+    return out
+
+
+def _compact_str(v, max_len: int = 1200) -> str:
+    """Coerce anything reasonable to a readable single string for the PDF."""
+    if v is None:
+        return ""
+    if isinstance(v, (int, float, bool)):
+        return str(v)
+    if isinstance(v, str):
+        s = v.strip()
+    elif isinstance(v, dict):
+        parts = []
+        for k, val in v.items():
+            if val is None or val == "":
+                continue
+            parts.append(f"{k}: {_compact_str(val, max_len=300)}")
+        s = " | ".join(parts)
+    elif isinstance(v, list):
+        s = "; ".join(_compact_str(x, max_len=300) for x in v if x not in (None, ""))
+    else:
+        s = str(v)
+    if len(s) > max_len:
+        s = s[:max_len - 3] + "..."
+    return s

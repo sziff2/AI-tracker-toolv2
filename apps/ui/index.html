@@ -1240,7 +1240,7 @@ function renderCkResults(ticker,d){
   if(!allPeriods.length)return h+'<div style="text-align:center;padding:40px;color:var(--text4);font-family:var(--sans)">No results yet. Ingest documents via the Documents tab, then click "+ New Period" to analyse them.</div>';
   allPeriods.forEach((p,i)=>{
     h+='<div id="res-'+esc(p)+'" style="margin-top:16px;'+(p===activePeriod?'':'display:none')+'">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px;align-items:center"><div id="period-actions-'+esc(p)+'"></div><a href="/api/v1/companies/'+enc(ticker)+'/briefing.pdf?period='+encodeURIComponent(p)+'" target="_blank" style="font-family:var(--sans);font-size:11px;color:var(--gold);text-decoration:none;padding:5px 8px;border:1px solid var(--gold);border-radius:5px" title="Download briefing PDF">📄 PDF</a><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px;align-items:center"><div id="period-actions-'+esc(p)+'"></div><button onclick="downloadBriefingPdf(\''+esc(ticker)+'\',\''+esc(p)+'\',this)" style="font-family:var(--sans);font-size:11px;color:var(--gold);background:none;cursor:pointer;padding:5px 8px;border:1px solid var(--gold);border-radius:5px" title="Download briefing PDF">📄 PDF</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     h+='<div id="pipeline-panel-'+esc(p)+'" style="display:none;margin-bottom:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px"></div>';
     h+='<div id="recon-banner-'+esc(p)+'" style="margin-bottom:12px"></div>';
     h+='<div id="agent-outputs-'+esc(p)+'" style="margin-bottom:16px"></div>';
@@ -1257,6 +1257,34 @@ function renderCkResults(ticker,d){
   });
   return h;
 }
+// Tier 3.3 — intercept the PDF download so 409 ("no synthesis yet")
+// shows a friendly toast instead of opening a fresh tab that displays
+// a raw JSON error. On success the blob is saved via a hidden <a>.
+async function downloadBriefingPdf(ticker,period,btn){
+  var orig=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='…';}
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/briefing.pdf?period='+encodeURIComponent(period));
+    if(r.status===409){
+      var d=await r.json().catch(function(){return{};});
+      toast(d.detail||'Analysis not ready yet — run the pipeline first.');
+      return;
+    }
+    if(!r.ok){
+      var d2=await r.json().catch(function(){return{};});
+      toast('PDF failed: '+(d2.detail||('HTTP '+r.status)));
+      return;
+    }
+    var blob=await r.blob();
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;a.download=ticker.replace(/[ /]/g,'_')+'_'+period+'_briefing.pdf';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);a.remove();},1000);
+  }catch(e){toast('PDF failed: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.textContent=orig;}}
+}
+
 function showResPeriod(p,btn){
   window._ckActiveResPeriod=p; // remember for next render
   document.querySelectorAll('[id^="res-"]').forEach(el=>{if(el.id!=='res-period-select')el.style.display='none';});
