@@ -901,11 +901,15 @@ async def optimise_portfolio(
                              kelly_fraction=float(body.get("kelly_fraction", 0.5)))
     elif method == "cvar":
         # CVaR uses the raw monthly returns matrix (T × N), not the cov.
-        # arr is (N × T) so transpose, and we need simple-period returns
-        # (close-to-close). Use the same log returns as a proxy — for small
-        # monthly moves the difference is < 0.5%.
-        result = solve_cvar(kept, arr.T.tolist(), sectors, countries, constraints,
-                            alpha=float(body.get("alpha", 0.95)))
+        # arr is (N × T) so transpose. We use log returns as a proxy for
+        # simple returns — for small monthly moves the difference is <0.5%.
+        # force_full_investment defaults TRUE so the LP doesn't trivially
+        # pick all-cash (always zero loss); user can pass false to allow it.
+        result = solve_cvar(
+            kept, arr.T.tolist(), sectors, countries, constraints,
+            alpha=float(body.get("alpha", 0.95)),
+            force_full_investment=bool(body.get("force_full_investment", True)),
+        )
     else:
         raise HTTPException(400, f"unknown method '{method}'")
 

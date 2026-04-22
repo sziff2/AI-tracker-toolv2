@@ -213,6 +213,7 @@ def solve_cvar(
     constraints: Constraints,
     alpha: float = 0.95,
     target_return: float | None = None,    # min portfolio expected return
+    force_full_investment: bool = False,   # add sum(w)=1 to avoid all-cash optimum
 ) -> dict:
     """Minimise historical CVaR using the Rockafellar–Uryasev LP.
 
@@ -290,6 +291,13 @@ def solve_cvar(
 
     A_eq = None
     b_eq = None
+    # Optional: force sum(w) = 1 so CVaR can't trivially pick cash. This is
+    # the standard CVaR-portfolio formulation in Rockafellar-Uryasev.
+    if force_full_investment:
+        eq_row = np.zeros(n + 1 + T)
+        eq_row[:n] = 1.0
+        A_eq = eq_row.reshape(1, -1)
+        b_eq = np.array([1.0])
     # Optional minimum expected return (μᵀw ≥ target_return  →  -μᵀw ≤ -target)
     if target_return is not None:
         # we'd append to A_ub but we don't compute μ here — leave as future hook
