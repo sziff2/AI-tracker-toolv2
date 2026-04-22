@@ -1,0 +1,7 @@
+# Dev-only dependencies. Not installed on the Railway image.
+# Install locally with:  pip install -r requirements-dev.txt
+#                        playwright install chromium
+
+playwright>=1.55,<2.0
+# pytest-playwright is convenient but pulls greenlet which lacks 3.14 wheels.
+# We use the playwright sync API directly instead — see tests/test_ui_smoke.py.
