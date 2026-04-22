@@ -1217,3 +1217,146 @@ async def get_portfolio_risk_metrics(
         "min_months": min_months,
         "metrics": metrics,
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# Sprint C-prep — native Claude PDF A/B arm
+#
+# Runs the Tier 5.6 native-PDF extraction server-side so the
+# ANTHROPIC_API_KEY never leaves Railway. The local harness
+# (scripts/pdf_ab_test.py, --phase native --mode remote) POSTs
+# base64-encoded PDFs here; this endpoint calls Anthropic with a
+# document content block and returns structured JSON. Temporary —
+# delete once the A/B is finalised.
+# ─────────────────────────────────────────────────────────────────
+
+class AbPdfInput(BaseModel):
+    key:         str
+    filename:    str
+    pdf_base64:  str
+
+class AbPdfBatch(BaseModel):
+    pdfs: list[AbPdfInput]
+    model: str = "claude-sonnet-4-5-20250929"
+    max_tokens: int = 2048
+
+
+_AB_NATIVE_PROMPT = """\
+You are benchmarking PDF comprehension for an investment-research parser
+A/B. Treat this PDF as an arbitrary financial document.
+
+Return STRICT JSON, no preamble:
+{
+  "doc_pages": <int>,
+  "heading_count": <int>,
+  "main_headings": ["...", "..."],
+  "table_count": <int>,
+  "key_table_summary": "<1-2 sentences on the biggest table(s)>",
+  "visible_charts": <int>,
+  "chart_descriptions": ["...", "..."],
+  "layout_signals": ["...", "..."],
+  "likely_document_type": "<one of: 10-Q, 10-K, condensed_financials, earnings_release, transcript, presentation, tanshin, RNS, other>",
+  "sample_first_1000_chars": "<verbatim from page 1>"
+}
+"""
+
+
+@router.post("/admin/pdf-ab/native")
+async def run_native_pdf_ab(payload: AbPdfBatch):
+    """Server-side native Claude PDF extraction for Sprint C-prep A/B.
+
+    Receives base64 PDFs, calls Anthropic document-block API, returns
+    parsed JSON per file. Temporary admin endpoint — session auth via
+    the global app middleware is sufficient (no need for a separate
+    per-route password check).
+    """
+    import base64 as _b64
+    import json as _json
+    import time as _time
+    from configs.settings import settings as _settings
+
+    if not _settings.anthropic_api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY not set on server")
+
+    from anthropic import AsyncAnthropic
+    client = AsyncAnthropic(api_key=_settings.anthropic_api_key)
+
+    results = []
+    total_in = 0
+    total_out = 0
+    for item in payload.pdfs:
+        t0 = _time.time()
+        try:
+            pdf_bytes = _b64.standard_b64decode(item.pdf_base64)
+        except Exception as exc:
+            results.append({"key": item.key, "status": "error",
+                            "error": f"bad base64: {exc}"})
+            continue
+
+        # Re-encode because Anthropic wants base64 string; we already have it
+        pdf_b64 = item.pdf_base64
+
+        try:
+            resp = await client.messages.create(
+                model=payload.model,
+                max_tokens=payload.max_tokens,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_b64,
+                            },
+                        },
+                        {"type": "text", "text": _AB_NATIVE_PROMPT},
+                    ],
+                }],
+            )
+        except Exception as exc:
+            results.append({
+                "key": item.key, "status": "error",
+                "error": str(exc)[:300],
+                "elapsed_s": round(_time.time() - t0, 2),
+                "pdf_bytes": len(pdf_bytes),
+            })
+            continue
+
+        text_out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        parsed = {}
+        try:
+            stripped = text_out.strip()
+            if stripped.startswith("```"):
+                stripped = stripped.split("\n", 1)[1].rsplit("```", 1)[0]
+            parsed = _json.loads(stripped)
+        except Exception as exc:
+            parsed = {"_parse_error": str(exc)[:200]}
+
+        input_tokens = resp.usage.input_tokens
+        output_tokens = resp.usage.output_tokens
+        cost = (input_tokens * 3.0 + output_tokens * 15.0) / 1_000_000
+        total_in += input_tokens
+        total_out += output_tokens
+
+        results.append({
+            "key":           item.key,
+            "filename":      item.filename,
+            "status":        "ok",
+            "elapsed_s":     round(_time.time() - t0, 2),
+            "input_tokens":  input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd":      round(cost, 4),
+            "pdf_bytes":     len(pdf_bytes),
+            "parsed":        parsed,
+            "raw_response_len": len(text_out),
+        })
+
+    return {
+        "count":        len(results),
+        "total_input_tokens":  total_in,
+        "total_output_tokens": total_out,
+        "total_cost_usd": round((total_in * 3.0 + total_out * 15.0) / 1_000_000, 4),
+        "results":      results,
+    }
