@@ -67,6 +67,7 @@ class ReconciliationReport:
     structural_checks:      dict       = field(default_factory=dict)
     anomaly_checks:         dict       = field(default_factory=dict)
     cross_source_checks:    dict       = field(default_factory=dict)
+    methodology_checks:     dict       = field(default_factory=dict)
     critical_count:         int = 0
     warning_count:          int = 0
     info_count:             int = 0
@@ -261,6 +262,18 @@ async def _cross_source_checks(
     }
 
 
+async def _safe_methodology_report(fn, db, company_id, period_label) -> dict:
+    """Wrap methodology tracker so a failure never blocks the gate.
+    Methodology checks are an enrichment layer, not a hard requirement —
+    a DB query issue here should degrade quietly."""
+    try:
+        report = await fn(db, company_id, period_label)
+        return report.to_dict()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Methodology report failed: %s", exc)
+        return {"flags": [], "error": str(exc)[:200]}
+
+
 # ─────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────
@@ -273,12 +286,17 @@ async def compute_reconciliation(
     orchestrator is in `halt` mode and a critical issue is raised."""
     checked_at = datetime.now(timezone.utc).isoformat()
 
+    from services.methodology_tracker import compute_methodology_report
+
     validation_issues, metrics_checked = await _validation_issues(
         db, company_id, period_label
     )
-    structural = await _structural_checks(db, company_id, period_label)
-    anomaly    = await _anomaly_checks(db, company_id, period_label)
-    cross      = await _cross_source_checks(db, company_id, period_label)
+    structural  = await _structural_checks(db, company_id, period_label)
+    anomaly     = await _anomaly_checks(db, company_id, period_label)
+    cross       = await _cross_source_checks(db, company_id, period_label)
+    methodology = await _safe_methodology_report(
+        compute_methodology_report, db, company_id, period_label,
+    )
 
     # Aggregate severity counts
     critical = sum(1 for i in validation_issues if i.severity == "critical")
@@ -305,6 +323,17 @@ async def compute_reconciliation(
             critical += 1
         elif sev in {"warning", "medium"}:
             warning += 1
+
+    # Methodology drift — new/removed adjustments, gap widening, restatements
+    methodology_flags = methodology.get("flags", []) if isinstance(methodology, dict) else []
+    for mf in methodology_flags:
+        sev = (mf.get("severity") or "info").lower()
+        if sev == "critical":
+            critical += 1
+        elif sev == "warning":
+            warning += 1
+        else:
+            info += 1
 
     # Build human-readable issues list — each entry: one line summary
     issues_flat: list[dict] = []
@@ -346,6 +375,14 @@ async def compute_reconciliation(
             "message":   si.get("message") or si.get("description", ""),
             "rule":      si.get("check") or "structural",
         })
+    for mf in methodology_flags:
+        issues_flat.append({
+            "source":    "methodology",
+            "severity":  (mf.get("severity") or "info").lower(),
+            "metric":    mf.get("metric"),
+            "message":   mf.get("message", ""),
+            "rule":      mf.get("kind", "methodology"),
+        })
 
     # Status decision — warn-only by default, halts only on critical.
     # The orchestrator will soften further via settings.reconciliation_mode.
@@ -354,7 +391,15 @@ async def compute_reconciliation(
         reason = f"{critical} critical issue(s) found ({warning} warning)"
     elif warning > 0 or severe_cross or anomaly_high:
         status = PROCEED_WITH_CAVEATS
-        reason = f"{warning} warning(s), {len(anomaly_high)} anomaly, {metrics_checked} metrics validated"
+        methodology_warn_count = sum(
+            1 for mf in methodology_flags
+            if (mf.get("severity") or "info").lower() == "warning"
+        )
+        reason = (
+            f"{warning} warning(s), {len(anomaly_high)} anomaly, "
+            f"{methodology_warn_count} methodology, "
+            f"{metrics_checked} metrics validated"
+        )
     else:
         status = PROCEED
         reason = f"{metrics_checked} metrics validated — no issues"
@@ -366,6 +411,7 @@ async def compute_reconciliation(
         structural_checks=structural if isinstance(structural, dict) else {},
         anomaly_checks=anomaly,
         cross_source_checks=cross,
+        methodology_checks=methodology if isinstance(methodology, dict) else {},
         critical_count=critical,
         warning_count=warning,
         info_count=info,
