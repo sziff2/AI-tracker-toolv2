@@ -3735,21 +3735,9 @@ function renderStressResults(results) {
   return h;
 }
 
-// Kick off preset loading once the Analytics tab renders.
-(function () {
-  if (typeof window.__stressInit === 'undefined') {
-    window.__stressInit = true;
-    const tryLoad = () => {
-      if (document.getElementById('stress-card')) loadStressPresets();
-    };
-    // Run after the current microtask so renderAnalytics has finished.
-    setTimeout(tryLoad, 50);
-    // Also re-run when the portfolio selector changes (renderAnalytics
-    // re-creates the card). MutationObserver is lighter than polling.
-    const obs = new MutationObserver(() => { if (document.getElementById('stress-card')) tryLoad(); });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-})();
+// (Preset loading is now invoked directly from renderAnalytics after it
+// writes innerHTML — the previous MutationObserver caused an infinite
+// loop because writing chips into the slot fired the observer.)
 
 // ── Data quality banner (Phase F) ───────────────────────────────────
 // Surfaces three kinds of bookkeeping gaps so the analyst can see what's
@@ -4459,6 +4447,9 @@ function renderAnalytics(d, opts = {}) {
   }
 
   c.innerHTML = h;
+  // Kick the stress-test preset loader after the DOM is in place. Direct
+  // call (no observer) so writing chips doesn't re-trigger the loader.
+  if (typeof loadStressPresets === 'function') loadStressPresets();
 }
 function groupBy(holdings, field) {
   const groups = {};
