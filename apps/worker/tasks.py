@@ -102,6 +102,12 @@ celery_app.conf.beat_schedule = {
         "task": "apps.worker.tasks.coverage_monitor_task",
         "schedule": crontab(hour=14, minute=0),
     },
+    # Monthly factor-beta refresh — 1st of each month at 22:00 UTC, after
+    # the daily price feed has run for the prior month-end.
+    "monthly-factor-betas": {
+        "task": "apps.worker.tasks.refresh_factor_betas_task",
+        "schedule": crontab(hour=22, minute=0, day_of_month=1),
+    },
 }
 
 
@@ -132,6 +138,22 @@ def refresh_prices_task():
 async def _async_refresh_prices():
     from services.price_feed import refresh_prices
     return await refresh_prices()
+
+
+@celery_app.task(name="apps.worker.tasks.refresh_factor_betas_task")
+def refresh_factor_betas_task(window_months: int = 36):
+    """Monthly factor-beta refresh — recomputes per-holding β to each
+    factor over the trailing window using OLS on monthly USD log returns."""
+    result = _run_async_task(_async_refresh_factor_betas(window_months))
+    logger.info("[FACTOR] Beta refresh: %s", {k: v for k, v in result.items() if k != "skipped"})
+    return result
+
+
+async def _async_refresh_factor_betas(window_months: int):
+    from apps.api.database import AsyncSessionLocal
+    from services.factor_analytics import refresh_all_holding_betas
+    async with AsyncSessionLocal() as db:
+        return await refresh_all_holding_betas(db, window_months=window_months)
 
 
 @celery_app.task(name="apps.worker.tasks.harvest_new_documents")

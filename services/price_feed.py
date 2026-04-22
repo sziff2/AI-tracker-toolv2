@@ -183,7 +183,8 @@ async def refresh_prices(tickers: list[str] | None = None) -> dict:
     from apps.api.models import Company, PriceRecord
 
     async with AsyncSessionLocal() as db:
-        query = select(Company).where(Company.coverage_status == "active")
+        # Include both portfolio holdings and factor-shock proxy ETFs.
+        query = select(Company).where(Company.coverage_status.in_(["active", "factor"]))
         if tickers:
             query = query.where(Company.ticker.in_(tickers))
         result = await db.execute(query)

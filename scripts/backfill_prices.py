@@ -247,7 +247,9 @@ async def _load_companies(ticker_filter: str | None):
     from apps.api.models import Company
 
     async with AsyncSessionLocal() as db:
-        q = select(Company).where(Company.coverage_status == "active")
+        # Include both real holdings ("active") and factor-shock proxy ETFs
+        # ("factor") so a single backfill run keeps both up to date.
+        q = select(Company).where(Company.coverage_status.in_(["active", "factor"]))
         if ticker_filter:
             q = q.where(Company.ticker == ticker_filter)
         rs = await db.execute(q)

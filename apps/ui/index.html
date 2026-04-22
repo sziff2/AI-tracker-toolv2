@@ -3603,6 +3603,147 @@ async function importPortfolioCSV(input){
 // SHARED MATHS ENGINE (ported from investment-tracker.jsx)
 // ═══════════════════════════════════════════════════════════════
 
+// ── Factor shocks (Phase 2b) ────────────────────────────────────────
+// Lazy-loaded factor list + sliders. Slider drag is debounced 350ms
+// before POST /factor-shock to keep keystrokes responsive.
+let __FACTOR_LIST__ = null;
+let __factorDebounce = null;
+
+async function loadFactorPanel() {
+  const card = document.getElementById('factor-card');
+  const slot = document.getElementById('factor-sliders');
+  if (!card || !slot) return;
+  if (__FACTOR_LIST__) { renderFactorSliders(); return; }
+  try {
+    const r = await fetch('/api/v1/factors/list');
+    if (!r.ok) throw new Error('factors ' + r.status);
+    const j = await r.json();
+    __FACTOR_LIST__ = j.factors || [];
+    renderFactorSliders();
+  } catch (e) {
+    slot.innerHTML = '<div style="color:var(--red);font-size:11px">Could not load factors: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderFactorSliders() {
+  const slot = document.getElementById('factor-sliders');
+  if (!slot) return;
+  let h = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">';
+  for (const f of (__FACTOR_LIST__ || [])) {
+    h += '<div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:baseline">';
+    h += '<label style="font-size:11px;color:var(--text2);font-weight:600" title="' + esc(f.description) + '">'
+       + esc(f.label) + '</label>';
+    h += '<span id="fs-out-' + f.key + '" style="font-family:var(--mono);font-size:12px;color:var(--text3)">0.0%</span>';
+    h += '</div>';
+    h += '<input type="range" id="fs-' + f.key + '" min="-30" max="30" value="0" step="1" style="width:100%"'
+       + ' oninput="onFactorSliderChange(\'' + f.key + '\', this.value)"'
+       + ' onchange="onFactorSliderChange(\'' + f.key + '\', this.value)">';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-top:10px">';
+  h += '<button class="btn2" style="padding:4px 12px;font-size:11px" onclick="resetFactorShocks()">Reset</button>';
+  h += '<span style="font-size:10px;color:var(--text3)">Drag a slider to apply. Slider unit = monthly % move of the factor\'s proxy ETF (e.g. SPY −20%).</span>';
+  h += '</div>';
+  slot.innerHTML = h;
+}
+
+function onFactorSliderChange(key, val) {
+  const out = document.getElementById('fs-out-' + key);
+  if (out) {
+    const v = parseFloat(val);
+    out.textContent = (v >= 0 ? '+' : '') + v.toFixed(0) + '%';
+    out.style.color = Math.abs(v) > 0.5 ? 'var(--gold)' : 'var(--text3)';
+  }
+  if (__factorDebounce) clearTimeout(__factorDebounce);
+  __factorDebounce = setTimeout(runFactorShock, 350);
+}
+
+function resetFactorShocks() {
+  for (const f of (__FACTOR_LIST__ || [])) {
+    const el = document.getElementById('fs-' + f.key);
+    if (el) el.value = 0;
+    const out = document.getElementById('fs-out-' + f.key);
+    if (out) { out.textContent = '0.0%'; out.style.color = 'var(--text3)'; }
+  }
+  const r = document.getElementById('factor-result');
+  if (r) r.innerHTML = '';
+}
+
+async function runFactorShock() {
+  const card = document.getElementById('factor-card');
+  if (!card) return;
+  const pid = card.dataset.portfolioId;
+  const shocks = {};
+  for (const f of (__FACTOR_LIST__ || [])) {
+    const el = document.getElementById('fs-' + f.key);
+    const v = el ? parseFloat(el.value) / 100.0 : 0;
+    if (Math.abs(v) > 1e-6) shocks[f.key] = v;
+  }
+  const slot = document.getElementById('factor-result');
+  if (!Object.keys(shocks).length) { slot.innerHTML = ''; return; }
+  slot.innerHTML = '<div class="ld">Computing impact…</div>';
+  try {
+    const r = await fetch('/api/v1/portfolios/' + pid + '/factor-shock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shocks, window: 36 }),
+    });
+    if (!r.ok) throw new Error('factor-shock ' + r.status);
+    const j = await r.json();
+    slot.innerHTML = renderFactorShockResult(j);
+  } catch (e) {
+    slot.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+  }
+}
+
+function renderFactorShockResult(j) {
+  if (j.error) return '<div class="err">' + esc(j.error) + '</div>';
+  const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+  const clr = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+  let h = '';
+  // Headline
+  h += '<div style="background:rgba(10,28,52,0.4);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-top:8px">';
+  h += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">Estimated portfolio impact</div>';
+  h += '<div style="font-family:var(--mono);font-size:24px;font-weight:700;color:' + clr(j.portfolio_return) + ';margin-top:2px">'
+    +  pct(j.portfolio_return) + '</div>';
+  h += '<div style="font-size:10px;color:var(--text3);margin-top:2px">'
+    +  j.n_holdings_in_shock + ' holdings included' + (j.holdings_excluded.length ? ' · ' + j.holdings_excluded.length + ' excluded (no betas)' : '')
+    +  '</div>';
+  h += '</div>';
+
+  if (j.holdings_excluded.length) {
+    h += '<div style="margin-top:8px;font-size:11px;color:var(--amber)">Excluded: '
+      +  j.holdings_excluded.map(x => esc(x.ticker.replace(/\s+(equity|eq)$/i,'').trim())).join(', ') + '</div>';
+  }
+
+  // Per-holding contribution table (top 10 detractors / contributors)
+  const sorted = [...j.per_holding].sort((a, b) => a.contribution_pct - b.contribution_pct);
+  const worst = sorted.slice(0, 8);
+  const best = sorted.slice(-8).reverse();
+  h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--text2)"><b>Per-holding breakdown</b></summary>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px">';
+  for (const [title, items] of [['Top contributors', best], ['Top detractors', worst]]) {
+    h += '<div>';
+    h += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">' + title + '</div>';
+    h += '<table class="kt" style="font-size:11px"><thead><tr>';
+    h += '<th>Ticker</th><th style="text-align:right">Wt</th><th style="text-align:right">Impact</th><th style="text-align:right">Contrib</th>';
+    h += '</tr></thead><tbody>';
+    for (const ph of items) {
+      h += '<tr>';
+      h += '<td class="kn">' + esc(ph.ticker.replace(/\s+(equity|eq)$/i,'').trim()) + '</td>';
+      h += '<td style="text-align:right">' + ph.weight_pct.toFixed(1) + '%</td>';
+      h += '<td style="text-align:right;color:' + clr(ph.factor_impact_pct/100) + '">' + ph.factor_impact_pct.toFixed(2) + '%</td>';
+      h += '<td style="text-align:right;color:' + clr(ph.contribution_pct/100) + '">' + ph.contribution_pct.toFixed(2) + '%</td>';
+      h += '</tr>';
+    }
+    h += '</tbody></table></div>';
+  }
+  h += '</div></details>';
+  return h;
+}
+
 // ── Historical stress tests (Phase 2a) ──────────────────────────────
 // Lazy-loaded on first Analytics render: fetch the preset list, render
 // clickable chips. Click a chip → POST /stress-test, expand a card with
@@ -4110,6 +4251,20 @@ function renderAnalytics(d, opts = {}) {
   h += '<div id="stress-results"></div>';
   h += '</div>';
 
+  // ── Factor shocks panel (Phase 2b) ──────────────────────────────────
+  // Sliders for each of 8 factors. Drag → recompute portfolio impact via
+  // the cached betas table. Lazy-loaded factor list on first render.
+  h += '<h2 style="margin-top:24px;display:flex;align-items:baseline;gap:10px">'
+     + 'Factor Shocks '
+     + '<span style="font-size:11px;color:var(--text3);font-weight:400">monthly % move on each factor proxy ETF</span>'
+     + '</h2>';
+  h += '<div class="cd" id="factor-card" style="padding:16px"'
+     + ' data-portfolio-id="' + esc(d.id) + '">';
+  h += '<div id="factor-sliders">'
+     + '<div style="color:var(--text3);font-size:11px">Loading factors…</div></div>';
+  h += '<div id="factor-result" style="margin-top:12px"></div>';
+  h += '</div>';
+
   // ── Tail Risk strip (Phase E — historical VaR/CVaR/max drawdown) ───────────
   if (riskDash && riskDash.n_months >= 12) {
     const pctFmt3 = v => (v * 100).toFixed(1) + '%';
@@ -4447,9 +4602,10 @@ function renderAnalytics(d, opts = {}) {
   }
 
   c.innerHTML = h;
-  // Kick the stress-test preset loader after the DOM is in place. Direct
-  // call (no observer) so writing chips doesn't re-trigger the loader.
+  // Kick the lazy-loaders after the DOM is in place. Direct calls (no
+  // observer) so writing innerHTML inside a loader doesn't re-trigger it.
   if (typeof loadStressPresets === 'function') loadStressPresets();
+  if (typeof loadFactorPanel === 'function') loadFactorPanel();
 }
 function groupBy(holdings, field) {
   const groups = {};

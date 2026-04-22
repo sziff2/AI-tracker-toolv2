@@ -787,6 +787,119 @@ async def get_company_risk_metrics(
     )
 
 
+@router.post("/admin/seed-factor-proxies")
+async def seed_factor_proxies(db: AsyncSession = Depends(get_db)):
+    """One-shot: insert the 9 factor-proxy ETFs as companies with
+    coverage_status='factor' so the existing backfill + daily price feed
+    can keep them up to date."""
+    from services.factor_analytics import FACTOR_PROXIES
+    inserted, existed = [], []
+    for key, meta in FACTOR_PROXIES.items():
+        rs = await db.execute(text("SELECT id FROM companies WHERE ticker = :t"),
+                              {"t": meta["ticker"]})
+        if rs.scalar_one_or_none() is not None:
+            existed.append(meta["ticker"])
+            continue
+        await db.execute(text("""
+            INSERT INTO companies (id, ticker, name, sector, industry, country,
+                                   coverage_status, primary_analyst)
+            VALUES (gen_random_uuid(), :tkr, :nm, 'Factor Proxy', 'ETF', 'US',
+                    'factor', 'system')
+        """), {"tkr": meta["ticker"], "nm": meta["label"]})
+        inserted.append(meta["ticker"])
+    await db.commit()
+    return {"inserted": inserted, "already_existed": existed}
+
+
+@router.get("/factors/list")
+async def list_factors():
+    """UI helper: catalogue of supported factor shocks."""
+    from services.factor_analytics import list_factor_proxies
+    return {"factors": list_factor_proxies()}
+
+
+@router.post("/admin/refresh-factor-betas")
+async def refresh_factor_betas(
+    window: int = 36,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recompute holding × factor betas for every active holding using
+    the trailing N-month window. Writes to holding_factor_exposures."""
+    from services.factor_analytics import refresh_all_holding_betas
+    return await refresh_all_holding_betas(db, window_months=window)
+
+
+@router.get("/portfolios/{portfolio_id}/factor-exposures")
+async def get_portfolio_factor_exposures(
+    portfolio_id: str,
+    window: int = 36,
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-holding factor betas for a portfolio. Returns the weight-
+    weighted portfolio-level beta to each factor as a summary."""
+    from services.factor_analytics import FACTOR_KEYS
+    rs = await db.execute(text("""
+        SELECT c.ticker, c.sector, h.weight, hfe.betas, hfe.r_squared,
+               hfe.n_months, hfe.as_of_month
+          FROM portfolio_holdings h
+          JOIN companies c ON c.id = h.company_id
+          LEFT JOIN holding_factor_exposures hfe
+            ON hfe.company_id = c.id AND hfe.window_months = :win
+         WHERE h.portfolio_id = :pid AND COALESCE(h.weight,0) > 0
+         ORDER BY h.weight DESC NULLS LAST
+    """), {"pid": portfolio_id, "win": window})
+    rows = rs.all()
+    per_holding = []
+    portfolio_beta = {k: 0.0 for k in FACTOR_KEYS}
+    coverage_weight = 0.0
+    for r in rows:
+        if not r.betas:
+            per_holding.append({
+                "ticker": r.ticker, "sector": r.sector, "weight_pct": float(r.weight or 0),
+                "betas": None, "r_squared": None, "n_months": None,
+            })
+            continue
+        b = r.betas if isinstance(r.betas, dict) else __import__("json").loads(r.betas or "{}")
+        per_holding.append({
+            "ticker": r.ticker, "sector": r.sector,
+            "weight_pct": float(r.weight or 0),
+            "betas": {k: round(b.get(k, 0.0), 3) for k in FACTOR_KEYS},
+            "r_squared": float(r.r_squared) if r.r_squared else None,
+            "n_months": int(r.n_months or 0),
+            "as_of_month": r.as_of_month,
+        })
+        w = float(r.weight or 0) / 100.0
+        coverage_weight += w
+        for k in FACTOR_KEYS:
+            portfolio_beta[k] += w * b.get(k, 0.0)
+    return {
+        "portfolio_id": portfolio_id,
+        "window_months": window,
+        "coverage_weight_pct": round(coverage_weight * 100, 2),
+        "portfolio_beta": {k: round(v, 3) for k, v in portfolio_beta.items()},
+        "per_holding": per_holding,
+    }
+
+
+@router.post("/portfolios/{portfolio_id}/factor-shock")
+async def post_factor_shock(
+    portfolio_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run a factor shock against the portfolio.
+    Body: {"shocks": {"equity": -0.20, "rates": 0.05, ...}, "window": 36}"""
+    from services.factor_analytics import apply_factor_shock
+    shocks = body.get("shocks") or {}
+    if not shocks or not isinstance(shocks, dict):
+        raise HTTPException(400, "body.shocks must be a non-empty dict")
+    return await apply_factor_shock(
+        db, portfolio_id,
+        {k: float(v) for k, v in shocks.items()},
+        window_months=int(body.get("window", 36)),
+    )
+
+
 @router.get("/portfolios/{portfolio_id}/stress-test/presets")
 async def list_stress_presets(portfolio_id: str):
     """Return the catalogue of historical stress windows available to

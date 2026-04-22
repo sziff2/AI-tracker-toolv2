@@ -323,6 +323,25 @@ async def lifespan(app: FastAPI):
             "CREATE INDEX IF NOT EXISTS ix_coverage_rescan_triggered_at ON coverage_rescan_log(triggered_at)"
         ))
 
+        # ── Holding factor exposures (Phase 2b: factor shock stress tests) ─
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS holding_factor_exposures (
+                company_id UUID REFERENCES companies(id) ON DELETE CASCADE NOT NULL,
+                window_months INT NOT NULL,
+                betas JSONB NOT NULL,
+                alpha DOUBLE PRECISION,
+                tstats JSONB,
+                r_squared DOUBLE PRECISION,
+                n_months INT,
+                as_of_month TEXT,
+                computed_at TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY (company_id, window_months)
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_hfe_window ON holding_factor_exposures(window_months)"
+        ))
+
         # ── FX rates (Phase A: historical-price backbone) ───────
         await conn.execute(sa_text("""
             CREATE TABLE IF NOT EXISTS fx_rates (
