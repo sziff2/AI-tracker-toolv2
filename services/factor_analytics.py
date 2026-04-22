@@ -68,7 +68,9 @@ async def _factor_returns_aligned(
     window_months: int,
 ) -> tuple[list[tuple[int, int]], dict[str, list[float]]]:
     """Return (months_used, {factor_key: [returns]}) where every factor
-    has a return at every listed month. Months sorted ascending."""
+    has a return at every listed month. Months sorted ascending. Raw
+    (un-orthogonalised) factor returns — multicollinearity is handled
+    downstream in estimate_holding_betas via ridge regression."""
     from services.portfolio_analytics import (
         _load_fx_by_month, _load_monthly_series_usd, _log_returns,
     )
@@ -146,20 +148,32 @@ async def estimate_holding_betas(
     X = np.column_stack([np.ones(X_factors.shape[0]), X_factors])
     y = np.array(h_rets, dtype=float)
 
-    # Pure-numpy OLS — avoids statsmodels' fragile decorator chain.
+    # RIDGE regression to handle multicollinearity. With 9 highly-correlated
+    # equity factors and only ~36 monthly observations, plain OLS produces
+    # coefficients in the ±10 range that swing wildly between holdings. A
+    # small ridge penalty (λ proportional to trace(XᵀX)/k) shrinks the
+    # individual betas toward zero just enough to stabilise them while
+    # preserving the *direction* of factor sensitivity.
+    #     β = (XᵀX + λI)⁻¹ Xᵀy        — intercept NOT penalised.
     try:
+        n, k_total = X.shape
         XtX = X.T @ X
-        XtX_inv = np.linalg.inv(XtX)
-        params = XtX_inv @ X.T @ y
+        # Penalty: small fraction of average diagonal value, intercept exempt.
+        avg_diag = float(np.trace(XtX[1:, 1:])) / max(k_total - 1, 1)
+        ridge_lambda = 0.10 * avg_diag       # 10% shrinkage on factor coefficients
+        I = np.eye(k_total)
+        I[0, 0] = 0.0                         # don't penalise the intercept
+        XtX_pen = XtX + ridge_lambda * I
+        XtX_pen_inv = np.linalg.inv(XtX_pen)
+        params = XtX_pen_inv @ X.T @ y
         y_pred = X @ params
         residuals = y - y_pred
         ss_res = float((residuals ** 2).sum())
         ss_tot = float(((y - y.mean()) ** 2).sum())
         r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
-        n, k_total = X.shape
         if n > k_total:
             sigma2 = ss_res / (n - k_total)
-            se = np.sqrt(np.maximum(np.diag(sigma2 * XtX_inv), 0.0))
+            se = np.sqrt(np.maximum(np.diag(sigma2 * XtX_pen_inv), 0.0))
             with np.errstate(divide="ignore", invalid="ignore"):
                 tstats_arr = np.where(se > 0, params / se, 0.0)
         else:
