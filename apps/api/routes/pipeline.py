@@ -313,6 +313,200 @@ async def get_pipeline_run(
     }
 
 
+@router.get("/pipeline-runs/{pipeline_run_id}/diff")
+async def diff_pipeline_runs(
+    pipeline_run_id: str,
+    against: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Diff two pipeline runs agent-by-agent.
+
+    Tier 3.2 — prompt-change audit + stability check. Compares
+    agent_outputs for the same agent_id across two runs and returns
+    a structured diff:
+
+      - status: same | changed | added | removed
+      - metadata diff: confidence, qc_score, cost, duration, prompt_variant_id
+      - output_json field-level diff (changed / added / removed top-level keys,
+        plus a coarse "changed" marker for nested structures)
+
+    Usage:
+      GET /api/v1/pipeline-runs/<id-A>/diff?against=<id-B>
+
+    Interpretation: id-A is the "base" (left), id-B is the "compare" (right).
+    `changed_fields` lists top-level output_json keys whose values differ.
+    Uses deterministic JSON-serialised comparison so floats round-tripped
+    through JSONB don't falsely diff.
+    """
+    import json as _json
+    import uuid as _uuid
+    from apps.api.models import AgentOutput
+
+    try:
+        base_id    = _uuid.UUID(pipeline_run_id)
+        compare_id = _uuid.UUID(against)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid pipeline run id")
+
+    # Fetch both runs + validate
+    base_q = await db.execute(select(PipelineRun).where(PipelineRun.id == base_id))
+    compare_q = await db.execute(select(PipelineRun).where(PipelineRun.id == compare_id))
+    base_run = base_q.scalar_one_or_none()
+    compare_run = compare_q.scalar_one_or_none()
+    if not base_run:
+        raise HTTPException(status_code=404, detail=f"base pipeline run {pipeline_run_id} not found")
+    if not compare_run:
+        raise HTTPException(status_code=404, detail=f"compare pipeline run {against} not found")
+
+    # Fetch all agent_outputs for both runs in one query each
+    base_outputs_q = await db.execute(
+        select(AgentOutput).where(AgentOutput.pipeline_run_id == base_id)
+    )
+    compare_outputs_q = await db.execute(
+        select(AgentOutput).where(AgentOutput.pipeline_run_id == compare_id)
+    )
+    base_outputs    = {ao.agent_id: ao for ao in base_outputs_q.scalars()}
+    compare_outputs = {ao.agent_id: ao for ao in compare_outputs_q.scalars()}
+
+    agent_ids = sorted(set(base_outputs) | set(compare_outputs))
+
+    per_agent_diffs = []
+    changed_count = added_count = removed_count = same_count = 0
+
+    for agent_id in agent_ids:
+        a = base_outputs.get(agent_id)
+        b = compare_outputs.get(agent_id)
+
+        if a and not b:
+            removed_count += 1
+            per_agent_diffs.append({
+                "agent_id": agent_id,
+                "status":   "removed",
+                "base":     _ao_summary(a),
+                "compare":  None,
+            })
+            continue
+        if b and not a:
+            added_count += 1
+            per_agent_diffs.append({
+                "agent_id": agent_id,
+                "status":   "added",
+                "base":     None,
+                "compare":  _ao_summary(b),
+            })
+            continue
+
+        # Both present — compare
+        output_diff = _json_diff(a.output_json, b.output_json)
+        meta_diff = _metadata_diff(a, b)
+        changed = bool(output_diff["changed"]) or bool(meta_diff)
+        if changed:
+            changed_count += 1
+        else:
+            same_count += 1
+
+        per_agent_diffs.append({
+            "agent_id":      agent_id,
+            "status":        "changed" if changed else "same",
+            "changed_fields": sorted(output_diff["changed"]),
+            "added_fields":   sorted(output_diff["added"]),
+            "removed_fields": sorted(output_diff["removed"]),
+            "metadata_diff":  meta_diff,
+            "base":           _ao_summary(a),
+            "compare":        _ao_summary(b),
+        })
+
+    return {
+        "base": {
+            "id":               str(base_run.id),
+            "started_at":       base_run.started_at.isoformat() if base_run.started_at else None,
+            "status":           base_run.status,
+            "total_cost_usd":   float(base_run.total_cost_usd or 0),
+            "contract_version": base_run.contract_version,
+        },
+        "compare": {
+            "id":               str(compare_run.id),
+            "started_at":       compare_run.started_at.isoformat() if compare_run.started_at else None,
+            "status":           compare_run.status,
+            "total_cost_usd":   float(compare_run.total_cost_usd or 0),
+            "contract_version": compare_run.contract_version,
+        },
+        "summary": {
+            "total_agents":    len(agent_ids),
+            "same":            same_count,
+            "changed":         changed_count,
+            "added":           added_count,
+            "removed":         removed_count,
+        },
+        "agents": per_agent_diffs,
+    }
+
+
+def _ao_summary(ao) -> dict:
+    """Compact per-output summary for the diff response."""
+    return {
+        "id":                 str(ao.id),
+        "status":             ao.status,
+        "confidence":         ao.confidence,
+        "qc_score":           ao.qc_score,
+        "duration_ms":        ao.duration_ms,
+        "input_tokens":       ao.input_tokens,
+        "output_tokens":      ao.output_tokens,
+        "cost_usd":           ao.cost_usd,
+        "prompt_variant_id":  ao.prompt_variant_id,
+        "output_json":        ao.output_json,
+    }
+
+
+def _metadata_diff(a, b) -> dict:
+    """Fields worth surfacing even if output_json is identical — a
+    prompt-variant change with unchanged output still matters for
+    stability analysis."""
+    out = {}
+    for field in ("status", "prompt_variant_id", "qc_score", "confidence"):
+        va, vb = getattr(a, field), getattr(b, field)
+        if va != vb:
+            out[field] = {"base": va, "compare": vb}
+    # Cost/latency moves flagged if they differ by >20% or >$0.05
+    a_cost = float(a.cost_usd or 0)
+    b_cost = float(b.cost_usd or 0)
+    if abs(a_cost - b_cost) > 0.05 or (max(a_cost, b_cost) > 0 and
+            abs(a_cost - b_cost) / max(a_cost, b_cost, 1e-9) > 0.2):
+        out["cost_usd"] = {"base": a_cost, "compare": b_cost,
+                           "delta": round(b_cost - a_cost, 4)}
+    return out
+
+
+def _json_diff(a, b) -> dict:
+    """Top-level JSONB key diff. Returns changed/added/removed sets
+    plus a "changed" marker that's True when any difference exists.
+
+    Keeps it simple: nested changes show up as a changed top-level
+    key. The UI can drill in using the full output_json in the
+    summary for cases that need deep inspection.
+    """
+    import json as _json
+    if a == b:
+        return {"changed": set(), "added": set(), "removed": set()}
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return {"changed": {"_root"}, "added": set(), "removed": set()}
+    a_keys = set(a)
+    b_keys = set(b)
+    added   = b_keys - a_keys
+    removed = a_keys - b_keys
+    changed = set()
+    for k in a_keys & b_keys:
+        # JSON-serialise for float/order-insensitive compare
+        try:
+            ja = _json.dumps(a[k], sort_keys=True, default=str)
+            jb = _json.dumps(b[k], sort_keys=True, default=str)
+        except Exception:
+            ja, jb = str(a[k]), str(b[k])
+        if ja != jb:
+            changed.add(k)
+    return {"changed": changed, "added": added, "removed": removed}
+
+
 @router.get("/companies/{ticker}/agent-outputs/{period}")
 async def get_agent_outputs(
     ticker: str,
