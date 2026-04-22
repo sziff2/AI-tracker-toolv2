@@ -40,15 +40,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Factor universe
 # ─────────────────────────────────────────────────────────────────
 FACTOR_PROXIES: dict[str, dict] = {
-    "equity":   {"ticker": "SPY US",  "yahoo": "SPY",  "label": "Equity (SPY)",            "description": "S&P 500"},
-    "rates":    {"ticker": "TLT US",  "yahoo": "TLT",  "label": "Long Rates (TLT)",        "description": "20+ Year Treasury — moves inversely with long-rate yield"},
-    "oil":      {"ticker": "USO US",  "yahoo": "USO",  "label": "Oil (USO)",               "description": "United States Oil Fund — WTI exposure"},
-    "usd":      {"ticker": "UUP US",  "yahoo": "UUP",  "label": "USD (UUP)",               "description": "Invesco Bullish USD — DXY tracker"},
-    "credit":   {"ticker": "HYG US",  "yahoo": "HYG",  "label": "Credit / HY (HYG)",       "description": "iShares iBoxx HY — credit spread proxy"},
-    "growth":   {"ticker": "IWF US",  "yahoo": "IWF",  "label": "Growth (IWF)",            "description": "Russell 1000 Growth"},
-    "value":    {"ticker": "IWD US",  "yahoo": "IWD",  "label": "Value (IWD)",             "description": "Russell 1000 Value"},
-    "quality":  {"ticker": "QUAL US", "yahoo": "QUAL", "label": "Quality (QUAL)",          "description": "iShares MSCI USA Quality"},
-    "momentum": {"ticker": "MTUM US", "yahoo": "MTUM", "label": "Momentum (MTUM)",         "description": "iShares MSCI USA Momentum"},
+    "equity":   {"ticker": "SPY US",  "yahoo": "SPY",  "label": "Equity (SPY)",
+                 "description": "S&P 500. Captures broad market direction. β≈1 typical."},
+    "rates":    {"ticker": "TLT US",  "yahoo": "TLT",  "label": "Rates innov. (TLT)",
+                 "description": "Long-duration Treasury move ORTHOGONAL to equity. Positive shock = yields fell with equity flat."},
+    "oil":      {"ticker": "USO US",  "yahoo": "USO",  "label": "Oil innov. (USO)",
+                 "description": "WTI move orthogonal to equity & rates. Positive = oil rally beyond what market would predict."},
+    "usd":      {"ticker": "UUP US",  "yahoo": "UUP",  "label": "USD innov. (UUP)",
+                 "description": "Dollar strength orthogonal to equity / rates / oil."},
+    "credit":   {"ticker": "HYG US",  "yahoo": "HYG",  "label": "Credit innov. (HYG)",
+                 "description": "HY credit spread move orthogonal to earlier factors. Positive = spreads tightened."},
+    "value":    {"ticker": "IWD US",  "yahoo": "IWD",  "label": "Value innov. (IWD)",
+                 "description": "Russell 1000 Value innovation. Positive = value outperformed beyond what equity explains."},
+    "growth":   {"ticker": "IWF US",  "yahoo": "IWF",  "label": "Growth innov. (IWF)",
+                 "description": "Russell 1000 Growth innovation, orthogonal to equity + value."},
+    "quality":  {"ticker": "QUAL US", "yahoo": "QUAL", "label": "Quality innov. (QUAL)",
+                 "description": "Quality factor innovation, orthogonal to all earlier factors."},
+    "momentum": {"ticker": "MTUM US", "yahoo": "MTUM", "label": "Momentum innov. (MTUM)",
+                 "description": "Momentum factor innovation, orthogonal to all earlier factors."},
 }
 
 FACTOR_KEYS = list(FACTOR_PROXIES.keys())
@@ -63,14 +72,45 @@ def list_factor_proxies() -> list[dict]:
 # ─────────────────────────────────────────────────────────────────
 # Beta estimation (rolling OLS)
 # ─────────────────────────────────────────────────────────────────
+FACTOR_PRIORITY = ["equity", "rates", "oil", "usd", "credit", "value", "growth", "quality", "momentum"]
+
+
+def _orthogonalise(raw: dict[str, list[float]]) -> dict[str, list[float]]:
+    """Sequentially residualise factors in priority order. Each factor
+    after equity is replaced by the OLS residual of regressing it on
+    all earlier factors. Net result: the equity beta represents true
+    market sensitivity (~1 for diversified stocks) and each other beta
+    represents incremental sensitivity to that factor independent of
+    everything earlier — the shocks compose without double-counting."""
+    keys_in_order = [k for k in FACTOR_PRIORITY if k in raw]
+    if not keys_in_order:
+        return {}
+    n = len(next(iter(raw.values())))
+    Z = np.zeros((n, len(keys_in_order)))
+    out: dict[str, list[float]] = {}
+    for col, key in enumerate(keys_in_order):
+        y = np.asarray(raw[key], dtype=float)
+        if col == 0:
+            Z[:, col] = y                              # equity stays raw
+        else:
+            X = np.column_stack([np.ones(n), Z[:, :col]])
+            try:
+                beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+                Z[:, col] = y - X @ beta                # residual
+            except np.linalg.LinAlgError:
+                Z[:, col] = y - y.mean()
+        out[key] = Z[:, col].tolist()
+    return out
+
+
 async def _factor_returns_aligned(
     db: AsyncSession,
     window_months: int,
 ) -> tuple[list[tuple[int, int]], dict[str, list[float]]]:
     """Return (months_used, {factor_key: [returns]}) where every factor
-    has a return at every listed month. Months sorted ascending. Raw
-    (un-orthogonalised) factor returns — multicollinearity is handled
-    downstream in estimate_holding_betas via ridge regression."""
+    has a return at every listed month. Returned series are ORTHOGONAL —
+    each factor after equity is the residual after regressing on all
+    prior factors. This makes betas additive and shocks composable."""
     from services.portfolio_analytics import (
         _load_fx_by_month, _load_monthly_series_usd, _log_returns,
     )
@@ -94,7 +134,8 @@ async def _factor_returns_aligned(
     if len(factor_returns) < 2:
         return [], {}
     common = sorted(set.intersection(*(set(r.keys()) for r in factor_returns.values())))
-    return common, {k: [factor_returns[k][m] for m in common] for k in factor_returns}
+    raw_aligned = {k: [factor_returns[k][m] for m in common] for k in factor_returns}
+    return common, _orthogonalise(raw_aligned)
 
 
 async def _holding_returns(
@@ -148,32 +189,21 @@ async def estimate_holding_betas(
     X = np.column_stack([np.ones(X_factors.shape[0]), X_factors])
     y = np.array(h_rets, dtype=float)
 
-    # RIDGE regression to handle multicollinearity. With 9 highly-correlated
-    # equity factors and only ~36 monthly observations, plain OLS produces
-    # coefficients in the ±10 range that swing wildly between holdings. A
-    # small ridge penalty (λ proportional to trace(XᵀX)/k) shrinks the
-    # individual betas toward zero just enough to stabilise them while
-    # preserving the *direction* of factor sensitivity.
-    #     β = (XᵀX + λI)⁻¹ Xᵀy        — intercept NOT penalised.
+    # Plain OLS — factors are orthogonalised upstream so multicollinearity
+    # is not an issue. β = (XᵀX)⁻¹ Xᵀy.
     try:
-        n, k_total = X.shape
         XtX = X.T @ X
-        # Penalty: small fraction of average diagonal value, intercept exempt.
-        avg_diag = float(np.trace(XtX[1:, 1:])) / max(k_total - 1, 1)
-        ridge_lambda = 0.10 * avg_diag       # 10% shrinkage on factor coefficients
-        I = np.eye(k_total)
-        I[0, 0] = 0.0                         # don't penalise the intercept
-        XtX_pen = XtX + ridge_lambda * I
-        XtX_pen_inv = np.linalg.inv(XtX_pen)
-        params = XtX_pen_inv @ X.T @ y
+        XtX_inv = np.linalg.inv(XtX)
+        params = XtX_inv @ X.T @ y
         y_pred = X @ params
         residuals = y - y_pred
         ss_res = float((residuals ** 2).sum())
         ss_tot = float(((y - y.mean()) ** 2).sum())
         r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+        n, k_total = X.shape
         if n > k_total:
             sigma2 = ss_res / (n - k_total)
-            se = np.sqrt(np.maximum(np.diag(sigma2 * XtX_pen_inv), 0.0))
+            se = np.sqrt(np.maximum(np.diag(sigma2 * XtX_inv), 0.0))
             with np.errstate(divide="ignore", invalid="ignore"):
                 tstats_arr = np.where(se > 0, params / se, 0.0)
         else:
