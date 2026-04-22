@@ -37,6 +37,12 @@ aiofiles==24.1.0
 python-dateutil==2.9.0
 jinja2==3.1.4
 
+# PDF rendering (Tier 3.3 — briefing download). Pure Python, no native
+# deps — deliberate choice over WeasyPrint to avoid Cairo/Pango on the
+# Railway image. Roadmap allows swapping to WeasyPrint later if CSS
+# polish matters.
+reportlab==4.4.10
+
 # Quantitative (optimisation + factor regressions)
 # OLS regressions for factor shocks are pure-numpy — no statsmodels needed.
 numpy==1.26.4

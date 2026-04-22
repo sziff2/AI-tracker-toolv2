@@ -543,6 +543,10 @@ app.include_router(analytics_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
 app.include_router(pipeline_router, prefix=PREFIX)
 
+# Tier 3.3 — briefing PDF download
+from apps.api.routes.briefing import router as briefing_router
+app.include_router(briefing_router, prefix=PREFIX)
+
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
