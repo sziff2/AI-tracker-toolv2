@@ -4518,6 +4518,11 @@ function renderAttrTable(title, groups, portExpRet) {
 let OP_DATA = null; // cached portfolio data
 let OP_CORR = null; // cached correlation matrix (server-computed)
 let OP_RISK = null; // cached realised-vol batch
+// Phase D — server-side QP optimiser results, populated only when the
+// "Use server optimiser" toggle is on. Shape: { kelly, mv, cvar, frontier }.
+let OP_SERVER = null;
+let OP_USE_SERVER = false;
+let OP_SERVER_LOADING = false;
 // Sort state for the Weight Comparison table. Default: by Kelly % desc,
 // which matches the "concentrated weights first" behaviour the UI used to
 // hardcode. Click a <th> to change column or toggle direction.
@@ -4624,9 +4629,19 @@ function renderOptimise() {
   const cov        = buildCovMatrix(vols, corrMatrix, tickers);
 
   // ── Run all three methods ───────────────────────────────────
-  const kellyResult  = runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap);
-  const mvResult     = runMV(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap, mvLambda);
-  const cvarResult   = runCVaR(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap);
+  // Default: client-side projected gradient (existing behaviour).
+  // When the "Use server optimiser" toggle is on AND OP_SERVER is loaded,
+  // swap in the QP results from /portfolios/{id}/optimise instead.
+  let kellyResult, mvResult, cvarResult;
+  if (OP_USE_SERVER && OP_SERVER) {
+    kellyResult = serverResultToClientShape(OP_SERVER.kelly, holdings);
+    mvResult    = serverResultToClientShape(OP_SERVER.mv,    holdings);
+    cvarResult  = serverResultToClientShape(OP_SERVER.cvar,  holdings);
+  } else {
+    kellyResult = runKelly(holdings, corrMatrix, kellyF, maxPos, sectorCap, countryCap);
+    mvResult    = runMV(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap, mvLambda);
+    cvarResult  = runCVaR(holdings, mus, cov, corrMatrix, maxPos / 100, sectorCap, countryCap);
+  }
 
   let h = '';
 
@@ -4641,13 +4656,29 @@ function renderOptimise() {
 
   // ── Controls ────────────────────────────────────────────────
   h += '<div class="cd" style="padding:16px;margin-bottom:20px">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap">';
   h += '<div class="cd-t">Optimisation Parameters</div>';
+  // Server-optimiser toggle + status label
+  const srvLabel = OP_SERVER_LOADING ? 'Solving on server…'
+    : (OP_USE_SERVER && OP_SERVER) ? 'Server (scipy SLSQP)'
+    : 'Client (projected gradient)';
+  const srvClr = OP_SERVER_LOADING ? 'var(--amber)'
+    : (OP_USE_SERVER && OP_SERVER) ? 'var(--green)' : 'var(--text3)';
+  h += '<div style="display:flex;align-items:center;gap:10px">';
+  h += '<span style="font-size:11px;color:' + srvClr + '">' + srvLabel + '</span>';
+  h += '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer">'
+    +  '<input type="checkbox" ' + (OP_USE_SERVER ? 'checked' : '')
+    +  ' onchange="toggleServerOptimiser(this.checked)"> Use server optimiser (QP)'
+    +  '</label>';
+  h += '</div></div>';
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:12px">';
-  h += ctrlNum('op-kelly',    'Kelly Fraction',     kellyF,  0.1, 1.0,  0.05, 'renderOptimise()');
-  h += ctrlNum('op-maxpos',   'Max Position %',     maxPos,  1,   25,   1,    'renderOptimise()');
-  h += ctrlNum('op-scap',     'Sector Cap %',       sectorCap, 10, 100, 5,   'renderOptimise()');
-  h += ctrlNum('op-ccap',     'Country Cap %',      countryCap, 10, 100, 5,  'renderOptimise()');
-  h += ctrlNum('op-lambda',   'MV Risk Aversion λ', mvLambda, 1,  20,   1,   'renderOptimise()');
+  // Slider changes call onOptControlChange — which re-renders client-side
+  // and additionally re-fires the server solver if the server toggle is on.
+  h += ctrlNum('op-kelly',    'Kelly Fraction',     kellyF,  0.1, 1.0,  0.05, 'onOptControlChange()');
+  h += ctrlNum('op-maxpos',   'Max Position %',     maxPos,  1,   25,   1,    'onOptControlChange()');
+  h += ctrlNum('op-scap',     'Sector Cap %',       sectorCap, 10, 100, 5,   'onOptControlChange()');
+  h += ctrlNum('op-ccap',     'Country Cap %',      countryCap, 10, 100, 5,  'onOptControlChange()');
+  h += ctrlNum('op-lambda',   'MV Risk Aversion λ', mvLambda, 1,  20,   1,   'onOptControlChange()');
   h += '</div></div>';
 
   // ── Summary metrics strip for each method ──────────────────
@@ -4843,6 +4874,95 @@ function runMV(holdings, mus, cov, corrMatrix, maxW, sectorCap, countryCap, lamb
     const w = mvOptimize(mus, cov, lambda, maxW, 2000);
     return applyCaps(holdings.map(h => h.ticker), w, holdings, sectorCap, countryCap, maxW * 100);
   } catch(e) { return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set(), invested: 0, cashPct: 100 }; }
+}
+
+// ── Phase D: server-side QP optimiser hooks ─────────────────────
+function serverResultToClientShape(srv, holdings) {
+  // The server returns weights as {ticker: percent}. Pad missing tickers
+  // (excluded for insufficient history) with 0% so renderOptSummaryCard
+  // and the comparison table iterate cleanly.
+  if (!srv) return { weights: {}, sectorBreaches: new Set(), countryBreaches: new Set(), invested: 0, cashPct: 100 };
+  const weights = {};
+  holdings.forEach(h => { weights[h.ticker] = srv.weights?.[h.ticker] ?? 0; });
+  const invested = srv.invested_pct ?? Object.values(weights).reduce((s, v) => s + v, 0);
+  return {
+    weights,
+    sectorBreaches: new Set(),
+    countryBreaches: new Set(),
+    invested,
+    cashPct: srv.cash_pct ?? Math.max(0, 100 - invested),
+    serverMethod: srv.method,
+    serverIterations: srv.iterations,
+    serverMessage: srv.message,
+    serverSuccess: srv.success,
+  };
+}
+
+async function toggleServerOptimiser(on) {
+  OP_USE_SERVER = !!on;
+  if (!OP_USE_SERVER) { OP_SERVER = null; renderOptimise(); return; }
+  await runServerOptimisation();
+}
+
+// Debounced control-change handler. Re-renders client-side immediately,
+// and (debounced 400ms) re-fires the server solver when in server mode
+// so the user can drag a slider without hitting the API on every tick.
+let __opDebounce = null;
+function onOptControlChange() {
+  renderOptimise();
+  if (!OP_USE_SERVER) return;
+  if (__opDebounce) clearTimeout(__opDebounce);
+  __opDebounce = setTimeout(() => { runServerOptimisation(); }, 400);
+}
+
+async function runServerOptimisation() {
+  if (!OP_DATA) return;
+  const id = OP_DATA.id;
+  // Pull current control values to send as constraints.
+  const maxPos = parseFloat(E('op-maxpos')?.value ?? 10) / 100;
+  const sectorCap = parseFloat(E('op-scap')?.value ?? 30) / 100;
+  const countryCap = parseFloat(E('op-ccap')?.value ?? 60) / 100;
+  const kellyF = parseFloat(E('op-kelly')?.value ?? 0.5);
+  const mvLambda = parseFloat(E('op-lambda')?.value ?? 5);
+
+  // Get the universe of sectors/countries from the current holdings.
+  const holdings = OP_DATA.holdings.filter(h => h.weight > 0);
+  const sectors = [...new Set(holdings.map(h => h.sector || 'Unknown'))];
+  const countries = [...new Set(holdings.map(h => h.country || 'Unknown'))];
+  const sector_caps = Object.fromEntries(sectors.map(s => [s, sectorCap]));
+  const country_caps = Object.fromEntries(countries.map(c => [c, countryCap]));
+
+  OP_SERVER_LOADING = true;
+  renderOptimise();
+
+  const baseBody = {
+    max_position: maxPos,
+    sector_caps,
+    country_caps,
+    sum_to_one: true,
+    window_months: 60,
+  };
+  const post = (extra) => fetch('/api/v1/portfolios/' + id + '/optimise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...baseBody, ...extra }),
+  }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
+
+  try {
+    const [mv, kelly, cvar] = await Promise.all([
+      post({ method: 'mv', lambda: mvLambda }),
+      post({ method: 'kelly', kelly_fraction: kellyF }),
+      post({ method: 'cvar', alpha: 0.95 }),
+    ]);
+    OP_SERVER = { mv, kelly, cvar };
+  } catch (e) {
+    toast('Server optimiser failed: ' + e.message + ' — falling back to client');
+    OP_USE_SERVER = false;
+    OP_SERVER = null;
+  } finally {
+    OP_SERVER_LOADING = false;
+    renderOptimise();
+  }
 }
 
 function portfolioStatsFromWeights(holdings, corrMatrix, weightsByTicker) {

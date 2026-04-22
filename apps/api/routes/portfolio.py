@@ -33,6 +33,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+import numpy as np
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
@@ -813,6 +815,191 @@ async def run_stress_test(
     for k in keys:
         out.append(await compute_historical_stress(db, portfolio_id, k))
     return {"portfolio_id": portfolio_id, "results": out}
+
+
+@router.post("/portfolios/{portfolio_id}/optimise")
+async def optimise_portfolio(
+    portfolio_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Server-side QP optimiser (scipy SLSQP / linprog).
+    Body: {
+        "method": "mv" | "kelly" | "cvar",
+        "max_position": 0.10,
+        "sum_to_one": true,
+        "sector_caps": {"Energy": 0.30, ...},
+        "country_caps": {"US": 0.60, ...},
+        "lambda": 5.0,                 # for mv
+        "kelly_fraction": 0.5,         # for kelly
+        "alpha": 0.95,                 # for cvar
+        "window_months": 60,           # μ/Σ + cvar history window
+        "use_realised": true           # μ/Σ from price history (else from scenarios)
+    }
+    """
+    from services.portfolio_optimiser import (
+        Constraints, solve_mv, solve_kelly, solve_cvar,
+    )
+    from services.portfolio_analytics import (
+        _load_fx_by_month, _load_monthly_series_usd, _log_returns, _aligned_returns,
+    )
+
+    method = (body.get("method") or "mv").lower()
+    constraints = Constraints(
+        max_position=float(body.get("max_position", 0.10)),
+        sum_to_one=bool(body.get("sum_to_one", True)),
+        sector_caps={k: float(v) for k, v in (body.get("sector_caps") or {}).items()},
+        country_caps={k: float(v) for k, v in (body.get("country_caps") or {}).items()},
+    )
+    window = int(body.get("window_months", 60))
+    use_realised = bool(body.get("use_realised", True))
+
+    rs = await db.execute(text("""
+        SELECT c.id AS cid, c.ticker, c.sector, c.country
+          FROM portfolio_holdings h
+          JOIN companies c ON c.id = h.company_id
+         WHERE h.portfolio_id = :pid AND COALESCE(h.weight,0) > 0
+         ORDER BY h.weight DESC NULLS LAST
+    """), {"pid": portfolio_id})
+    holdings = [(r.cid, r.ticker, r.sector, r.country) for r in rs]
+    if not holdings:
+        raise HTTPException(400, "no holdings with weight > 0")
+
+    fx = await _load_fx_by_month(db)
+
+    # Build per-ticker monthly USD return series
+    returns_by_ticker = {}
+    for cid, ticker, _sec, _cty in holdings:
+        series = await _load_monthly_series_usd(db, cid, window, fx)
+        if len(series) >= 13:
+            rets = _log_returns(series)
+            if len(rets) >= 12:
+                returns_by_ticker[ticker] = rets
+
+    if len(returns_by_ticker) < 2:
+        raise HTTPException(400, "insufficient price history for optimisation")
+
+    kept, months, matrix = _aligned_returns(returns_by_ticker, min_months=12)
+    if len(kept) < 2:
+        raise HTTPException(400, "no overlapping price history across holdings")
+
+    # Map kept tickers back to (sector, country) preserving order
+    info = {t: (s, c) for (_cid, t, s, c) in holdings}
+    sectors = [info[t][0] or "Unknown" for t in kept]
+    countries = [info[t][1] or "Unknown" for t in kept]
+
+    # μ from realised: mean monthly log-return × 12
+    arr = np.asarray(matrix, dtype=float)             # shape (n_tickers, n_months)
+    mus = (arr.mean(axis=1) * 12.0).tolist()
+    cov = (np.cov(arr) * 12.0).tolist()
+
+    if method == "mv":
+        result = solve_mv(kept, mus, cov, sectors, countries, constraints,
+                          lam=float(body.get("lambda", 5.0)))
+    elif method == "kelly":
+        result = solve_kelly(kept, mus, cov, sectors, countries, constraints,
+                             kelly_fraction=float(body.get("kelly_fraction", 0.5)))
+    elif method == "cvar":
+        # CVaR uses the raw monthly returns matrix (T × N), not the cov.
+        # arr is (N × T) so transpose, and we need simple-period returns
+        # (close-to-close). Use the same log returns as a proxy — for small
+        # monthly moves the difference is < 0.5%.
+        result = solve_cvar(kept, arr.T.tolist(), sectors, countries, constraints,
+                            alpha=float(body.get("alpha", 0.95)))
+    else:
+        raise HTTPException(400, f"unknown method '{method}'")
+
+    return {
+        "portfolio_id": portfolio_id,
+        "method": method,
+        "tickers_used": kept,
+        "n_months": len(months),
+        "constraints": {
+            "max_position": constraints.max_position,
+            "sum_to_one": constraints.sum_to_one,
+            "sector_caps": constraints.sector_caps,
+            "country_caps": constraints.country_caps,
+        },
+        **result,
+    }
+
+
+@router.get("/portfolios/{portfolio_id}/efficient-frontier")
+async def get_portfolio_efficient_frontier(
+    portfolio_id: str,
+    points: int = 25,
+    max_position: float = 0.10,
+    sector_cap: float | None = None,
+    country_cap: float | None = None,
+    window: int = 60,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sweep λ on a log scale and return the upper Pareto frontier:
+    [{lambda, vol, exp_ret, sharpe, weights, cash_pct}, ...].
+    Sector/country caps optional — if set, applied uniformly across all
+    distinct sectors/countries in the portfolio."""
+    from services.portfolio_optimiser import Constraints, efficient_frontier
+    from services.portfolio_analytics import (
+        _load_fx_by_month, _load_monthly_series_usd, _log_returns, _aligned_returns,
+    )
+
+    rs = await db.execute(text("""
+        SELECT c.id AS cid, c.ticker, c.sector, c.country
+          FROM portfolio_holdings h
+          JOIN companies c ON c.id = h.company_id
+         WHERE h.portfolio_id = :pid AND COALESCE(h.weight,0) > 0
+    """), {"pid": portfolio_id})
+    holdings = [(r.cid, r.ticker, r.sector, r.country) for r in rs]
+    if not holdings:
+        raise HTTPException(400, "no holdings with weight > 0")
+
+    fx = await _load_fx_by_month(db)
+    returns_by_ticker = {}
+    for cid, ticker, _sec, _cty in holdings:
+        series = await _load_monthly_series_usd(db, cid, window, fx)
+        if len(series) >= 13:
+            rets = _log_returns(series)
+            if len(rets) >= 12:
+                returns_by_ticker[ticker] = rets
+
+    if len(returns_by_ticker) < 2:
+        raise HTTPException(400, "insufficient price history")
+    kept, months, matrix = _aligned_returns(returns_by_ticker, min_months=12)
+    info = {t: (s, c) for (_cid, t, s, c) in holdings}
+    sectors = [info[t][0] or "Unknown" for t in kept]
+    countries = [info[t][1] or "Unknown" for t in kept]
+
+    arr = np.asarray(matrix, dtype=float)
+    mus = (arr.mean(axis=1) * 12.0).tolist()
+    cov = (np.cov(arr) * 12.0).tolist()
+
+    sector_caps = {}
+    if sector_cap is not None:
+        for s in set(sectors):
+            sector_caps[s] = sector_cap
+    country_caps = {}
+    if country_cap is not None:
+        for c in set(countries):
+            country_caps[c] = country_cap
+
+    constraints = Constraints(
+        max_position=max_position,
+        sector_caps=sector_caps,
+        country_caps=country_caps,
+    )
+    pts = efficient_frontier(kept, mus, cov, sectors, countries, constraints,
+                             n_points=points)
+    return {
+        "portfolio_id": portfolio_id,
+        "n_months": len(months),
+        "n_tickers": len(kept),
+        "constraints": {
+            "max_position": max_position,
+            "sector_cap": sector_cap,
+            "country_cap": country_cap,
+        },
+        "points": pts,
+    }
 
 
 @router.get("/portfolios/{portfolio_id}/risk-dashboard")
