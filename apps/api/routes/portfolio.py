@@ -789,7 +789,7 @@ async def get_company_risk_metrics(
 
 @router.post("/admin/seed-factor-proxies")
 async def seed_factor_proxies(db: AsyncSession = Depends(get_db)):
-    """One-shot: insert the 9 factor-proxy ETFs as companies with
+    """One-shot: insert the factor-proxy ETFs as companies with
     coverage_status='factor' so the existing backfill + daily price feed
     can keep them up to date."""
     from services.factor_analytics import FACTOR_PROXIES
@@ -803,9 +803,9 @@ async def seed_factor_proxies(db: AsyncSession = Depends(get_db)):
         await db.execute(text("""
             INSERT INTO companies (id, ticker, name, sector, industry, country,
                                    coverage_status, primary_analyst)
-            VALUES (gen_random_uuid(), :tkr, :nm, 'Factor Proxy', 'ETF', 'US',
+            VALUES (:id, :tkr, :nm, 'Factor Proxy', 'ETF', 'US',
                     'factor', 'system')
-        """), {"tkr": meta["ticker"], "nm": meta["label"]})
+        """), {"id": str(uuid.uuid4()), "tkr": meta["ticker"], "nm": meta["label"]})
         inserted.append(meta["ticker"])
     await db.commit()
     return {"inserted": inserted, "already_existed": existed}

@@ -32,7 +32,6 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import numpy as np
-import statsmodels.api as sm
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -139,25 +138,44 @@ async def estimate_holding_betas(
         return None
 
     # Build design matrix (T × (k+1)) — k factors plus intercept
-    X = np.column_stack([factor_rets[k] for k in FACTOR_KEYS if k in factor_rets])
     factor_keys_present = [k for k in FACTOR_KEYS if k in factor_rets]
-    if X.shape[0] < 24 or X.shape[1] < 4:
+    X_factors = np.column_stack([factor_rets[k] for k in factor_keys_present])
+    if X_factors.shape[0] < 24 or X_factors.shape[1] < 4:
         return None
-    X = sm.add_constant(X, has_constant="add")
+    # Prepend an intercept column of 1s.
+    X = np.column_stack([np.ones(X_factors.shape[0]), X_factors])
     y = np.array(h_rets, dtype=float)
 
+    # Pure-numpy OLS — avoids statsmodels' fragile decorator chain.
     try:
-        model = sm.OLS(y, X).fit()
+        XtX = X.T @ X
+        XtX_inv = np.linalg.inv(XtX)
+        params = XtX_inv @ X.T @ y
+        y_pred = X @ params
+        residuals = y - y_pred
+        ss_res = float((residuals ** 2).sum())
+        ss_tot = float(((y - y.mean()) ** 2).sum())
+        r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+        n, k_total = X.shape
+        if n > k_total:
+            sigma2 = ss_res / (n - k_total)
+            se = np.sqrt(np.maximum(np.diag(sigma2 * XtX_inv), 0.0))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                tstats_arr = np.where(se > 0, params / se, 0.0)
+        else:
+            tstats_arr = np.zeros_like(params)
+    except np.linalg.LinAlgError as exc:
+        return {"error": f"singular design matrix: {exc}"}
     except Exception as exc:
         return {"error": str(exc)}
 
-    betas = {k: float(b) for k, b in zip(factor_keys_present, model.params[1:])}
-    tstats = {k: float(t) for k, t in zip(factor_keys_present, model.tvalues[1:])}
+    betas = {k: float(b) for k, b in zip(factor_keys_present, params[1:])}
+    tstats = {k: float(t) for k, t in zip(factor_keys_present, tstats_arr[1:])}
     return {
         "betas": betas,
-        "alpha": float(model.params[0]),
+        "alpha": float(params[0]),
         "tstats": tstats,
-        "r_squared": float(model.rsquared),
+        "r_squared": float(r_squared),
         "n_months": len(h_rets),
         "as_of_month": f"{months[-1][0]:04d}-{months[-1][1]:02d}",
     }
