@@ -1350,6 +1350,7 @@ async def run_native_pdf_ab(payload: AbPdfBatch):
             "cost_usd":      round(cost, 4),
             "pdf_bytes":     len(pdf_bytes),
             "parsed":        parsed,
+            "raw_response":  text_out,
             "raw_response_len": len(text_out),
         })
 
