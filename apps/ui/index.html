@@ -5768,10 +5768,19 @@ async function loadCkDocuments(ticker){
     h+='<button class="btn2" style="font-size:11px;padding:5px 12px" onclick="ckOpenAddModal(\''+esc(ticker)+'\')">+ Add</button>';
     h+='</div>';
 
-    // Load ALL harvested documents (including EDGAR) and ingested documents in parallel
-    var [r,r2]=await Promise.all([
+    // Tier 4.2 — inline triage markers. Pending-review items live in the
+    // Data Hub panel today; surface them in the Documents tab (where the
+    // analyst actually works) so flagged docs appear alongside the real
+    // workflow, not in a separate admin screen.
+    h+='<div id="ck-docs-triage-banner-'+esc(ticker)+'"></div>';
+
+    // Load ALL harvested documents (including EDGAR) and ingested documents in parallel.
+    // Pending-review fetch runs in the same batch but is optional — a failure there
+    // must not block the documents list.
+    var [r,r2,rPr]=await Promise.all([
       fetch('/api/v1/harvester/log?ticker='+encodeURIComponent(ticker)+'&limit=500'),
-      fetch('/api/v1/companies/'+enc(ticker)+'/documents')
+      fetch('/api/v1/companies/'+enc(ticker)+'/documents'),
+      fetch('/api/v1/harvester/pending-review').catch(function(){return null;}),
     ]);
     if(!r.ok)throw new Error('Failed to load documents');
     var allDocs=await r.json();
@@ -6056,9 +6065,64 @@ async function loadCkDocuments(ticker){
     updateDocSelBar();
     // Auto-lookup CIK and browse EDGAR (runs after HTML is rendered)
     autoLoadEdgar(ticker);
+    // Tier 4.2 — populate the inline triage banner for this ticker.
+    // Done AFTER innerHTML assignment so the banner div exists. Failure
+    // here must not break the documents list — it's purely additive.
+    try{
+      if(rPr&&rPr.ok){
+        var pr=await rPr.json();
+        var mine=(pr.items||[]).filter(function(x){return (x.ticker||'')===ticker;});
+        _renderTriageBannerForDocsTab(ticker,mine);
+      }
+    }catch(_){}
   }catch(e){
     if(E('ck-documents'))E('ck-documents').innerHTML='<div class="err">'+esc(e.message)+'</div>';
   }
+}
+
+// Tier 4.2 helper — render pending-review items filtered to this ticker
+// as an inline banner above the Documents list. One clickable row per
+// item: Open ↗ (to the source URL) and Dismiss (deletes the record and
+// refreshes the banner in place).
+function _renderTriageBannerForDocsTab(ticker,items){
+  var host=E('ck-docs-triage-banner-'+ticker);
+  if(!host)return;
+  if(!items||!items.length){host.innerHTML='';return;}
+  var h='<div style="margin-bottom:14px;padding:12px 14px;background:rgba(245,158,11,.08);border:1px solid var(--amber);border-radius:10px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-family:var(--sans);font-size:12px;font-weight:700;color:var(--amber)">⚠️ '+items.length+' document'+(items.length>1?'s':'')+' pending Triage review</div>';
+  h+='<div style="font-family:var(--sans);font-size:10px;color:var(--text4)">Flagged by Document Triage Agent — not yet ingested.</div></div>';
+  items.forEach(function(row){
+    var pr=row.priority||'—';
+    var dt=row.discovered_at?row.discovered_at.split('T')[0]:'';
+    h+='<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border);font-family:var(--sans);font-size:11px">';
+    h+='<span style="color:var(--text4);min-width:80px">'+esc(dt)+'</span>';
+    h+='<span style="color:var(--text3);min-width:60px">'+esc(row.document_type||'—')+'</span>';
+    h+='<span style="color:var(--text3);min-width:70px">'+esc(row.period_label||'—')+'</span>';
+    h+='<span style="color:var(--amber);min-width:70px;font-weight:700">'+esc(pr)+'</span>';
+    h+='<span style="color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(row.rationale||'')+'">'+esc(row.headline||'—')+'</span>';
+    if(row.source_url)h+='<a href="'+esc(row.source_url)+'" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;white-space:nowrap">Open ↗</a>';
+    h+='<button class="btn2" style="font-size:10px;padding:3px 8px;white-space:nowrap" onclick="_dismissTriageFromDocs(\''+esc(row.id)+'\',\''+esc(ticker)+'\')">Dismiss</button>';
+    h+='</div>';
+  });
+  h+='</div>';
+  host.innerHTML=h;
+}
+
+async function _dismissTriageFromDocs(id,ticker){
+  try{
+    var r=await fetch('/api/v1/harvester/pending-review/'+encodeURIComponent(id),{method:'DELETE'});
+    if(!r.ok)throw new Error('Failed');
+    // Refresh just the banner by re-fetching pending-review
+    try{
+      var rr=await fetch('/api/v1/harvester/pending-review');
+      if(rr.ok){
+        var pr=await rr.json();
+        var mine=(pr.items||[]).filter(function(x){return (x.ticker||'')===ticker;});
+        _renderTriageBannerForDocsTab(ticker,mine);
+      }
+    }catch(_){}
+    refreshPendingReviewBadge();
+  }catch(e){toast('Failed to dismiss: '+e.message);}
 }
 async function autoLoadEdgar(ticker){
   var cikEl=E('ck-edgar-cik'),statusEl=E('edgar-status');
@@ -6192,6 +6256,37 @@ function edgarApplyBulkPeriod(){
     if(sel)sel.value=period;
   });
 }
+// Tier 4.3 — shared row-update helper. Previously edgarIngestSelected
+// and hvIngestSelected each had ~20 lines of copy-paste for painting
+// the row green/amber/red based on the backend's {status, error}. This
+// helper centralises that so only the source-of-items and endpoint
+// choice differ between the two entry points.
+//
+// `rowStatusTdSelector` picks the cell where the badge pill goes:
+//   - EDGAR table: second-to-last td
+//   - Harvest table: last td
+// `checkboxClass` is the class the checkbox carries (used to disable it
+// in place after a successful ingest).
+function _applyIngestRowResult(row,status,checkboxClass,errorMsg,rowStatusTdSelector){
+  if(!row)return;
+  var tds=row.querySelectorAll('td');
+  var stTd=rowStatusTdSelector==='last'?tds[tds.length-1]:tds[tds.length-2];
+  row.style.transition='background 0.4s ease';
+  var cb=row.querySelector('.'+checkboxClass);
+  if(status==='ingested'){
+    row.style.background='rgba(74,222,128,.14)';
+    if(cb){cb.checked=false;cb.disabled=true;}
+    if(stTd)stTd.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff" title="Ingested, analysis queued">In DB</span>';
+  }else if(status==='duplicate'){
+    row.style.background='rgba(196,164,90,.10)';
+    if(cb){cb.checked=false;cb.disabled=true;}
+    if(stTd)stTd.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
+  }else{
+    row.style.background='rgba(239,68,68,.10)';
+    if(stTd)stTd.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--red,#ef4444);color:#fff" title="'+esc(errorMsg||'failed')+'">Failed</span>';
+  }
+}
+
 async function edgarIngestSelected(){
   var checked=[].slice.call(document.querySelectorAll('.edgar-chk:checked'));
   if(!checked.length){toast('Select at least one filing.');return;}
@@ -6208,6 +6303,7 @@ async function edgarIngestSelected(){
     var period=periodSel?periodSel.value:'';
     var dtype=dtypeSel?dtypeSel.value:'';
     if(statusEl)statusEl.innerHTML='<span style="color:var(--gold)">Ingesting '+(ci+1)+'/'+checked.length+'…</span>';
+    var row=checked[ci].closest('tr');
     try{
       var fd=new FormData();
       fd.append('doc_url',f.doc_url);fd.append('form_type',dtype||f.form_type);
@@ -6215,27 +6311,14 @@ async function edgarIngestSelected(){
       fd.append('title',f.description||f.form_type+' '+f.filing_date);
       var r=await fetch('/api/v1/companies/'+enc(_edgarTicker)+'/ingest-url',{method:'POST',body:fd});
       var d=await r.json();
-      var row=checked[ci].closest('tr');
-      if(d.status==='ingested'){
-        ok++;
-        if(row){
-          row.style.background='rgba(74,222,128,.08)';
-          var cb=row.querySelector('.edgar-chk');if(cb){cb.checked=false;cb.disabled=true;}
-          var stCell=row.querySelectorAll('td');var stTd=stCell[stCell.length-2];
-          if(stTd)stTd.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff">In DB</span>';
-        }
-      }
-      else if(d.status==='duplicate'){
-        dup++;
-        if(row){
-          row.style.background='rgba(196,164,90,.08)';
-          var cb2=row.querySelector('.edgar-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
-          var stCell2=row.querySelectorAll('td');var stTd2=stCell2[stCell2.length-2];
-          if(stTd2)stTd2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
-        }
-      }
+      if(d.status==='ingested'){ok++;}
+      else if(d.status==='duplicate'){dup++;}
       else{fail++;}
-    }catch(e){fail++;}
+      _applyIngestRowResult(row,d.status,'edgar-chk',d.error,'second-to-last');
+    }catch(e){
+      fail++;
+      _applyIngestRowResult(row,'failed','edgar-chk',e.message,'second-to-last');
+    }
   }
   if(btn){btn.disabled=false;btn.textContent='Ingest Selected';}
   if(statusEl)statusEl.innerHTML='<span style="color:var(--green)">'+ok+' ingested</span>'+(dup?' <span style="color:var(--amber)">'+dup+' dup</span>':'')+(fail?' <span style="color:var(--red)">'+fail+' failed</span>':'');
@@ -6392,27 +6475,9 @@ async function hvIngestSelected(){
     ok=d.ingested||0;dup=d.duplicate||0;fail=d.failed||0;
     jobs=d.jobs||[];
     (d.results||[]).forEach(function(rr){
-      var row=urlToRow[rr.doc_url];if(!row)return;
-      if(rr.status==='ingested'){
-        // Keep row in place, highlight green, badge "In DB" — do NOT reload
-        // the list, so the analyst can see exactly which rows were ingested.
-        row.style.transition='background 0.4s ease';
-        row.style.background='rgba(74,222,128,.14)';
-        var cb=row.querySelector('.hv-chk');if(cb){cb.checked=false;cb.disabled=true;}
-        var stCell=row.querySelector('td:last-child');
-        if(stCell)stCell.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--green);color:#fff" title="Ingested, analysis queued">In DB</span>';
-      } else if(rr.status==='duplicate'){
-        row.style.transition='background 0.4s ease';
-        row.style.background='rgba(196,164,90,.10)';
-        var cb2=row.querySelector('.hv-chk');if(cb2){cb2.checked=false;cb2.disabled=true;}
-        var stCell2=row.querySelector('td:last-child');
-        if(stCell2)stCell2.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--amber,#f59e0b);color:#fff">Duplicate</span>';
-      } else {
-        row.style.transition='background 0.4s ease';
-        row.style.background='rgba(239,68,68,.10)';
-        var stCell3=row.querySelector('td:last-child');
-        if(stCell3)stCell3.innerHTML='<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:var(--red,#ef4444);color:#fff" title="'+esc(rr.error||'failed')+'">Failed</span>';
-      }
+      // Tier 4.3 — shared helper. Prior to consolidation this block was
+      // ~20 lines of near-identical copy-paste from edgarIngestSelected.
+      _applyIngestRowResult(urlToRow[rr.doc_url],rr.status,'hv-chk',rr.error,'last');
     });
   }catch(e){
     fail=items.length;
@@ -6679,18 +6744,56 @@ function _hsToggleConfig(safe){
   var row=E('hs-cfg-'+safe);if(!row)return;
   row.style.display=row.style.display==='none'?'table-row':'none';
 }
+
+// Tier 4.1 — pill links on each sources row deep-link into the
+// Pending Review / Coverage Gap panels further down the Data Hub.
+function scrollToPendingReview(){
+  var target=E('pending-review-inner')||E('pending-review-panel');
+  if(!target)return;
+  if(typeof loadPendingReview==='function')loadPendingReview();
+  target.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function scrollToCoverageGaps(){
+  var target=E('coverage-gaps-body')||E('coverage-gaps-panel');
+  if(!target)return;
+  // Panel is collapsed by default — open it if needed
+  if(target.style&&target.style.display==='none'&&typeof toggleCoverageGapsPanel==='function')
+    toggleCoverageGapsPanel();
+  target.scrollIntoView({behavior:'smooth',block:'start'});
+}
 async function loadHarvesterSourcesPanel(){
   refreshPendingReviewBadge();
   refreshCoverageGapsBadge();
   var el=E('harvester-sources-table');if(!el)return;
   el.innerHTML='<div class="ld" style="margin:8px 0;font-size:13px">Loading…</div>';
   try{
-    var r=await fetch('/api/v1/harvester/sources');
-    if(!r.ok)throw new Error('Failed');
-    var rows=await r.json();
+    // Fetch sources + pending-review + coverage-gaps in parallel so we
+    // can render per-row indicators without a second flash of the table.
+    var fetches=await Promise.all([
+      fetch('/api/v1/harvester/sources'),
+      fetch('/api/v1/harvester/pending-review').catch(function(){return null;}),
+      fetch('/api/v1/harvester/coverage-gaps').catch(function(){return null;}),
+    ]);
+    if(!fetches[0].ok)throw new Error('Failed');
+    var rows=await fetches[0].json();
+    // Aggregate per-ticker counts — tolerant of either endpoint failing.
+    var reviewByTicker={},gapsByTicker={};
+    try{
+      if(fetches[1]&&fetches[1].ok){
+        var pr=await fetches[1].json();
+        (pr.items||[]).forEach(function(x){var t=x.ticker||'';if(!t)return;reviewByTicker[t]=(reviewByTicker[t]||0)+1;});
+      }
+    }catch(e){}
+    try{
+      if(fetches[2]&&fetches[2].ok){
+        var cg=await fetches[2].json();
+        (cg.gaps||[]).forEach(function(x){var t=x.ticker||'';if(!t||x.severity==='warning')return;gapsByTicker[t]=(gapsByTicker[t]||0)+1;});
+      }
+    }catch(e){}
+
     if(!rows.length){el.innerHTML='<div style="font-family:var(--sans);font-size:13px;color:var(--text4)">No active companies found.</div>';return;}
     var h='<table class="kt" style="margin-top:4px">';
-    h+='<thead><tr><th style="width:50px">Status</th><th>Ticker</th><th>Company</th><th style="width:80px;text-align:center">Source</th><th style="width:80px">Last Run</th><th style="width:90px"></th></tr></thead><tbody>';
+    h+='<thead><tr><th style="width:50px">Status</th><th>Ticker</th><th>Company</th><th style="width:80px;text-align:center">Source</th><th style="width:80px">Last Run</th><th style="width:110px;text-align:center" title="Items flagged by Document Triage / coverage-monitor for this company">Flags</th><th style="width:90px"></th></tr></thead><tbody>';
     rows.forEach(function(row){
       var safe=row.ticker.replace(/ /g,'_').replace(/\./g,'_');
       var st=_hsStatus(row);
@@ -6700,6 +6803,17 @@ async function loadHarvesterSourcesPanel(){
       var srcLabel=row.active_source==='edgar+investegate'?'🏛📰':isEdgar?'🏛 EDGAR':isInvestegate?'📰 RNS':row.active_source==='ir_scrape'?'🔎 Scraper':'—';
       var lastRun=row.last_checked_at?timeSince(row.last_checked_at):'—';
       var lastRunTitle=row.last_checked_at?row.last_checked_at.split('T')[0]:'Never';
+      var nReview=reviewByTicker[row.ticker]||0;
+      var nGaps=gapsByTicker[row.ticker]||0;
+      // Flags cell — pending review pill + coverage gap pill. Click scrolls to the
+      // relevant panel. Silent when both zero so healthy rows stay visually clean.
+      var flagsCell='—';
+      if(nReview||nGaps){
+        flagsCell='<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">';
+        if(nReview)flagsCell+='<a href="#" onclick="scrollToPendingReview();return false" title="'+nReview+' documents awaiting triage review" style="font-family:var(--sans);font-size:10px;font-weight:700;color:var(--amber);padding:2px 6px;border-radius:4px;background:rgba(245,158,11,.12);text-decoration:none">⚠️ '+nReview+' review</a>';
+        if(nGaps)flagsCell+='<a href="#" onclick="scrollToCoverageGaps();return false" title="'+nGaps+' coverage gaps (overdue / critical)" style="font-family:var(--sans);font-size:10px;font-weight:700;color:var(--red);padding:2px 6px;border-radius:4px;background:rgba(239,68,68,.12);text-decoration:none">❌ '+nGaps+' gap'+(nGaps>1?'s':'')+'</a>';
+        flagsCell+='</div>';
+      }
       // Main row
       h+='<tr>';
       h+='<td style="text-align:center" title="'+esc(st.label)+'"><span style="font-size:14px">'+st.badge+'</span></td>';
@@ -6707,6 +6821,7 @@ async function loadHarvesterSourcesPanel(){
       h+='<td style="font-size:12px;color:var(--text2)">'+esc(row.name)+'</td>';
       h+='<td style="text-align:center"><span style="font-family:var(--sans);font-size:11px;font-weight:600;color:'+srcClr+'">'+srcLabel+'</span></td>';
       h+='<td style="font-family:var(--sans);font-size:11px;color:var(--text3)" title="'+esc(lastRunTitle)+'">'+esc(lastRun)+'</td>';
+      h+='<td style="text-align:center">'+flagsCell+'</td>';
       h+='<td><div style="display:flex;gap:4px">';
       h+='<button class="btn2" style="font-size:10px;padding:3px 8px" title="Fast, free. Finds PDF links on IR page." onclick="runHarvestPanel(\''+esc(row.ticker)+'\',this)">▶ Run</button>';
       h+='<button class="btn2" style="font-size:10px;padding:3px 8px" onclick="_hsToggleConfig(\''+safe+'\')">⚙</button>';
@@ -6714,7 +6829,7 @@ async function loadHarvesterSourcesPanel(){
       h+='</tr>';
       // Expandable config row (hidden by default)
       var chk=row.override?'checked':'';
-      h+='<tr id="hs-cfg-'+safe+'" style="display:none;background:var(--bg3)"><td colspan="6" style="padding:12px 16px">';
+      h+='<tr id="hs-cfg-'+safe+'" style="display:none;background:var(--bg3)"><td colspan="7" style="padding:12px 16px">';
       h+='<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">';
       h+='<div style="flex:1;min-width:250px"><div style="font-family:var(--sans);font-size:10px;color:var(--text4);margin-bottom:4px">IR Documents URL</div>';
       h+='<textarea id="hs-docs-'+safe+'" class="fi" style="font-size:11px;min-height:40px;font-family:var(--mono)" placeholder="https://company.com/investors/results/">'+esc(row.ir_docs_url||'')+'</textarea></div>';
