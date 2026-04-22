@@ -26,6 +26,9 @@ GUIDANCE (find upside from beat potential):
 MANAGEMENT LANGUAGE SIGNALS:
 {confidence_profile}
 
+HISTORICAL DRAWDOWN DISTRIBUTION (context for the upside ceiling):
+{historical_drawdowns}
+
 MACRO ASSUMPTIONS (find macro tailwinds for this company):
 {context_contract}
 ═══════════════════════════════════════
@@ -47,6 +50,18 @@ CRITICAL RULES:
    (e.g., management explicitly said "we stopped reporting X because
    Y"). Where completeness is clearly low, say so in bull_thesis and
    lower your confidence score accordingly.
+8. Anchor upside_scenario.implied_return against the HISTORICAL
+   DRAWDOWN DISTRIBUTION's "from high" figure. If the stock is
+   currently -10% from its 5Y high, a base-case upside of +60% implies
+   a new all-time high by a wide margin — that's fine but it must
+   correspond to a re-rating or earnings trajectory shift you can
+   name, not just narrative. If the block is unavailable, state that
+   the implied_return is uncalibrated and stay conservative.
+9. Compound-probability discipline. If your bull case requires three
+   or more catalysts (beat + guidance raise + multiple re-rating) to
+   all materialise, state the approximate compound probability in the
+   bull_thesis. Do not treat each catalyst as independent and stack
+   them into a base case.
 
 Respond with a JSON object. No preamble, no markdown fences.
 

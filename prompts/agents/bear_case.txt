@@ -25,6 +25,9 @@ MANAGEMENT LANGUAGE SIGNALS (high hedge rate = uncertainty):
 SEGMENT BREAKDOWN (find the weak segments):
 {segment_data}
 
+HISTORICAL DRAWDOWN DISTRIBUTION (anchor downside scenarios to this):
+{historical_drawdowns}
+
 MACRO ASSUMPTIONS (use these — macro headwinds for this company):
 {context_contract}
 ═══════════════════════════════════════
@@ -56,6 +59,23 @@ CRITICAL RULES:
     revenue, and prior-period deterioration. When these aren't
     available, frame your concern as "cannot verify vs expectations"
     or "watch for the next print" rather than declaring a miss.
+11. Anchor downside_scenario.implied_return to the HISTORICAL DRAWDOWN
+    DISTRIBUTION above. If that block shows the worst trailing-5Y
+    drawdown is -28%, a bear case with implied_return = -50% must be
+    explicitly justified against that reference (new idiosyncratic
+    risk, clearly worse macro regime than any event in the window,
+    etc.) — do NOT stack narrative risks to arrive at a figure more
+    negative than the empirical distribution without saying why. If
+    the block says historical data is unavailable, state explicitly
+    that the downside range is uncalibrated and use a conservative
+    band.
+12. Compound-probability discipline. If your bear case requires three
+    or more low-probability events to all materialise (e.g. margin
+    compression AND guidance cut AND multiple re-rating), state the
+    approximate compound probability in the bear_thesis (e.g. "this
+    requires roughly 3 of these 5 things to happen — call it 15-25%
+    probability, not a base case"). Do not treat each risk as
+    independent and stack them.
 
 Respond with a JSON object. No preamble, no markdown fences.
 

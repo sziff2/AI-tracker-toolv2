@@ -78,6 +78,8 @@ async def build_agent_context(
 
     prior_period_label = _previous_period(period)
 
+    from services.historical_drawdowns import build_historical_drawdowns_block
+
     (
         company_meta,
         thesis,
@@ -92,6 +94,7 @@ async def build_agent_context(
         presentation_analysis,
         annual_report_analysis,
         metrics_history_result,
+        historical_drawdowns_block,
     ) = await asyncio.gather(
         _with_session(_build_company_meta, company_id),
         _with_session(build_thesis_context, company_id),
@@ -106,6 +109,7 @@ async def build_agent_context(
         _with_session(_load_document_analysis, company_id, period, "presentation_analysis"),
         _with_session(_load_document_analysis, company_id, period, "annual_report_analysis"),
         _with_session(_build_metrics_history, company_id, period),
+        _with_session(build_historical_drawdowns_block, company_id),
     )
 
     # Fix 2a — only load raw transcript/presentation text as fallback
@@ -152,6 +156,10 @@ async def build_agent_context(
         # Agents should read period-over-period moves from here, not
         # synthesise them from BRIDGE_GAP rows in extracted_metrics.
         "metrics_history":     metrics_history_result,
+        # Empirical trailing-1Y/3Y/5Y drawdown distribution (Tier 2.1 —
+        # bear-case calibration). Pre-formatted string block so the
+        # bear_case / bull_case prompts drop it in verbatim.
+        "historical_drawdowns": historical_drawdowns_block,
     }
 
 
