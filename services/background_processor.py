@@ -150,11 +150,46 @@ async def _analyse_document_with_llm(db: AsyncSession, doc, dtype: str, full_tex
     prompt_result = load_prompt(agent_id, inputs)
     prompt = prompt_result[0] if isinstance(prompt_result, tuple) else prompt_result
 
+    # Tier 2.3 — route decks to native Claude PDF when the feature
+    # flag is on and the file is a reasonably-sized PDF. The narrative
+    # agent reads the full slide layout (charts, waterfall shapes,
+    # capital deployment pies) rather than the flattened 30k-char text.
+    pdf_path: str | None = None
+    if (
+        getattr(settings, "use_native_pdf_for_analysis", False)
+        and dtype == "presentation"
+        and doc.file_path
+        and str(doc.file_path).lower().endswith(".pdf")
+    ):
+        try:
+            import fitz as _fitz
+            _f = _fitz.open(doc.file_path)
+            _pages = len(_f)
+            _f.close()
+            _cap = getattr(settings, "native_pdf_analysis_max_pages", 50)
+            if _pages <= _cap:
+                pdf_path = doc.file_path
+                logger.info(
+                    "Routing presentation analysis of doc %s to native Claude PDF (%d pages)",
+                    doc.id, _pages,
+                )
+            else:
+                logger.info(
+                    "Presentation doc %s has %d pages > %d cap — staying on text path",
+                    doc.id, _pages, _cap,
+                )
+        except Exception as _exc:
+            logger.warning(
+                "Native-PDF page-count probe failed for doc %s: %s — falling back to text",
+                doc.id, str(_exc)[:120],
+            )
+
     result = await call_llm_native_async(
         prompt,
         model=analysis_model,
         max_tokens=4096,
         feature=f"doc_{dtype}_analysis",
+        pdf_path=pdf_path,
     )
 
     # Parse JSON response

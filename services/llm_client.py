@@ -507,6 +507,8 @@ async def call_llm_native_async(
     ticker: str | None = None,
     period: str | None = None,
     timeout_seconds: int = 90,
+    pdf_path: str | None = None,
+    pdf_cache: bool = True,
 ) -> dict[str, Any]:
     """
     TRUE async LLM call using AsyncAnthropic — no ThreadPoolExecutor.
@@ -520,10 +522,40 @@ async def call_llm_native_async(
       - Budget guard check
       - Usage logging
 
+    When `pdf_path` is set, the message content becomes a mixed list
+    with a `{type: "document"}` block (base64-encoded PDF) followed by
+    the text prompt. This is the Tier 2.3 narrative-deep-read path —
+    used by presentation / annual-report agents so Claude reads the
+    slide layout and chart callouts directly instead of the flattened
+    truncated text. Prompt caching is on by default (`pdf_cache=True`)
+    so subsequent agents reading the same doc pay ~10% on the doc
+    portion, keeping per-pipeline cost inside the budget cap.
+
     This is the function BaseAgent.run() should call.
     """
     client = get_async_client()
     model = model or settings.llm_model
+
+    # Assemble content — plain text by default, mixed list when a PDF
+    # path is supplied.
+    if pdf_path:
+        import base64 as _b64
+        from pathlib import Path as _Path
+        pdf_bytes = _Path(pdf_path).read_bytes()
+        pdf_b64 = _b64.standard_b64encode(pdf_bytes).decode("ascii")
+        doc_block: dict[str, Any] = {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": pdf_b64,
+            },
+        }
+        if pdf_cache:
+            doc_block["cache_control"] = {"type": "ephemeral"}
+        message_content: Any = [doc_block, {"type": "text", "text": prompt}]
+    else:
+        message_content = prompt
 
     _check_circuit()
     sem = _get_semaphore()
@@ -537,7 +569,7 @@ async def call_llm_native_async(
                     temperature=(
                         temperature if temperature is not None else settings.llm_temperature
                     ),
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": "user", "content": message_content}],
                 ),
                 timeout=timeout_seconds,
             )
