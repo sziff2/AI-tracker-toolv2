@@ -407,6 +407,15 @@ async def get_extraction_profile(document_id: uuid.UUID, db: AsyncSession = Depe
 # ─────────────────────────────────────────────────────────────────
 @router.get("/documents/{document_id}/file")
 async def download_document_file(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Stream the original uploaded file inline (browser PDF viewer renders it).
+
+    Reads from disk under STORAGE_BASE_PATH. The file_content-from-DB
+    branch was removed when CLAUDE.md prohibited storing raw PDFs in
+    Postgres — the model no longer has that column. Accessing it threw
+    AttributeError before this fix, so the endpoint always 500'd. With
+    the persistent volume now mounted at /app/storage (Tier 0 infra,
+    2026-04-23), this filesystem read is reliable across deploys.
+    """
     from fastapi.responses import Response
 
     result = await db.execute(select(Document).where(Document.id == document_id))
@@ -414,38 +423,30 @@ async def download_document_file(document_id: uuid.UUID, db: AsyncSession = Depe
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    # Try file_content from DB first
-    if doc.file_content:
-        filename = doc.title or "document.pdf"
-        suffix = Path(filename).suffix.lower()
-        content_type = {
-            ".pdf": "application/pdf",
-            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".txt": "text/plain",
-        }.get(suffix, "application/octet-stream")
-        return Response(
-            content=doc.file_content,
-            media_type=content_type,
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
-        )
+    if not doc.file_path:
+        raise HTTPException(404, "Document has no file_path on record")
 
-    # Fall back to filesystem
     file_path = Path(doc.file_path)
-    if file_path.exists():
-        filename = doc.title or file_path.name
-        suffix = file_path.suffix.lower()
-        content_type = {
-            ".pdf": "application/pdf",
-            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".txt": "text/plain",
-        }.get(suffix, "application/octet-stream")
-        return Response(
-            content=file_path.read_bytes(),
-            media_type=content_type,
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    if not file_path.exists():
+        raise HTTPException(
+            404,
+            f"File not found on disk at {doc.file_path}. The original may "
+            "have been wiped before the persistent volume was attached "
+            "(2026-04-23) — re-upload to recover.",
         )
 
-    raise HTTPException(404, "File content not available")
+    filename = doc.title or file_path.name
+    suffix = file_path.suffix.lower()
+    content_type = {
+        ".pdf":  "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".txt":  "text/plain",
+    }.get(suffix, "application/octet-stream")
+    return Response(
+        content=file_path.read_bytes(),
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
