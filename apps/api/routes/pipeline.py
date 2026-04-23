@@ -1144,3 +1144,65 @@ async def admin_backfill_prices(
         return {"status": "ok", **summary}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
+
+
+@router.get("/admin/embedding-stats")
+async def admin_embedding_stats(db: AsyncSession = Depends(get_db)):
+    """Ops check: DocumentSection embedding coverage for Tier 3.4.
+    Read-only counts — no writes, no model load.
+
+    Returns candidate count (what the backfill script would embed), total
+    sections, how many already have an embedding, and the current column
+    type so you can confirm the vector(384) migration ran."""
+    from sqlalchemy import text as sa_text
+    totals_q = await db.execute(sa_text("""
+        SELECT
+            COUNT(*)                                               AS total,
+            COUNT(embedding)                                       AS with_embedding,
+            COUNT(*) FILTER (WHERE embedding IS NULL
+                             AND text_content IS NOT NULL
+                             AND text_content <> '')               AS backfill_candidates,
+            COUNT(*) FILTER (WHERE text_content IS NULL
+                             OR text_content = '')                 AS empty_text
+        FROM document_sections
+    """))
+    totals = totals_q.one()
+
+    dim_q = await db.execute(sa_text("""
+        SELECT atttypmod FROM pg_attribute
+        WHERE attrelid = 'document_sections'::regclass
+          AND attname = 'embedding' AND NOT attisdropped
+    """))
+    dim_row = dim_q.scalar()
+
+    # Per-company breakdown, capped at 15 rows — helpful when deciding
+    # whether to scope a backfill with --ticker.
+    per_co_q = await db.execute(sa_text("""
+        SELECT c.ticker,
+               COUNT(*)                                         AS sections,
+               COUNT(ds.embedding)                              AS with_embedding,
+               COUNT(*) FILTER (WHERE ds.embedding IS NULL
+                                AND ds.text_content IS NOT NULL
+                                AND ds.text_content <> '')      AS candidates
+        FROM document_sections ds
+        JOIN documents d ON d.id = ds.document_id
+        JOIN companies c ON c.id = d.company_id
+        GROUP BY c.ticker
+        ORDER BY candidates DESC, sections DESC
+        LIMIT 15
+    """))
+    per_company = [
+        {"ticker": r.ticker, "sections": r.sections,
+         "with_embedding": r.with_embedding, "candidates": r.candidates}
+        for r in per_co_q
+    ]
+
+    return {
+        "total_sections":       totals.total,
+        "with_embedding":       totals.with_embedding,
+        "backfill_candidates":  totals.backfill_candidates,
+        "empty_text":           totals.empty_text,
+        "coverage_pct":         round(100.0 * totals.with_embedding / totals.total, 2) if totals.total else 0.0,
+        "embedding_column_typmod": dim_row,       # 384 when pgvector(384); NULL when missing
+        "per_company_top15":    per_company,
+    }
