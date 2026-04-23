@@ -972,6 +972,42 @@ async def set_cik(ticker: str, cik: str = Form(...), db: AsyncSession = Depends(
     return {"ticker": ticker, "cik": company.cik}
 
 
+# ─────────────────────────────────────────────────────────────────
+# Peer tickers — Tier 5.1 analyst-curated peer set
+# ─────────────────────────────────────────────────────────────────
+class _PeerTickersBody(_DocBaseModel):
+    peer_tickers: list[str]
+
+
+@router.get("/companies/{ticker}/peers")
+async def get_peers(ticker: str, db: AsyncSession = Depends(get_db)):
+    company = await get_company_or_404(db, ticker)
+    return {"ticker": ticker, "peer_tickers": list(company.peer_tickers or [])}
+
+
+@router.put("/companies/{ticker}/peers")
+async def set_peers(
+    ticker: str,
+    body: _PeerTickersBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace the peer set. Peers are stored as Bloomberg-format tickers
+    (e.g. "ACE US"). Self-ticker is silently stripped."""
+    company = await get_company_or_404(db, ticker)
+    self_tkr = (company.ticker or "").strip().upper()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in body.peer_tickers or []:
+        t = (raw or "").strip().upper()
+        if not t or t == self_tkr or t in seen:
+            continue
+        seen.add(t)
+        cleaned.append(t)
+    company.peer_tickers = cleaned
+    await db.commit()
+    return {"ticker": ticker, "peer_tickers": cleaned}
+
+
 @router.get("/edgar/proxy")
 async def edgar_proxy(url: str):
     """Proxy download from SEC.gov to avoid CORS restrictions."""

@@ -2091,6 +2091,9 @@ async function loadAgentOutputs(ticker,period){
     // Bear / Bull side by side
     var bear=agents.bear_case;var bull=agents.bull_case;
     if((bear&&bear.output)||(bull&&bull.output))h+=renderBearBullCards(bear?bear.output:null,bull?bull.output:null);
+    // Competitive Positioning (Tier 5.1) — renders when analyst has set peers
+    var cp=agents.competitive_positioning;
+    if(cp&&cp.output)h+=renderCompetitivePositioningCard(cp.output);
     // Debate
     var debate=agents.debate_agent;
     if(debate&&debate.output)h+=renderDebateCard(debate.output);
@@ -2187,6 +2190,73 @@ function renderBearBullCards(bear,bull){
     h+=renderSourcesPanel(bull.sources);
   }else{h+='<div style="font-size:12px;color:var(--text4)">Not yet run</div>';}
   h+='</div></div>';
+  return h;
+}
+
+// Tier 5.1 — Competitive Positioning card. Rendered next to bear/bull so
+// the relative evidence sits with the directional thesis calls.
+function renderCompetitivePositioningCard(o){
+  if(!o)return '';
+  var sig=o.overall_signal||'insufficient_data';
+  var sigC=sig==='strengthening'?'var(--green)':sig==='weakening'?'var(--red)':sig==='insufficient_data'?'var(--text4)':'var(--gold)';
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px;border-left:3px solid #c084fc">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">';
+  h+='<div class="cd-t" style="margin-bottom:0">Competitive Positioning</div>';
+  h+='<span style="font-family:var(--mono);font-size:11px;font-weight:700;color:'+sigC+';text-transform:uppercase">'+esc(sig.replace(/_/g,' '))+'</span>';
+  h+='</div>';
+  if(o.peers_analysed&&o.peers_analysed.length){
+    h+='<div style="font-size:11px;color:var(--text4);margin-bottom:12px">Peers analysed: '+o.peers_analysed.map(esc).join(', ')+'</div>';
+  }
+  // Leading / Trailing side by side
+  if((o.leading_metrics&&o.leading_metrics.length)||(o.trailing_metrics&&o.trailing_metrics.length)){
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+    // Leading
+    h+='<div><div style="font-size:11px;font-weight:600;color:var(--green);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Leading</div>';
+    if(o.leading_metrics&&o.leading_metrics.length){
+      o.leading_metrics.forEach(function(m){
+        h+='<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+        h+='<div style="color:var(--text)">'+esc(m.metric||'')+' <span style="color:var(--green);font-family:var(--mono)">'+esc(m.gap||'')+'</span></div>';
+        h+='<div style="color:var(--text4);font-size:11px;margin-top:2px">subj '+esc(m.subject_value||'—')+' · peer med '+esc(m.peer_median||'—')+(m.gap_vs_prior?' · '+esc(m.gap_vs_prior):'')+'</div>';
+        h+='</div>';
+      });
+    }else{h+='<div style="font-size:12px;color:var(--text4)">—</div>';}
+    h+='</div>';
+    // Trailing
+    h+='<div><div style="font-size:11px;font-weight:600;color:var(--red);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Trailing</div>';
+    if(o.trailing_metrics&&o.trailing_metrics.length){
+      o.trailing_metrics.forEach(function(m){
+        h+='<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+        h+='<div style="color:var(--text)">'+esc(m.metric||'')+' <span style="color:var(--red);font-family:var(--mono)">'+esc(m.gap||'')+'</span></div>';
+        h+='<div style="color:var(--text4);font-size:11px;margin-top:2px">subj '+esc(m.subject_value||'—')+' · peer med '+esc(m.peer_median||'—')+(m.gap_vs_prior?' · '+esc(m.gap_vs_prior):'')+'</div>';
+        h+='</div>';
+      });
+    }else{h+='<div style="font-size:12px;color:var(--text4)">—</div>';}
+    h+='</div>';
+    h+='</div>';
+  }
+  // Thesis implications
+  if(o.thesis_implications&&o.thesis_implications.length){
+    h+='<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:600;color:var(--gold);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Thesis Implications</div>';
+    o.thesis_implications.forEach(function(ti){
+      var d=ti.direction||'neutral';
+      var dc=d==='strengthens'?'var(--green)':d==='weakens'?'var(--red)':'var(--text3)';
+      h+='<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+      h+='<span style="color:'+dc+';font-weight:600;text-transform:uppercase;font-size:10px;margin-right:8px">'+esc(d)+'</span>';
+      h+='<span style="color:var(--text)">'+esc(ti.pillar||'')+'</span>';
+      h+='<div style="color:var(--text3);margin-top:2px">'+esc(ti.reasoning||'')+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  // Data gaps
+  if(o.data_gaps&&o.data_gaps.length){
+    h+='<div style="margin-top:8px;font-size:11px;color:var(--text4)">Data gaps: ';
+    h+=o.data_gaps.map(function(g){return esc((g.item||'')+(g.reason?' ('+g.reason+')':''));}).join(', ');
+    h+='</div>';
+  }
+  // Sources (Tier 4.4)
+  h+=renderSourcesPanel(o.sources);
+  h+='</div>';
   return h;
 }
 
@@ -2409,7 +2479,48 @@ async function loadMoat(ticker){
   const c=E('ck-moat');if(!c)return;
   // Check if we already have results cached
   if(c.dataset.loaded===ticker){return;}
-  c.innerHTML='<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">🏰</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:16px">Competitive advantage analysis uses all available data: thesis, financials, management commentary, ESG, and execution track record.</div><button class="btn" onclick="runMoatAnalysis(\''+esc(ticker)+'\')">🏰 Run Moat Analysis</button></div>';
+  c.innerHTML='<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">🏰</div><div style="font-family:var(--sans);font-size:14px;color:var(--text3);margin-bottom:16px">Competitive advantage analysis uses all available data: thesis, financials, management commentary, ESG, and execution track record.</div><button class="btn" onclick="runMoatAnalysis(\''+esc(ticker)+'\')">🏰 Run Moat Analysis</button></div>'
+    + renderPeerEditor(ticker);
+  loadPeerEditor(ticker);
+}
+
+// Tier 5.1 — peer tickers editor. Renders into the Moat tab as a secondary
+// control so analysts can curate peers without a full settings drawer.
+function renderPeerEditor(ticker){
+  return '<div id="peers-editor" style="max-width:640px;margin:20px auto 0;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">'
+    + '<div style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--gold);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Peer Set</div>'
+    + '<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-bottom:10px">Comma-separated Bloomberg tickers (e.g. <code>ACE US, TRV US, PGR US</code>). Used by the Competitive Positioning agent in the Results tab.</div>'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<input id="peers-input" placeholder="Loading…" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px">'
+    + '<button class="btn2" onclick="savePeers(\''+esc(ticker)+'\')" style="font-size:12px">Save</button>'
+    + '</div><div id="peers-status" style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:6px">&nbsp;</div></div>';
+}
+
+async function loadPeerEditor(ticker){
+  var inp=E('peers-input');if(!inp)return;
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/peers');
+    if(!r.ok){inp.placeholder='(failed to load)';return;}
+    var d=await r.json();
+    inp.value=(d.peer_tickers||[]).join(', ');
+    inp.placeholder='No peers set';
+  }catch(e){inp.placeholder='(error)';}
+}
+
+async function savePeers(ticker){
+  var inp=E('peers-input'),stat=E('peers-status');if(!inp)return;
+  var peers=inp.value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(stat)stat.textContent='Saving…';
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/peers',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({peer_tickers:peers})
+    });
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.detail||'Failed');}
+    var d=await r.json();
+    inp.value=(d.peer_tickers||[]).join(', ');
+    if(stat)stat.innerHTML='<span style="color:var(--green)">Saved '+(d.peer_tickers||[]).length+' peer'+((d.peer_tickers||[]).length===1?'':'s')+'</span>';
+  }catch(e){if(stat)stat.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>';}
 }
 
 async function runMoatAnalysis(ticker){

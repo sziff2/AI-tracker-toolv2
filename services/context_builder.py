@@ -121,6 +121,15 @@ async def build_agent_context(
     if not presentation_analysis:
         presentation_text = await _with_session(_build_document_text, company_id, period, "presentation")
 
+    # Tier 5.1 — peer comparison context. Depends on peer_tickers from
+    # company_meta, so runs after the first gather() completes. Empty
+    # output when the analyst has not curated a peer set, which also
+    # causes CompetitivePositioningAgent.should_run() to skip.
+    peer_tickers = list(company_meta.get("peer_tickers") or [])
+    peer_ctx = await _with_session(
+        _build_peer_context, company_id, period, peer_tickers,
+    )
+
     return {
         # Identity
         "ticker":           company_meta.get("ticker", ""),
@@ -160,6 +169,13 @@ async def build_agent_context(
         # bear-case calibration). Pre-formatted string block so the
         # bear_case / bull_case prompts drop it in verbatim.
         "historical_drawdowns": historical_drawdowns_block,
+        # Tier 5.1 — peer comparison inputs for CompetitivePositioningAgent.
+        # Empty lists / dicts when the company has no peer_tickers set.
+        "peer_tickers":          peer_tickers,
+        "subject_metrics":       peer_ctx["subject_metrics"],
+        "peer_metrics":          peer_ctx["peer_metrics"],
+        "prior_subject_metrics": peer_ctx["prior_subject_metrics"],
+        "prior_peer_metrics":    peer_ctx["prior_peer_metrics"],
     }
 
 
@@ -311,17 +327,102 @@ async def _build_company_meta(db: AsyncSession, company_id) -> dict:
         q = await db.execute(select(Company).where(Company.id == company_id))
         company = q.scalar_one_or_none()
         if company:
+            peers = company.peer_tickers or []
+            if not isinstance(peers, list):
+                peers = []
             return {
                 "ticker":   company.ticker or "",
                 "name":     company.name or "",
                 "sector":   company.sector or "",
                 "industry": company.industry or "",
                 "country":  company.country or "",
+                "peer_tickers": [str(p).strip().upper() for p in peers if p],
             }
     except Exception as e:
         logger.warning("Failed to load company meta for %s: %s",
                        company_id, str(e)[:100])
     return {}
+
+
+async def _build_peer_context(
+    db: AsyncSession, company_id, period: str, peer_tickers: list[str],
+) -> dict:
+    """Load structured metric rows for the subject and each peer, for the
+    current period and the prior period. Lightweight shape — designed for
+    the CompetitivePositioningAgent prompt.
+
+    Returns:
+        {
+          "subject_metrics":       [{metric, value, unit, segment}],
+          "peer_metrics":          {peer_ticker: [...]},
+          "prior_subject_metrics": [...],
+          "prior_peer_metrics":    {peer_ticker: [...]},
+        }
+    """
+    empty = {
+        "subject_metrics": [],
+        "peer_metrics": {},
+        "prior_subject_metrics": [],
+        "prior_peer_metrics": {},
+    }
+    if not peer_tickers:
+        return empty
+
+    prior = _previous_period(period)
+
+    async def _rows_for(cid, label: str) -> list[dict]:
+        q = await db.execute(
+            select(
+                ExtractedMetric.metric_name,
+                ExtractedMetric.metric_value,
+                ExtractedMetric.unit,
+                ExtractedMetric.segment,
+            )
+            .where(ExtractedMetric.company_id == cid)
+            .where(ExtractedMetric.period_label == label)
+        )
+        out: list[dict] = []
+        for name, value, unit, segment in q.all():
+            if not name:
+                continue
+            out.append({
+                "metric":  name,
+                "value":   float(value) if value is not None else None,
+                "unit":    unit or "",
+                "segment": segment or "",
+            })
+        return out
+
+    # Resolve peer tickers → peer company_ids in one query.
+    try:
+        q = await db.execute(
+            select(Company.id, Company.ticker)
+            .where(Company.ticker.in_(peer_tickers))
+        )
+        peer_id_map = {ticker: cid for cid, ticker in q.all()}
+    except Exception as e:
+        logger.warning("Failed to resolve peer tickers for %s: %s",
+                       company_id, str(e)[:100])
+        return empty
+
+    subj_curr = await _rows_for(company_id, period)
+    subj_prior = await _rows_for(company_id, prior)
+
+    peer_curr: dict[str, list[dict]] = {}
+    peer_prior: dict[str, list[dict]] = {}
+    for tkr in peer_tickers:
+        cid = peer_id_map.get(tkr)
+        if cid is None:
+            continue
+        peer_curr[tkr] = await _rows_for(cid, period)
+        peer_prior[tkr] = await _rows_for(cid, prior)
+
+    return {
+        "subject_metrics": subj_curr,
+        "peer_metrics": peer_curr,
+        "prior_subject_metrics": subj_prior,
+        "prior_peer_metrics": peer_prior,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────

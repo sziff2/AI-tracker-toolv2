@@ -63,6 +63,8 @@ async def lifespan(app: FastAPI):
         await conn.execute(sa_text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS model TEXT DEFAULT 'standard'"))
         # CIK on companies
         await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS cik TEXT"))
+        # Tier 5.1 — analyst-curated peer set for competitive positioning agent
+        await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS peer_tickers JSONB DEFAULT '[]'::jsonb"))
         # Harvester tables
         await conn.execute(sa_text("""
             CREATE TABLE IF NOT EXISTS harvester_sources (

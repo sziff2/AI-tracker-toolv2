@@ -39,6 +39,7 @@ class Company(Base, TimestampMixin):
     coverage_status = Column(Text, default="active")       # active | dropped | watchlist
     primary_analyst = Column(Text)
     cik = Column(Text)                                     # SEC CIK number for EDGAR lookups
+    peer_tickers = Column(JSONB, default=list)             # analyst-curated peer set for Tier 5.1 comparison
 
     # relationships
     documents = relationship("Document", back_populates="company", lazy="selectin")
