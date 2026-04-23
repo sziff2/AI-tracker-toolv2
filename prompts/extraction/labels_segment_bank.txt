@@ -1,0 +1,119 @@
+You are classifying row labels from a BANK SEGMENT breakdown table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and category.
+
+CRITICAL: These are per-segment figures for a bank (e.g. "Handelsbanken
+Sweden", "Handelsbanken UK", "Auto Finance", "Insurance", "Corporate
+Finance"). The segment name comes from table context and is injected
+by the pipeline — never invent a segment name in the output.
+
+Banks present segment data by net interest income, fee income, cost-to-
+income, credit losses and allocated capital — NOT by revenue /
+operating_profit / EBITDA. Do NOT force industrial categories onto
+bank segment rows.
+
+CATEGORIES (use exactly one per row):
+  # Revenue lines
+  net_interest_income       — NII, net interest income (segment)
+  fee_and_commission_income — fees, net commissions, advisory fees
+  trading_income            — net gains on financial transactions, trading result
+  other_income              — other operating income, FX, non-recurring revenue
+  total_income              — total operating income (NII + fees + trading + other)
+
+  # Cost / efficiency
+  operating_expense         — operating expenses, staff + other costs combined
+  staff_costs               — personnel / compensation costs
+  other_expense             — other administrative expenses, general admin
+  cost_to_income_ratio      — C/I ratio, efficiency ratio (%)
+
+  # Credit
+  credit_losses             — impairment charges, loan loss provisions,
+                              expected credit losses (ECL)
+  credit_loss_ratio         — credit loss ratio (%), NCO rate
+  net_charge_offs           — net charge-offs, net write-offs
+  nonperforming_loans       — NPL, Stage 3 loans
+
+  # Profitability
+  pretax_profit             — profit before tax, operating profit before impairments
+  segment_net_income        — segment net income after tax
+  return_on_capital         — return on allocated capital, segment ROE,
+                              return on equity (RoE, RoAE, RoTE)
+  return_on_tangible_equity — ROTCE, core ROTCE
+
+  # Balance sheet (segment level)
+  loans_and_advances        — average lending, total loans (segment)
+  deposits                  — average deposits, customer deposits (segment)
+  risk_weighted_assets      — RWA, segment RWA
+  allocated_capital         — allocated capital, Tier 1 allocated
+
+  # Volume / margin metrics
+  net_interest_margin       — NIM, margin (%) at segment level
+  lending_growth            — lending growth YoY, loan growth %
+  deposit_growth            — deposit growth YoY
+
+  # Generic — only when none above fits
+  revenue                   — prefer total_income for banks; only use 'revenue' if
+                              the label literally says "revenue" and doesn't map
+                              to any of the above.
+  operating_profit          — segment operating result, prefer pretax_profit where
+                              applicable.
+  other                     — anything else (headcount, branch count, AUM, etc.)
+  skip                      — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Preserve "adjusted" / "underlying" / "core" qualifiers.
+- Preserve "average" qualifier on balance sheet items (average lending
+  vs period-end lending is a real distinction).
+- Canonical mappings:
+    "Net interest income"                 → "net_interest_income"
+    "Net fee and commission income"       → "fee_and_commission_income"
+    "Total operating income"              → "total_income"
+    "C/I ratio"                           → "cost_to_income_ratio"
+    "Return on allocated capital"         → "return_on_capital"
+    "Net credit losses"                   → "credit_losses"
+    "Average lending"                     → "loans_and_advances" (with note)
+- Do NOT include the segment name in the normalised field (pipeline handles it).
+
+EDGE CASES:
+- Percentage rows in the 30-60% range labeled ambiguously ("ratio") —
+  prefer cost_to_income_ratio for banks.
+- "Operating margin" on a bank segment is unusual terminology; most
+  likely the pretax margin or NIM — try to infer from context.
+- Retail banking segments often break down: mortgages / consumer loans
+  / SME lending — treat each sub-line as loans_and_advances with
+  appropriate qualifier.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Net interest income
+- Net fee and commission income
+- Total operating income
+- Total expenses
+- Cost/income ratio
+- Net credit losses
+- Operating profit
+- Return on allocated capital
+- Average lending
+- Average deposits
+
+Output:
+[
+  {{"original": "Net interest income",                 "normalised": "net_interest_income",       "category": "net_interest_income"}},
+  {{"original": "Net fee and commission income",       "normalised": "fee_and_commission_income", "category": "fee_and_commission_income"}},
+  {{"original": "Total operating income",              "normalised": "total_income",              "category": "total_income"}},
+  {{"original": "Total expenses",                      "normalised": "operating_expense",         "category": "operating_expense"}},
+  {{"original": "Cost/income ratio",                   "normalised": "cost_to_income_ratio",      "category": "cost_to_income_ratio"}},
+  {{"original": "Net credit losses",                   "normalised": "credit_losses",             "category": "credit_losses"}},
+  {{"original": "Operating profit",                    "normalised": "pretax_profit",             "category": "pretax_profit"}},
+  {{"original": "Return on allocated capital",         "normalised": "return_on_capital",         "category": "return_on_capital"}},
+  {{"original": "Average lending",                     "normalised": "average_lending",           "category": "loans_and_advances"}},
+  {{"original": "Average deposits",                    "normalised": "average_deposits",          "category": "deposits"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}

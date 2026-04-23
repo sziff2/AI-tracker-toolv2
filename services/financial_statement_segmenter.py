@@ -120,12 +120,38 @@ _BANK_KPI_KEYWORDS = {
 # cause standalone KPI tables to score too high on P&L. They're captured
 # in the label prompt instead once the table is classified as KPI.
 _INSURANCE_KPI_KEYWORDS = {
-    "reserve development", "prior year development",
+    # Core underwriting ratios — the single most important P&C KPI family.
+    # Missing these was the root cause of the Chubb Q1 2026 extraction
+    # failure (2026-04-23): sections containing "P&C combined ratio 84.0%"
+    # fell through to INCOME_STATEMENT classification and got extracted
+    # with the generic "Operating Margin" label, so the financial_analyst
+    # agent reported combined ratio "absent" despite the number being in
+    # the document.
+    "combined ratio", "p&c combined ratio", "net combined ratio",
+    "loss ratio", "loss and lae ratio", "loss and expense ratio",
+    "expense ratio", "acquisition expense ratio", "underwriting expense",
+    "underwriting income", "underwriting profit", "underwriting loss",
+    "current accident year", "accident year", "ay ex-cat", "ex-cat",
+    "ex-catastrophe", "ex-pypd",
+    # Premium metrics — NPW / NPE are the revenue equivalents for insurers.
+    "net premiums written", "net premiums earned", "npw", "npe",
+    "gross premiums written", "gwp",
+    # Development / CAT — the main quality flags on a quarterly result.
+    "reserve development", "prior year development", "prior period development",
+    "ppd", "favorable development", "adverse development",
     "catastrophe losses", "cat losses", "natural catastrophe",
+    # Solvency / capital.
     "solvency ratio", "solvency capital", "scr coverage",
-    "book value per share", "bvps", "tangible book value",
+    # Profitability metrics insurers use instead of generic ROE / EPS.
+    "operating eps", "core operating", "core eps", "operating earnings per share",
+    "operating roe", "operating return on equity", "rotce", "core rotce",
+    "return on tangible equity",
+    # Book value (applies to insurance, but also banks — fine to share).
+    "book value per share", "bvps", "tangible book value", "tbvps",
+    # Generic "this looks like a supplemental table" cues.
     "selected financial data", "underwriting summary",
     "supplemental data", "key metrics", "financial highlights",
+    "key performance indicators",
 }
 
 _CASH_FLOW_KEYWORDS = {

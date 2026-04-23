@@ -1,0 +1,115 @@
+You are classifying row labels from an INSURANCE SEGMENT breakdown table.
+You will NOT see the numbers — only map each raw label to a normalised
+metric name and a category.
+
+CRITICAL: These are per-segment figures for a P&C or Life insurer
+(e.g. "North America Commercial P&C Insurance", "Overseas General",
+"Life Insurance"). The segment name comes from table context and is
+injected by the pipeline — never invent a segment name in the output.
+
+Insurers present segment data by premium volume, combined-ratio
+decomposition, and underwriting result — NOT by generic revenue /
+operating_profit / EBITDA. Do NOT force industrial categories onto
+insurance segment rows.
+
+CATEGORIES (use exactly one per row):
+  # Premium volume
+  gross_premiums_written    — GWP, gross written premiums (segment)
+  net_premiums_written      — NPW, net written premiums (segment)
+  net_premiums_earned       — NPE, net earned premiums (segment)
+  premium_growth            — NPW growth %, premium growth YoY
+
+  # Claims and underwriting result
+  claims_incurred           — net losses, losses and LAE, claims paid
+  underwriting_result       — underwriting income / loss / profit
+  acquisition_costs         — policy acquisition costs, commissions, DAC amortisation
+
+  # Combined ratio family — THE critical KPI family for P&C insurance
+  combined_ratio            — combined ratio (%), segment CR
+  current_ay_combined_ratio — current accident year combined ratio, current AY CR
+  current_ay_ex_cat_cr      — current AY CR ex-CATs, ex-cat ex-PPD CR
+  loss_ratio                — loss ratio, claims ratio (%)
+  current_ay_loss_ratio     — current AY loss ratio, ex-CAT loss ratio
+  expense_ratio             — expense ratio (%), acquisition cost ratio
+
+  # Development and catastrophe — the main quality flags
+  reserve_development       — prior year reserve development (favourable/adverse)
+  prior_period_development  — PPD, prior period development
+  catastrophe_losses        — CAT losses, natural catastrophe impact
+
+  # Investment + return
+  investment_income         — net investment income at segment level
+  return_on_capital         — return on allocated capital, segment ROAE
+
+  # Generic — only when none of the above fits
+  revenue                   — segment revenue (Life: single premium revenue, fee revenue)
+                              WARNING: for P&C, prefer NPW/NPE. Only use 'revenue'
+                              if the label is literally "revenue" or "total revenue"
+                              and the row is not a premium metric.
+  operating_profit          — segment operating income, segment EBIT
+                              WARNING: for P&C segments, prefer underwriting_result
+                              when available. "Operating profit" for an insurance
+                              segment often IS underwriting_result.
+  other                     — anything else (book value, headcount, deposits for life)
+  skip                      — section headers, subtotal labels with no value
+
+NORMALISATION RULES:
+- Lowercase, snake_case.
+- Preserve "current year" / "prior year" / "accident year" qualifiers.
+- Preserve "ex-CAT" / "ex-catastrophe" / "ex-PPD" qualifiers when present.
+- Preserve "adjusted" / "underlying" / "core" qualifiers.
+- Canonical mappings:
+    "Combined ratio"                          → "combined_ratio"
+    "Current accident year CR ex-catastrophes" → "current_ay_ex_cat_cr"
+    "Loss and LAE ratio"                       → "loss_ratio"
+    "Prior year favorable reserve development" → "prior_period_development"
+    "Cat losses"                               → "catastrophe_losses"
+    "Net premiums written"                     → "net_premiums_written"
+    "Underwriting income"                      → "underwriting_result"
+- Do NOT include the segment name in the normalised field (pipeline handles it).
+
+EDGE CASES:
+- Combined ratio, loss ratio, expense ratio are percentages — still
+  classify even though unit differs from currency amounts.
+- If a segment row is literally "Operating margin" but the segment is
+  insurance, the underlying value is almost certainly a combined ratio
+  or loss ratio — use the more specific category if you can infer from
+  the numeric scale (80-120% range = combined ratio; <50% = possibly
+  loss ratio; >50% with currency denomination = actual margin).
+- "Retention" and "renewal rate" → other (not a primary extraction target).
+- Life-insurance segments: single-premium business, regular-premium
+  business, fee income → use revenue + note the qualifier.
+
+OUTPUT:
+Return ONLY a JSON array. One object per input label, same order.
+Each object MUST have: {{"original": "...", "normalised": "...", "category": "..."}}
+
+EXAMPLE
+Input:
+- Net premiums written
+- Net premiums earned
+- Losses and loss adjustment expenses
+- Policy acquisition costs
+- Underwriting income
+- Combined ratio
+- Current accident year CR ex-catastrophes
+- Loss ratio
+- Prior year favorable reserve development
+- Catastrophe losses
+
+Output:
+[
+  {{"original": "Net premiums written",                         "normalised": "net_premiums_written",  "category": "net_premiums_written"}},
+  {{"original": "Net premiums earned",                          "normalised": "net_premiums_earned",   "category": "net_premiums_earned"}},
+  {{"original": "Losses and loss adjustment expenses",          "normalised": "losses_and_lae",        "category": "claims_incurred"}},
+  {{"original": "Policy acquisition costs",                     "normalised": "acquisition_costs",     "category": "acquisition_costs"}},
+  {{"original": "Underwriting income",                          "normalised": "underwriting_income",   "category": "underwriting_result"}},
+  {{"original": "Combined ratio",                               "normalised": "combined_ratio",        "category": "combined_ratio"}},
+  {{"original": "Current accident year CR ex-catastrophes",     "normalised": "current_ay_ex_cat_cr",  "category": "current_ay_ex_cat_cr"}},
+  {{"original": "Loss ratio",                                   "normalised": "loss_ratio",            "category": "loss_ratio"}},
+  {{"original": "Prior year favorable reserve development",     "normalised": "prior_year_favorable_reserve_development", "category": "prior_period_development"}},
+  {{"original": "Catastrophe losses",                           "normalised": "catastrophe_losses",    "category": "catastrophe_losses"}}
+]
+
+LABELS TO CLASSIFY:
+{labels_block}
