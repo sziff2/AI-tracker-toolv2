@@ -223,6 +223,7 @@ For EACH node in the tree, extract:
 - Operating profit / EBIT (current + prior if stated)
 - Margin (if stated or calculable from revenue + profit)
 - Growth rate (organic if available, otherwise reported)
+- Sector-specific KPIs (see below) via `sector_kpis`
 
 {sector_context}
 
@@ -231,6 +232,45 @@ CRITICAL RULES:
 - Preserve the hierarchy (which segments roll up to which divisions).
 - If both reported and organic growth are stated, capture both.
 - Verify that segments sum to the group total where possible.
+- **Do NOT force industry figures into `operating_margin`.** If the segment
+  is insurance, a combined/loss/expense ratio must go into `sector_kpis`
+  under the correct key, NEVER into `operating_margin`. If it's a bank,
+  cost-to-income ratio goes into `sector_kpis.cost_to_income_ratio`, not
+  `operating_margin`. `operating_margin` is reserved for genuine operating
+  income ÷ revenue percentages — which on an insurance segment is rare.
+
+SECTOR-SPECIFIC KPI KEYS (use exactly these keys inside `sector_kpis`):
+
+  ─── For P&C / Life INSURANCE segments ───
+    combined_ratio            — % (reported), 80-115% typical, >100 = UW loss
+    current_ay_combined_ratio — % (current accident year)
+    current_ay_ex_cat_cr      — % (CAY ex-CATs, cleanest underwriting signal)
+    loss_ratio                — % (claims / NPE)
+    expense_ratio             — % (expenses / NPE)
+    net_premiums_written      — $ amount (NPW)
+    net_premiums_earned       — $ amount (NPE)
+    underwriting_income       — $ amount (signed; can be negative)
+    prior_period_development  — $ amount (positive = favorable release)
+    catastrophe_losses        — $ amount (always positive, quarter's CAT bill)
+    return_on_capital         — % (segment ROaE / RoAC)
+
+  ─── For BANK segments ───
+    net_interest_income       — $ NII for the segment
+    fee_and_commission_income — $ fee income
+    cost_to_income_ratio      — % C/I ratio
+    credit_losses             — $ impairment charge (positive = expense)
+    credit_loss_ratio         — % of loans
+    net_charge_offs           — $ NCOs
+    return_on_capital         — % segment RoAE / RoAC
+    return_on_tangible_equity — % ROTCE / core ROTCE
+    average_lending           — $ average loans in period
+    average_deposits          — $ average deposits in period
+    net_interest_margin       — % NIM
+
+  ─── For other sectors ───
+  Use the priority KPIs listed in {sector_context} above. If a clear
+  sector-specific field exists for the number, put it in `sector_kpis`;
+  if not, use `other_kpis` (free-form key-value pairs).
 
 Respond ONLY with a JSON object. No preamble, no markdown fences.
 
@@ -254,6 +294,20 @@ Schema:
       "revenue_growth_organic": <% or null>,
       "operating_profit": <number or null>,
       "operating_margin": <% or null>,
+      "sector_kpis": {{
+        // Use keys from the "SECTOR-SPECIFIC KPI KEYS" list above where they fit.
+        // Omit keys when the number is not present. Numbers only, never strings.
+        // Example for insurance:
+        //   "combined_ratio": 81.8, "loss_ratio": 55.6, "expense_ratio": 28.2,
+        //   "net_premiums_written": 4895, "underwriting_income": 822
+        // Example for banks:
+        //   "net_interest_income": 10016, "cost_to_income_ratio": 39.5,
+        //   "credit_losses": 35, "return_on_capital": 14.7
+      }},
+      "other_kpis": {{
+        // Free-form key-value for numbers that don't match any sector_kpis key.
+        // Use snake_case keys. Numbers only.
+      }},
       "unit": "<unit>",
       "period": "<period>",
       "source_snippet": "<verbatim>"
