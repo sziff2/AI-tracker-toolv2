@@ -99,7 +99,6 @@ async def upload_and_process(
     Returns a job_id immediately — poll /jobs/{job_id} for progress.
     """
     from apps.api.models import ProcessingJob
-    from services.background_processor import run_single_pipeline, start_background_job
 
     company = await get_company_or_404(db, ticker)
 
@@ -134,9 +133,11 @@ async def upload_and_process(
     db.add(job)
     await db.commit()
 
-    # Launch background processing
-    start_background_job(
-        run_single_pipeline(job.id, company.id, company.ticker, doc.id, period_label)
+    # Dispatch: Celery worker (Sprint J / Tier 5.5) or in-process fallback.
+    # Celery path survives web-container restarts; in-process dies on deploy.
+    _dispatch_single_pipeline(
+        job_id=job.id, company_id=company.id, ticker=company.ticker,
+        doc_id=doc.id, period_label=period_label,
     )
 
     return {
@@ -144,6 +145,54 @@ async def upload_and_process(
         "status": "queued",
         "message": "Processing started. Poll /api/v1/jobs/" + str(job.id) + " for progress.",
     }
+
+
+def _dispatch_single_pipeline(
+    job_id, company_id, ticker: str, doc_id, period_label: str,
+) -> None:
+    """Route a single-document parse+extract job to Celery when the
+    feature flag is on, otherwise spawn it in-process (legacy path)."""
+    if settings.use_celery_for_document_processing:
+        try:
+            from apps.worker.tasks import parse_and_extract_single_task
+            parse_and_extract_single_task.delay(
+                str(job_id), str(company_id), ticker, str(doc_id), period_label,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Celery dispatch failed (%s) — falling back to in-process",
+                str(exc)[:200],
+            )
+    from services.background_processor import run_single_pipeline, start_background_job
+    start_background_job(
+        run_single_pipeline(job_id, company_id, ticker, doc_id, period_label)
+    )
+
+
+def _dispatch_batch_pipeline(
+    job_id, company_id, ticker: str, doc_ids: list, doc_types: list,
+    period_label: str, model: str = "standard",
+) -> None:
+    """Route a batch parse+extract job. Same flag as the single path."""
+    if settings.use_celery_for_document_processing:
+        try:
+            from apps.worker.tasks import parse_and_extract_batch_task
+            parse_and_extract_batch_task.delay(
+                str(job_id), str(company_id), ticker,
+                [str(d) for d in doc_ids], list(doc_types),
+                period_label, model,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Celery dispatch failed (%s) — falling back to in-process",
+                str(exc)[:200],
+            )
+    from services.background_processor import run_batch_pipeline, start_background_job
+    start_background_job(
+        run_batch_pipeline(job_id, company_id, ticker, doc_ids, doc_types, period_label, model=model)
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -165,7 +214,6 @@ async def batch_upload_and_process(
     Returns a job_id immediately — poll /jobs/{job_id} for progress.
     """
     from apps.api.models import ProcessingJob
-    from services.background_processor import run_batch_pipeline, start_background_job
 
     company = await get_company_or_404(db, ticker)
 
@@ -220,9 +268,11 @@ async def batch_upload_and_process(
     db.add(job)
     await db.commit()
 
-    # Launch background processing
-    start_background_job(
-        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types_list[:len(doc_ids)], period_label, model=model)
+    # Dispatch to Celery (Sprint J) or in-process fallback
+    _dispatch_batch_pipeline(
+        job_id=job.id, company_id=company.id, ticker=company.ticker,
+        doc_ids=doc_ids, doc_types=doc_types_list[:len(doc_ids)],
+        period_label=period_label, model=model,
     )
 
     return {
@@ -845,7 +895,6 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     pipeline on the already-stored documents. No need to re-upload files.
     """
     from apps.api.models import ProcessingJob
-    from services.background_processor import run_batch_pipeline, start_background_job
 
     company = await get_company_or_404(db, ticker)
 
@@ -907,9 +956,10 @@ async def reprocess_period(ticker: str, period_label: str, db: AsyncSession = De
     db.add(job)
     await db.commit()
 
-    # Launch background processing with existing doc_ids
-    start_background_job(
-        run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types, period_label)
+    # Dispatch to Celery (Sprint J) or in-process fallback
+    _dispatch_batch_pipeline(
+        job_id=job.id, company_id=company.id, ticker=company.ticker,
+        doc_ids=doc_ids, doc_types=doc_types, period_label=period_label,
     )
 
     return {
@@ -1326,7 +1376,6 @@ async def ingest_urls_batch(
     Results populates without a manual re-run step.
     """
     from apps.api.models import ProcessingJob
-    from services.background_processor import run_batch_pipeline, start_background_job
 
     company = await get_company_or_404(db, ticker)
     items = payload.get("items") if isinstance(payload, dict) else None
@@ -1375,8 +1424,10 @@ async def ingest_urls_batch(
         )
         db.add(job)
         await db.commit()
-        start_background_job(
-            run_batch_pipeline(job.id, company.id, company.ticker, doc_ids, doc_types, period_label)
+        # Dispatch to Celery (Sprint J) or in-process fallback
+        _dispatch_batch_pipeline(
+            job_id=job.id, company_id=company.id, ticker=company.ticker,
+            doc_ids=doc_ids, doc_types=doc_types, period_label=period_label,
         )
         jobs.append({
             "job_id": str(job.id),

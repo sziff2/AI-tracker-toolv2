@@ -273,6 +273,72 @@ def run_agent_on_demand_task(
 
 
 # ─────────────────────────────────────────────────────────────────
+# Phase A — Document parse + extract tasks (Sprint J / Tier 5.5)
+# ─────────────────────────────────────────────────────────────────
+#
+# These wrap services/background_processor entry points. Moving ad-hoc
+# parse/extract from in-process asyncio.create_task on the web service
+# to Celery on the worker service means a Railway deploy that restarts
+# the web container no longer kills mid-flight document processing.
+
+@celery_app.task(bind=True, name="parse_and_extract_single", max_retries=0)
+def parse_and_extract_single_task(
+    self,
+    job_id: str,
+    company_id: str,
+    ticker: str,
+    doc_id: str,
+    period_label: str,
+) -> dict:
+    """Single-document parse + extract. Caller records job_id before dispatch;
+    this task updates the ProcessingJob row as it progresses."""
+    import uuid as _uuid
+    from services.background_processor import run_single_pipeline
+    logger.info("parse_and_extract_single: %s doc=%s period=%s", ticker, doc_id, period_label)
+    try:
+        _run_async_task(
+            run_single_pipeline(
+                _uuid.UUID(job_id), _uuid.UUID(company_id), ticker,
+                _uuid.UUID(doc_id), period_label,
+            )
+        )
+        return {"status": "ok", "job_id": job_id}
+    except Exception as e:
+        logger.exception("parse_and_extract_single failed: %s", e)
+        raise
+
+
+@celery_app.task(bind=True, name="parse_and_extract_batch", max_retries=0)
+def parse_and_extract_batch_task(
+    self,
+    job_id: str,
+    company_id: str,
+    ticker: str,
+    doc_ids: list[str],
+    doc_types: list[str],
+    period_label: str,
+    model: str = "standard",
+) -> dict:
+    """Multi-document parse + extract. Same job_id + ProcessingJob pattern."""
+    import uuid as _uuid
+    from services.background_processor import run_batch_pipeline
+    logger.info("parse_and_extract_batch: %s period=%s n_docs=%d",
+                ticker, period_label, len(doc_ids))
+    try:
+        _run_async_task(
+            run_batch_pipeline(
+                _uuid.UUID(job_id), _uuid.UUID(company_id), ticker,
+                [_uuid.UUID(d) for d in doc_ids], list(doc_types),
+                period_label, model=model,
+            )
+        )
+        return {"status": "ok", "job_id": job_id, "n_docs": len(doc_ids)}
+    except Exception as e:
+        logger.exception("parse_and_extract_batch failed: %s", e)
+        raise
+
+
+# ─────────────────────────────────────────────────────────────────
 # Daily DB backup — posts summary + download link to Teams
 # ─────────────────────────────────────────────────────────────────
 

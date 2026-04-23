@@ -415,12 +415,27 @@ async def update_harvester_source(
 async def trigger_harvest_run(
     ticker: Optional[str] = None,
     skip_llm: bool = False,
+    via_celery: bool = True,
 ):
-    import asyncio
+    """Manual harvest trigger. Default dispatches to the Celery worker —
+    survives web-container restarts during a Railway deploy. Set
+    via_celery=false to use the legacy in-process fallback."""
     tickers = [ticker.upper()] if ticker else None
+    if via_celery:
+        try:
+            from apps.worker.tasks import harvest_new_documents
+            harvest_new_documents.delay(tickers=tickers, skip_llm=skip_llm)
+            return {
+                "status": "sent_to_celery_worker",
+                "scope": tickers or "all active companies",
+                "skip_llm": skip_llm,
+            }
+        except Exception as exc:
+            logger.warning("Celery dispatch failed (%s) — falling back to in-process", str(exc)[:200])
+    import asyncio
     asyncio.create_task(_run_harvest_bg(tickers, skip_llm))
     return {
-        "status": "harvest_started",
+        "status": "harvest_started_in_process",
         "scope": tickers or "all active companies",
         "skip_llm": skip_llm,
     }

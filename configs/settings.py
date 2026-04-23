@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     # independently of Tier 2.3.
     use_native_pdf_for_analysis: bool = False
 
+    # Sprint J / Tier 5.5 — dispatch document parse+extract jobs to the
+    # Celery worker instead of in-process asyncio.create_task on the web
+    # service. Celery survives web-container restarts (Railway deploys),
+    # so mid-flight parse jobs no longer die when code ships.
+    # Ship with False (in-process fallback) for the first 2 weeks; flip
+    # to True once worker capacity + retry behaviour is observed stable.
+    # Env: USE_CELERY_FOR_DOCUMENT_PROCESSING=true
+    use_celery_for_document_processing: bool = False
+
     # Stricter page cap for the narrative path — investor decks are
     # rarely over 50 pages, and over-size docs there add cost without
     # signal gain. Tier 2.3 scope document has the detailed reasoning.

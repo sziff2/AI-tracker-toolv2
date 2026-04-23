@@ -287,6 +287,172 @@ async def _save_research_output(company_id: uuid.UUID, period_label: str, output
         logger.error("Failed to save research output: %s", e)
 
 
+# ─────────────────────────────────────────────────────────────────
+# Tier 7.9 — shared document-processing core
+# ─────────────────────────────────────────────────────────────────
+
+async def _process_one_doc(
+    did: uuid.UUID,
+    dtype: str,
+    ticker: str,
+) -> dict | None:
+    """Parse + extract a single document with its own DB session.
+
+    Extracted from run_batch_pipeline as a module-level helper so:
+      (a) Celery tasks can wrap it directly (Sprint J)
+      (b) unit tests can exercise the skip-existing path in isolation
+      (c) the single + batch pipelines can share the same implementation
+
+    Returns a dict shaped:
+        {doc_id, result, items, dtype, esg, title, mda_narrative}
+    or None if the document row doesn't exist. Never raises — all failures
+    land inside result["steps"] so the caller can keep aggregating.
+    """
+    from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
+    from services.document_parser import process_document
+    from apps.api.models import DocumentSection, ExtractedMetric
+    from sqlalchemy import func as sa_func
+
+    doc_result = {"document_type": dtype, "steps": []}
+    items: list[dict] = []
+    esg_data = None
+
+    try:
+        async with AsyncSessionLocal() as doc_db:
+            doc_q = await doc_db.execute(select(Document).where(Document.id == did))
+            doc = doc_q.scalar_one_or_none()
+            if not doc:
+                return None
+
+            doc_result["filename"] = doc.title
+
+            # Skip if the document already has sections (parsed) and metrics (extracted)
+            sections_count_q = await doc_db.execute(
+                select(sa_func.count(DocumentSection.id)).where(DocumentSection.document_id == did)
+            )
+            sections_count = sections_count_q.scalar() or 0
+            metrics_count_q = await doc_db.execute(
+                select(sa_func.count(ExtractedMetric.id)).where(ExtractedMetric.document_id == did)
+            )
+            metrics_count = metrics_count_q.scalar() or 0
+
+            if sections_count > 0 and metrics_count > 0:
+                logger.info("Doc %s already has %d sections and %d metrics — skipping parse/extract",
+                            did, sections_count, metrics_count)
+                doc_result["steps"].append({"step": "parse", "status": "skipped", "reason": "already parsed"})
+                doc_result["steps"].append({"step": "extract", "status": "skipped", "reason": "already extracted"})
+
+                metrics_q = await doc_db.execute(
+                    select(ExtractedMetric).where(ExtractedMetric.document_id == did)
+                )
+                existing_metrics = metrics_q.scalars().all()
+                items = [
+                    {
+                        "metric_name": m.metric_name,
+                        "metric_value": float(m.metric_value) if m.metric_value is not None else None,
+                        "metric_text": m.metric_text,
+                        "unit": m.unit,
+                        "segment": m.segment,
+                        "geography": m.geography,
+                        "source_snippet": m.source_snippet,
+                        "confidence": float(m.confidence) if m.confidence is not None else 1.0,
+                    }
+                    for m in existing_metrics
+                ]
+                return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype,
+                        "esg": esg_data, "title": doc.title, "mda_narrative": ""}
+
+            # Parse
+            try:
+                parse_result = await process_document(doc_db, doc, ticker=ticker)
+                doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
+                full_text = parse_result.get("full_text", "")
+                tables_data = parse_result.get("tables_data")
+                logger.info("Parsed doc %s: %d chars", did, len(full_text))
+                if len(full_text) < 500:
+                    logger.warning("Document %s has very short text (%d chars) - may be parsing issue",
+                                   did, len(full_text))
+            except Exception as e:
+                logger.error("[PROCESS] Parse FAILED for doc %s (%s): %s", did, doc.title, str(e)[:200], exc_info=True)
+                doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
+                return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype,
+                        "esg": None, "title": doc.title, "mda_narrative": ""}
+
+            # Extract + document analysis in parallel
+            async def _run_extraction():
+                try:
+                    if dtype in ESG_DOC_TYPES:
+                        return ("esg", await extract_esg(doc_db, doc, full_text))
+                    else:
+                        return ("metrics", await extract_by_document_type(
+                            doc_db, doc, full_text, tables_data=tables_data
+                        ))
+                except Exception as e:
+                    logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
+                    return ("error", str(e)[:200])
+
+            async def _run_doc_analysis():
+                if dtype not in ("transcript", "presentation", "annual_report"):
+                    return None
+                if not full_text or len(full_text) < 500:
+                    return None
+                try:
+                    await _analyse_document_with_llm(doc_db, doc, dtype, full_text)
+                    return "ok"
+                except Exception as e:
+                    logger.warning("Document analysis failed for %s (%s): %s", did, dtype, str(e)[:200])
+                    return None
+
+            ext_result, _doc_analysis_result = await asyncio.gather(
+                _run_extraction(),
+                _run_doc_analysis(),
+                return_exceptions=False,
+            )
+
+            # Aggregate extraction result
+            items = []
+            extraction = None
+            ext_kind, ext_value = ext_result
+            if ext_kind == "esg":
+                extraction = ext_value
+                items = extraction.get("raw_items", [])
+                doc_result["steps"].append({"step": "extract_esg", "status": "ok",
+                    "env": len(extraction.get("environmental", [])),
+                    "soc": len(extraction.get("social", [])),
+                    "gov": len(extraction.get("governance", []))})
+                esg_data = {
+                    "environmental": extraction.get("environmental", [])[:10],
+                    "social": extraction.get("social", [])[:10],
+                    "governance": extraction.get("governance", [])[:15],
+                    "fields_populated": extraction.get("esg_fields_populated", {}),
+                }
+                logger.info("Extracted ESG from %s: %d items (dtype=%s)", did, len(items), dtype)
+            elif ext_kind == "metrics":
+                extraction = ext_value
+                items = extraction.get("raw_items", [])
+                doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
+                logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
+                try:
+                    await _persist_extraction_profile(doc_db, doc, extraction)
+                except Exception as ep:
+                    logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
+            else:
+                doc_result["steps"].append({"step": "extract", "status": "error", "detail": ext_value})
+
+            if not items and ext_kind != "error":
+                logger.warning("No items extracted from %s (%s) - text was %d chars",
+                               doc.title, dtype, len(full_text))
+
+            mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
+
+            return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype,
+                    "esg": esg_data, "title": doc.title, "mda_narrative": mda}
+    except Exception as e:
+        doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})
+        return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype,
+                "esg": None, "title": None, "mda_narrative": ""}
+
+
 async def run_single_pipeline(job_id: uuid.UUID, company_id: uuid.UUID, ticker: str, doc_id: uuid.UUID, period_label: str):
     """Run the full single-document pipeline in the background."""
     from services.llm_client import set_llm_context
@@ -477,169 +643,19 @@ async def run_batch_pipeline(
             total_docs = len(doc_ids)
 
             # ── Process documents in parallel ────────────────────────
+            # Delegates each document to the module-level _process_one_doc
+            # (Tier 7.9). Semaphore caps concurrency to 2 to avoid OOM on
+            # small Railway plans — 2 docs × up to 3 LLM calls each is
+            # ~6 simultaneous requests which is safe.
             await _update_step(job_id, f"processing {total_docs} documents", 10, completed)
 
-            async def _process_one_doc(did, dtype, idx):
-                """Process a single document (parse + extract) with its own DB session.
-                Skips parsing and extraction if the document already has sections and metrics."""
-                from services.metric_extractor import extract_by_document_type, extract_esg, ESG_DOC_TYPES
-                from services.document_parser import process_document
-                from apps.api.models import DocumentSection, ExtractedMetric
-                from sqlalchemy import func as sa_func
-
-                doc_result = {"document_type": dtype, "steps": []}
-                items = []
-                esg_data = None
-
-                try:
-                    async with AsyncSessionLocal() as doc_db:
-                        doc_q = await doc_db.execute(select(Document).where(Document.id == did))
-                        doc = doc_q.scalar_one_or_none()
-                        if not doc:
-                            return None
-
-                        doc_result["filename"] = doc.title
-
-                        # Check if document already has sections (parsed) and metrics (extracted)
-                        sections_count_q = await doc_db.execute(
-                            select(sa_func.count(DocumentSection.id)).where(DocumentSection.document_id == did)
-                        )
-                        sections_count = sections_count_q.scalar() or 0
-
-                        metrics_count_q = await doc_db.execute(
-                            select(sa_func.count(ExtractedMetric.id)).where(ExtractedMetric.document_id == did)
-                        )
-                        metrics_count = metrics_count_q.scalar() or 0
-
-                        if sections_count > 0 and metrics_count > 0:
-                            # Already parsed and extracted — load existing metrics as items
-                            logger.info("Doc %s already has %d sections and %d metrics — skipping parse/extract",
-                                        did, sections_count, metrics_count)
-                            doc_result["steps"].append({"step": "parse", "status": "skipped", "reason": "already parsed"})
-                            doc_result["steps"].append({"step": "extract", "status": "skipped", "reason": "already extracted"})
-
-                            metrics_q = await doc_db.execute(
-                                select(ExtractedMetric).where(ExtractedMetric.document_id == did)
-                            )
-                            existing_metrics = metrics_q.scalars().all()
-                            items = [
-                                {
-                                    "metric_name": m.metric_name,
-                                    "metric_value": float(m.metric_value) if m.metric_value is not None else None,
-                                    "metric_text": m.metric_text,
-                                    "unit": m.unit,
-                                    "segment": m.segment,
-                                    "geography": m.geography,
-                                    "source_snippet": m.source_snippet,
-                                    "confidence": float(m.confidence) if m.confidence is not None else 1.0,
-                                }
-                                for m in existing_metrics
-                            ]
-                            return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title}
-
-                        # Parse - returns full_text directly now
-                        try:
-                            parse_result = await process_document(doc_db, doc, ticker=ticker)
-                            doc_result["steps"].append({"step": "parse", "status": "ok", "pages": parse_result["pages"]})
-                            full_text = parse_result.get("full_text", "")
-                            tables_data = parse_result.get("tables_data")
-                            logger.info("Parsed doc %s: %d chars", did, len(full_text))
-
-                            # Warn if text is suspiciously short
-                            if len(full_text) < 500:
-                                logger.warning("Document %s has very short text (%d chars) - may be parsing issue",
-                                               did, len(full_text))
-                        except Exception as e:
-                            logger.error("[BATCH] Parse FAILED for doc %s (%s): %s", did, doc.title, str(e)[:200], exc_info=True)
-                            doc_result["steps"].append({"step": "parse", "status": "error", "detail": str(e)[:200]})
-                            return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None}
-
-                        # Step 2: Extract metrics + run document analysis IN PARALLEL
-                        # - Metric extraction (Haiku section-aware for 10-Qs)
-                        # - Transcript/presentation LLM analysis (Haiku, runs concurrently)
-                        async def _run_extraction():
-                            try:
-                                if dtype in ESG_DOC_TYPES:
-                                    return ("esg", await extract_esg(doc_db, doc, full_text))
-                                else:
-                                    return ("metrics", await extract_by_document_type(
-                                        doc_db, doc, full_text, tables_data=tables_data
-                                    ))
-                            except Exception as e:
-                                logger.error("Extraction failed for doc %s (%s): %s", did, dtype, str(e)[:200])
-                                return ("error", str(e)[:200])
-
-                        async def _run_doc_analysis():
-                            if dtype not in ("transcript", "presentation", "annual_report"):
-                                return None
-                            if not full_text or len(full_text) < 500:
-                                return None
-                            try:
-                                await _analyse_document_with_llm(doc_db, doc, dtype, full_text)
-                                return "ok"
-                            except Exception as e:
-                                logger.warning("Document analysis failed for %s (%s): %s", did, dtype, str(e)[:200])
-                                return None
-
-                        # Run both in parallel
-                        ext_result, _doc_analysis_result = await asyncio.gather(
-                            _run_extraction(),
-                            _run_doc_analysis(),
-                            return_exceptions=False,
-                        )
-
-                        # Process extraction result
-                        items = []
-                        extraction = None
-                        esg_data = None
-                        ext_kind, ext_value = ext_result
-                        if ext_kind == "esg":
-                            extraction = ext_value
-                            items = extraction.get("raw_items", [])
-                            doc_result["steps"].append({"step": "extract_esg", "status": "ok",
-                                "env": len(extraction.get("environmental", [])),
-                                "soc": len(extraction.get("social", [])),
-                                "gov": len(extraction.get("governance", []))})
-                            esg_data = {
-                                "environmental": extraction.get("environmental", [])[:10],
-                                "social": extraction.get("social", [])[:10],
-                                "governance": extraction.get("governance", [])[:15],
-                                "fields_populated": extraction.get("esg_fields_populated", {}),
-                            }
-                            logger.info("Extracted ESG from %s: %d items (dtype=%s)", did, len(items), dtype)
-                        elif ext_kind == "metrics":
-                            extraction = ext_value
-                            items = extraction.get("raw_items", [])
-                            doc_result["steps"].append({"step": "extract", "status": "ok", "items": len(items)})
-                            logger.info("Extracted from %s: %d items (dtype=%s)", did, len(items), dtype)
-                            try:
-                                await _persist_extraction_profile(doc_db, doc, extraction)
-                            except Exception as ep:
-                                logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
-                        else:
-                            doc_result["steps"].append({"step": "extract", "status": "error", "detail": ext_value})
-
-                        if not items and ext_kind != "error":
-                            logger.warning("No items extracted from %s (%s) - text was %d chars",
-                                           doc.title, dtype, len(full_text))
-
-                        mda = extraction.get("mda_narrative", "") if isinstance(extraction, dict) else ""
-
-                        return {"doc_id": did, "result": doc_result, "items": items, "dtype": dtype, "esg": esg_data, "title": doc.title, "mda_narrative": mda}
-                except Exception as e:
-                    doc_result["steps"].append({"step": "error", "detail": str(e)[:200]})
-                    return {"doc_id": did, "result": doc_result, "items": [], "dtype": dtype, "esg": None, "mda_narrative": ""}
-
-            # Run documents with limited concurrency to avoid OOM on small Railway plans
-            # 2 docs × 3 LLM calls = 6 max simultaneous requests — safe without crashing
-            import asyncio
             semaphore = asyncio.Semaphore(2)
 
-            async def _limited_process(did, dtype, idx):
+            async def _limited_process(did, dtype):
                 async with semaphore:
-                    return await _process_one_doc(did, dtype, idx)
+                    return await _process_one_doc(did, dtype, ticker)
 
-            tasks = [_limited_process(did, dtype, i) for i, (did, dtype) in enumerate(zip(doc_ids, doc_types))]
+            tasks = [_limited_process(did, dtype) for did, dtype in zip(doc_ids, doc_types)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Aggregate results with per-document error tracking
