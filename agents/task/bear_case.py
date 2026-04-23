@@ -69,6 +69,7 @@ class BearCaseAgent(BaseAgent):
         "downside_scenario":     dict,  # {target_price, timeline, implied_return}
         "early_warning_signals": list,
         "macro_headwinds":       list,
+        "sources":               list,  # [{kind, metric_name?, segment?, snippet?, page?}]  — Tier 4.4
         "confidence":            float,
     }
 
@@ -95,6 +96,25 @@ class BearCaseAgent(BaseAgent):
 
         if not isinstance(data.get("key_risks"), list):
             raise ValueError("key_risks must be a list")
+
+        # Tier 4.4 — sources are mandatory shape but not fatal-validation.
+        # If the agent emits a malformed sources block, we accept the rest
+        # of the output; QC will flag the missing/bad citations downstream.
+        # Forcing a hard fail here would break runs whenever Sonnet emits
+        # a slightly wonky citation, which is not worth the regression.
+        sources = data.get("sources")
+        if sources is not None and not isinstance(sources, list):
+            # Normalise to empty list rather than raise — keep the rest of
+            # the output usable while flagging the issue for QC.
+            data["sources"] = []
+        elif isinstance(sources, list):
+            clean = []
+            for s in sources:
+                if isinstance(s, dict) and s.get("kind"):
+                    clean.append(s)
+            data["sources"] = clean
+        else:
+            data["sources"] = []
 
         return data
 

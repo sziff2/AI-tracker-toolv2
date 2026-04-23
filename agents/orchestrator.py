@@ -396,6 +396,15 @@ class AgentOrchestrator:
                     # Always give QC the full picture
                     inputs["all_outputs"] = all_outputs
 
+                    # Tier 4.4 — resolve any citations agents emitted, so QC
+                    # can score them. Runs deterministically against the DB;
+                    # safe to call every layer (cheap — all in-process). The
+                    # pilot is bear_case; other agents that start emitting
+                    # `sources` arrays get the same treatment automatically.
+                    inputs["citation_reports"] = await self._compute_citation_reports(
+                        all_outputs, inputs.get("company_id"), period_label,
+                    )
+
                     if budget.is_exceeded():
                         result.status = "budget_exceeded"
                         break
@@ -545,6 +554,40 @@ class AgentOrchestrator:
         except Exception as e:
             logger.warning("Cache lookup failed: %s", str(e)[:200])
             return None
+
+    async def _compute_citation_reports(
+        self,
+        all_outputs: dict,
+        company_id: str | None,
+        period_label: str,
+    ) -> dict:
+        """Tier 4.4 — resolve every agent's sources array against the DB.
+
+        Runs once per layer with the current set of completed agent
+        outputs. QC reads the resulting dict. Safe when no agent has
+        emitted sources yet (returns empty dict) and when company_id
+        is missing (skips with a warning)."""
+        if not company_id:
+            return {}
+        try:
+            from services.citation_resolver import resolve_citations
+            from apps.api.database import AsyncSessionLocal
+            reports: dict = {}
+            async with AsyncSessionLocal() as s:
+                for agent_id, output in all_outputs.items():
+                    if not isinstance(output, dict):
+                        continue
+                    sources = output.get("sources")
+                    if not sources:
+                        continue
+                    report = await resolve_citations(
+                        s, company_id, period_label, sources,
+                    )
+                    reports[agent_id] = report.to_dict()
+            return reports
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("citation report compute failed: %s", str(exc)[:200])
+            return {}
 
     async def _is_phase_a_complete(
         self, db: AsyncSession, company_id: str, period_label: str

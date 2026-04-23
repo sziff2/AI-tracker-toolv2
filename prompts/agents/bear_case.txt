@@ -76,6 +76,30 @@ CRITICAL RULES:
     requires roughly 3 of these 5 things to happen — call it 15-25%
     probability, not a base case"). Do not treat each risk as
     independent and stack them.
+13. CITATIONS ARE MANDATORY. Every factual claim in bear_thesis, every
+    piece of evidence in key_risks, and every key_trigger in
+    downside_scenario must reference at least one source from the
+    extracted data provided. The `sources` array at the end of your
+    output lists every citation you rely on. Each source has a
+    `kind` ∈ {extracted_metric, document_section, management_quote,
+    methodology_note, historical_drawdown, thesis, bridge_gap}:
+
+    - extracted_metric: cite by `metric_name` (exact string from the
+      extracted_metrics block above, e.g. "Combined Ratio (P&C
+      Insurance)") plus `segment` if applicable. Period is implied as
+      {period_label}.
+    - document_section: cite by source text `snippet` (verbatim short
+      phrase, <=120 chars) plus optional `page` if stated.
+    - management_quote: verbatim transcript/presentation quote, in
+      `snippet`; note that transcript quotes can't be mechanically
+      verified so use sparingly.
+    - methodology_note / bridge_gap / historical_drawdown / thesis:
+      reference by `snippet` — a short phrase identifying the block
+      above.
+
+    If you cannot cite a source for a claim, either soften the claim
+    or drop it. A claim with no resolvable citation will be flagged
+    by Quality Control and lower your confidence score.
 
 Respond with a JSON object. No preamble, no markdown fences.
 
@@ -108,6 +132,16 @@ Respond with a JSON object. No preamble, no markdown fences.
 
   "macro_headwinds": [
     "<macro risk from context_contract that hurts this company>"
+  ],
+
+  "sources": [
+    {{
+      "kind":        "<extracted_metric | document_section | management_quote | methodology_note | bridge_gap | historical_drawdown | thesis>",
+      "metric_name": "<exact metric_name from extracted_metrics block, or omit for non-metric kinds>",
+      "segment":     "<segment label if metric is segment-tied, else omit>",
+      "snippet":     "<verbatim ≤120-char phrase from the source for document_section / management_quote / methodology_note / bridge_gap / historical_drawdown / thesis kinds>",
+      "page":        <optional integer page number, omit if unknown>
+    }}
   ],
 
   "confidence": <0.0-1.0 your confidence in this bear case>

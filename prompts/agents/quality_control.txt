@@ -19,6 +19,9 @@ CONTEXT CONTRACT (macro assumptions — NO agent may contradict these):
 
 INVESTMENT THESIS:
 {thesis}
+
+CITATION RESOLUTION REPORTS (Tier 4.4 — orchestrator pre-computed):
+{citation_reports_json}
 ═══════════════════════════════════════
 
 SCORING RUBRIC (apply to each agent):
@@ -50,6 +53,24 @@ CONSISTENCY CHECK:
   USD weakness
 - If Context Contract says credit "tightening", flag any agent assuming
   easy refinancing
+
+CITATION CHECK (Tier 4.4 — pilot on bear_case, rolling out later):
+Agents that emit a `sources` array must have their claims traceable
+to the cited data. The CITATION RESOLUTION REPORTS block above gives
+you the orchestrator's pre-computed resolution rate per agent:
+  - resolved_rate >= 0.80: accept — agent's claims are well-anchored
+  - 0.50 <= resolved_rate < 0.80: deduct 0.10 from evidence_basis and
+    add a flag naming the unresolved citations
+  - resolved_rate < 0.50: deduct 0.20 from evidence_basis, add a
+    "poor citation quality" flag, and recommend at least "review"
+  - No sources array at all on an agent that should have one:
+    deduct 0.15 from evidence_basis and flag.
+
+When a specific citation is marked `resolved: false` with reason
+"no metric named ... in extracted_metrics for period", that is a
+potential hallucination — raise it in `flags` with the exact
+metric_name the agent cited. This was the Chubb Q1 2026 failure
+mode that motivated the citation system.
 
 Respond with a JSON object. No preamble, no markdown fences.
 

@@ -2171,6 +2171,9 @@ function renderBearBullCards(bear,bull){
     if(bear.bear_thesis)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+esc(bear.bear_thesis)+'</div>';
     if(bear.key_risks&&bear.key_risks.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Key Risks</div>';for(var i=0;i<bear.key_risks.length;i++){var r=bear.key_risks[i];var rp=Math.round((r.probability||0)*100);h+='<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="font-family:var(--mono);color:var(--gold);min-width:35px;text-align:right">'+rp+'%</span><span style="color:var(--text2);flex:1">'+esc(r.risk||'')+'</span></div>';}}
     if(bear.downside_scenario)h+='<div style="margin-top:10px;padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;color:var(--text3)"><strong style="color:var(--red)">Downside:</strong> '+esc(bear.downside_scenario.implied_return||'')+' — '+esc(bear.downside_scenario.description||'')+'</div>';
+    // Tier 4.4 — citations. Agents emit `sources` with each claim's source;
+    // the orchestrator pre-computes resolution via services/citation_resolver.
+    h+=renderSourcesPanel(bear.sources);
   }else{h+='<div style="font-size:12px;color:var(--text4)">Not yet run</div>';}
   h+='</div>';
   // Bull
@@ -2180,8 +2183,33 @@ function renderBearBullCards(bear,bull){
     if(bull.bull_thesis)h+='<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+esc(bull.bull_thesis)+'</div>';
     if(bull.upside_catalysts&&bull.upside_catalysts.length){h+='<div style="font-size:11px;font-weight:600;color:var(--text4);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Upside Catalysts</div>';for(var j=0;j<bull.upside_catalysts.length;j++){var c=bull.upside_catalysts[j];var cp=Math.round((c.probability||0)*100);h+='<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="font-family:var(--mono);color:var(--gold);min-width:35px;text-align:right">'+cp+'%</span><span style="color:var(--text2);flex:1">'+esc(c.catalyst||'')+'</span></div>';}}
     if(bull.upside_scenario)h+='<div style="margin-top:10px;padding:8px 12px;background:var(--bg3);border-radius:7px;font-size:12px;color:var(--text3)"><strong style="color:var(--green)">Upside:</strong> '+esc(bull.upside_scenario.implied_return||'')+' — '+esc(bull.upside_scenario.description||'')+'</div>';
+    // Tier 4.4 — same citation panel for bull, once bull_case starts emitting sources.
+    h+=renderSourcesPanel(bull.sources);
   }else{h+='<div style="font-size:12px;color:var(--text4)">Not yet run</div>';}
   h+='</div></div>';
+  return h;
+}
+
+// Tier 4.4 — render a collapsible sources list for an agent output.
+// Accepts the `sources` array as emitted by the agent (see bear_case.txt).
+// No citation reports here (QC has those); purely an audit trail of what
+// the agent claimed it was citing.
+function renderSourcesPanel(sources){
+  if(!sources||!Array.isArray(sources)||!sources.length)return '';
+  var h='<details style="margin-top:10px;font-size:11px"><summary style="cursor:pointer;color:var(--text4);font-weight:600;letter-spacing:.3px;text-transform:uppercase;padding:4px 0">Sources ('+sources.length+')</summary>';
+  h+='<div style="margin-top:6px;padding:8px 10px;background:var(--bg3);border-radius:6px">';
+  sources.forEach(function(s){
+    if(!s||typeof s!=='object')return;
+    var kind=esc(s.kind||'?');
+    var body='';
+    if(s.metric_name){body=esc(s.metric_name);if(s.segment)body+=' <span style="color:var(--text4)">('+esc(s.segment)+')</span>';}
+    else if(s.snippet){body='"'+esc((s.snippet||'').slice(0,160))+'"';if(s.page)body+=' <span style="color:var(--text4)">p.'+esc(s.page)+'</span>';}
+    else {body='<span style="color:var(--text4)">(shape-only citation — no metric_name or snippet)</span>';}
+    // Kind → colour hint
+    var kc=kind==='extracted_metric'?'var(--green)':kind==='document_section'?'var(--blue,#60a5fa)':kind==='management_quote'?'var(--gold)':'var(--text3)';
+    h+='<div style="padding:3px 0;border-bottom:1px solid var(--border);line-height:1.6"><span style="font-family:var(--mono);font-size:10px;color:'+kc+';font-weight:600;display:inline-block;min-width:140px">'+kind+'</span>'+body+'</div>';
+  });
+  h+='</div></details>';
   return h;
 }
 
