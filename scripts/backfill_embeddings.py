@@ -30,6 +30,15 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
+
+# Make the repo root importable when this script is run directly
+# (e.g. via `railway run python scripts/backfill_embeddings.py`).
+# Without this, the top-level `apps` / `services` / `configs` packages
+# aren't on sys.path and imports fail with ModuleNotFoundError.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
