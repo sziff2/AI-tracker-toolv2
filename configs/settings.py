@@ -64,7 +64,12 @@ class Settings(BaseSettings):
     agent_pipeline_budget_usd: float = 2.0
 
     # Wall-clock timeout for an entire pipeline run in seconds.
-    agent_pipeline_timeout_seconds: int = 300
+    # Bumped 300 → 600 (2026-04-23) after the Chubb insurance-KPI
+    # extraction fix made bear_case / bull_case inputs materially
+    # richer, pushing debate_agent over the 300s cap on Sonnet-sized
+    # prompts. Richer inputs = longer LLM calls; default needs to
+    # tolerate that or agents later in the chain silently drop.
+    agent_pipeline_timeout_seconds: int = 600
 
     # Enable agent output caching (24h TTL per agent).
     agent_cache_enabled: bool = False
