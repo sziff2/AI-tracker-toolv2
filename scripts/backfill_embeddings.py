@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,26 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+
+# When running locally via `railway run`, the injected DATABASE_URL points
+# at Railway's internal DNS (*.railway.internal) which only resolves inside
+# Railway's private network — from a developer laptop this fails with
+# `getaddrinfo failed`. DATABASE_PUBLIC_URL is the external hostname and
+# gets injected alongside, so prefer it when the internal name is in use.
+# Must run BEFORE any `from apps.*` import so configs.settings picks up
+# the swapped value on first instantiation.
+_db_url = os.environ.get("DATABASE_URL", "")
+_db_public = os.environ.get("DATABASE_PUBLIC_URL", "")
+if _db_public and "railway.internal" in _db_url:
+    # Postgres connection strings come in postgres:// (psycopg / Railway
+    # default) or postgresql:// form. SQLAlchemy async needs
+    # postgresql+asyncpg://. Rewrite in one pass.
+    _swapped = _db_public
+    if _swapped.startswith("postgres://"):
+        _swapped = "postgresql+asyncpg://" + _swapped[len("postgres://"):]
+    elif _swapped.startswith("postgresql://"):
+        _swapped = "postgresql+asyncpg://" + _swapped[len("postgresql://"):]
+    os.environ["DATABASE_URL"] = _swapped
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
