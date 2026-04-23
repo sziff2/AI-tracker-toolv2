@@ -65,13 +65,34 @@ async def lifespan(app: FastAPI):
         await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS cik TEXT"))
         # Tier 5.1 — analyst-curated peer set for competitive positioning agent
         await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS peer_tickers JSONB DEFAULT '[]'::jsonb"))
-        # Tier 3.4 — enable pgvector + add embedding column on document_sections.
-        # Wrapped so a DB that lacks the extension logs a warning but doesn't
-        # halt startup; services/vector_search.py also feature-flags off by
-        # default (settings.use_pgvector_search).
+        # Tier 3.4 — enable pgvector + embedding column on document_sections.
+        # Wrapped so a DB lacking the extension logs a warning but doesn't
+        # halt startup. We target vector(384) (BAAI/bge-small-en-v1.5).
+        # A prior deploy briefly shipped vector(1536) (OpenAI default); this
+        # detects + drops that before recreating at the right dim. Only
+        # safe because no rows have embeddings yet — the column was added
+        # empty in the same deploy and nothing wrote to it before we flipped.
         try:
             await conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await conn.execute(sa_text("ALTER TABLE document_sections ADD COLUMN IF NOT EXISTS embedding vector(1536)"))
+            target_dim = 384
+            # Probe existing column dim via pg_attribute.atttypmod (pgvector
+            # stores dim in typmod). Returns None if the column is missing.
+            dim_q = await conn.execute(sa_text(
+                "SELECT atttypmod FROM pg_attribute "
+                "WHERE attrelid = 'document_sections'::regclass "
+                "AND attname = 'embedding' AND NOT attisdropped"
+            ))
+            existing_dim = dim_q.scalar()
+            if existing_dim is not None and existing_dim != target_dim:
+                logger.info(
+                    "pgvector: embedding dim mismatch (existing=%s, target=%s) — dropping + recreating",
+                    existing_dim, target_dim,
+                )
+                await conn.execute(sa_text("DROP INDEX IF EXISTS ix_document_sections_embedding"))
+                await conn.execute(sa_text("ALTER TABLE document_sections DROP COLUMN IF EXISTS embedding"))
+            await conn.execute(sa_text(
+                f"ALTER TABLE document_sections ADD COLUMN IF NOT EXISTS embedding vector({target_dim})"
+            ))
             # HNSW index on cosine distance — best quality/speed trade-off
             # for top-k similarity search on ≥1k rows.
             await conn.execute(sa_text(

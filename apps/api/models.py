@@ -99,10 +99,11 @@ class DocumentSection(Base, TimestampMixin):
     section_title = Column(Text)
     page_number = Column(Integer)
     text_content = Column(Text)
-    # Tier 3.4 — 1536-dim embedding matching OpenAI text-embedding-3-small.
-    # Nullable — rows without an embedding are invisible to vector search
-    # but still searchable via keyword. See services/vector_search.py.
-    embedding = Column(_Vector(1536), nullable=True)
+    # Tier 3.4 — 384-dim embedding matching BAAI/bge-small-en-v1.5
+    # (local sentence-transformers, no third-party API). Nullable —
+    # rows without an embedding are invisible to vector search but
+    # still searchable via keyword. See services/vector_search.py.
+    embedding = Column(_Vector(384), nullable=True)
 
     document = relationship("Document", back_populates="sections")
 

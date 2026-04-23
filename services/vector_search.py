@@ -6,28 +6,34 @@ importable and unit-testable without touching the hot ingestion path.
 Part 2 wires embedding on parse and RAG context assembly.
 
 Design:
-- OpenAI text-embedding-3-small (1536 dims, $0.02/M tokens).
+- Local sentence-transformers (BAAI/bge-small-en-v1.5, 384 dims). Runs
+  in-process via torch CPU. No third-party API, no per-token cost, data
+  never leaves the container.
 - Cosine distance via pgvector's <=> operator, indexed by HNSW.
 - search_sections returns (section, distance) pairs; callers decide a
   threshold. Distance is 0 (identical) → 2 (opposite); typical relevant
   matches sit ≤ 0.5.
 
+Model is loaded lazily once per process (~130MB weights on first use,
+then cached). Inference is CPU-bound — we offload to a thread via
+asyncio.to_thread so we don't block the event loop for 20-50ms per call.
+
 Feature flag:
     settings.use_pgvector_search: True enables the path.
-    When False, search_sections returns []  — callers should fall back
+    When False, search_sections returns [] — callers should fall back
     to the existing keyword search (services/search.py).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.models import Document, DocumentSection
 from configs.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -60,28 +66,51 @@ class SearchHit:
         }
 
 
-async def embed_text(text: str) -> list[float] | None:
-    """Embed a single piece of text via the OpenAI API.
+# ─────────────────────────────────────────────────────────────────
+# Lazy model loader — one instance per process
+# ─────────────────────────────────────────────────────────────────
 
-    Returns None on any failure — callers fall back to keyword search.
-    Safe when OPENAI_API_KEY is unset (returns None with a warning).
+_model = None  # type: ignore[var-annotated]
+
+
+def _get_model():
+    """Lazy-load the sentence-transformers model. Cached for the life
+    of the process. Returns None on failure so callers fall back to
+    keyword search rather than crashing."""
+    global _model
+    if _model is not None:
+        return _model
+    try:
+        # Lazy import so the module loads even when sentence-transformers
+        # isn't installed (minimal test environments).
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading embedding model %s (first call — ~130MB)", settings.embedding_model)
+        _model = SentenceTransformer(settings.embedding_model)
+        return _model
+    except Exception as exc:
+        logger.warning("Embedding model load failed: %s", str(exc)[:200])
+        return None
+
+
+async def embed_text(text: str) -> list[float] | None:
+    """Embed a single piece of text with the local sentence-transformers
+    model. Returns None on empty input or model-load failure. Offloaded
+    to a worker thread so the CPU-bound encode doesn't block the event
+    loop.
     """
     if not text or not text.strip():
         return None
-    api_key = settings.openai_api_key
-    if not api_key:
-        logger.warning("embed_text called but OPENAI_API_KEY is not configured")
+    model = _get_model()
+    if model is None:
         return None
     try:
-        # Lazy import so the module loads even when openai isn't installed
-        # (e.g. minimal test environments).
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key)
-        resp = await client.embeddings.create(
-            model=settings.embedding_model,
-            input=text[:8000],  # ~2k tokens — more than enough per section
+        # bge-* models recommend normalize_embeddings=True so cosine
+        # distance in pgvector matches the paper's benchmark setup.
+        vec = await asyncio.to_thread(
+            model.encode, text[:8000],   # ~2k tokens — plenty per section
+            normalize_embeddings=True,
         )
-        return list(resp.data[0].embedding)
+        return list(map(float, vec))
     except Exception as exc:
         logger.warning("embed_text failed: %s", str(exc)[:200])
         return None
@@ -99,7 +128,7 @@ async def search_sections(
     Returns [] when:
       - Feature flag is off
       - Query is empty
-      - embed_text fails (no API key, rate limit, etc.)
+      - embed_text fails (model-load issue, encode error, etc.)
 
     Callers should fall back to the existing keyword search in those
     cases so search is never "silently broken" — the UI still returns
@@ -114,9 +143,9 @@ async def search_sections(
     if vec is None:
         return []
 
-    # Build the parameterised SQL. Joining Document gives us title +
-    # optional filters on company_id / period_label. The <=> operator
-    # returns cosine distance when the column uses vector_cosine_ops.
+    # Parameterised SQL. Joining Document gives us title + optional
+    # filters on company_id / period_label. The <=> operator returns
+    # cosine distance when the column uses vector_cosine_ops.
     sql = """
         SELECT
             ds.id::text AS section_id,

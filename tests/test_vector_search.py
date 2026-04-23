@@ -1,9 +1,12 @@
 """Tests for services/vector_search — Tier 3.4 Part 1.
 
-Covers feature-flag gating, empty-input short-circuits, embedding client
-failure modes, and SearchHit shape. Does NOT exercise Postgres — the SQL
-path is behind a conditional that requires pgvector + the extension, so
-Part 1 verifies the callable shape + fallbacks only."""
+Covers feature-flag gating, empty-input short-circuits, model-load
+failure fallback, and SearchHit shape. Does NOT exercise Postgres — the
+SQL path is behind a conditional that requires pgvector + the extension,
+so Part 1 verifies the callable shape + fallbacks only.
+
+Model loading is stubbed so tests run in seconds without downloading
+sentence-transformers weights (~130MB)."""
 
 from __future__ import annotations
 
@@ -21,7 +24,18 @@ from services.vector_search import (
 
 
 # ─────────────────────────────────────────────────────────────────
-# embed_text — OpenAI wrapper
+# Helpers
+# ─────────────────────────────────────────────────────────────────
+
+def _reset_model_cache():
+    """The module-level _model singleton is cached across tests. Clear
+    it before each test that wants control over the loader."""
+    import services.vector_search as vs_mod
+    vs_mod._model = None
+
+
+# ─────────────────────────────────────────────────────────────────
+# embed_text — local sentence-transformers wrapper
 # ─────────────────────────────────────────────────────────────────
 
 def test_embed_text_returns_none_on_empty_input():
@@ -29,75 +43,63 @@ def test_embed_text_returns_none_on_empty_input():
     assert asyncio.run(embed_text("   ")) is None
 
 
-def test_embed_text_returns_none_when_no_api_key():
-    """Without OPENAI_API_KEY, the function logs a warning and returns
-    None. Callers fall back to keyword search — search is never 'broken'
-    when the embedding path is unavailable."""
-    from configs.settings import settings as real_settings
-    with patch.object(real_settings, "openai_api_key", ""):
+def test_embed_text_returns_none_when_model_load_fails():
+    """If sentence-transformers isn't installed, _get_model returns None.
+    embed_text must not raise — it returns None so callers fall back to
+    keyword search."""
+    _reset_model_cache()
+    with patch("services.vector_search._get_model", return_value=None):
         result = asyncio.run(embed_text("combined ratio"))
     assert result is None
 
 
-def _stub_openai_module(client_cls):
-    """Install a stub `openai` module in sys.modules exposing AsyncOpenAI
-    so embed_text's in-function `from openai import AsyncOpenAI` works in
-    environments where the real package isn't installed yet."""
-    import sys
-    import types
-
-    class _StubCtx:
-        def __enter__(self):
-            self._prev = sys.modules.get("openai")
-            mod = types.ModuleType("openai")
-            mod.AsyncOpenAI = client_cls
-            sys.modules["openai"] = mod
-            return mod
-
-        def __exit__(self, *_exc):
-            if self._prev is not None:
-                sys.modules["openai"] = self._prev
-            else:
-                sys.modules.pop("openai", None)
-            return False
-
-    return _StubCtx()
-
-
 def test_embed_text_returns_vector_on_success():
-    """When the API responds normally, embed_text returns the raw vector
-    list. Mock the OpenAI client so no live key / network is needed."""
-    from configs.settings import settings as real_settings
+    """When the model loads and encodes cleanly, embed_text returns a
+    plain list[float]. Mock the model so no weight download happens."""
+    _reset_model_cache()
 
-    fake_embedding = [0.1] * 1536
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(return_value=MagicMock(
-        data=[MagicMock(embedding=fake_embedding)]
-    ))
-    fake_client_cls = MagicMock(return_value=mock_client)
+    fake_embedding = [0.1] * 384
+    fake_model = MagicMock()
+    fake_model.encode = MagicMock(return_value=fake_embedding)
 
-    with patch.object(real_settings, "openai_api_key", "sk-test"):
-        with _stub_openai_module(fake_client_cls):
-            result = asyncio.run(embed_text("combined ratio pricing"))
+    with patch("services.vector_search._get_model", return_value=fake_model):
+        result = asyncio.run(embed_text("combined ratio pricing"))
 
     assert result == fake_embedding
-    mock_client.embeddings.create.assert_called_once()
+    fake_model.encode.assert_called_once()
+    # bge models require normalize_embeddings=True for cosine
+    _args, kwargs = fake_model.encode.call_args
+    assert kwargs.get("normalize_embeddings") is True
 
 
-def test_embed_text_returns_none_on_api_failure():
-    """Rate limits, network errors, malformed responses — all return None
-    (rather than propagate). Logged, not raised."""
-    from configs.settings import settings as real_settings
+def test_embed_text_returns_none_on_encode_failure():
+    """Any exception inside model.encode is caught and reported as None."""
+    _reset_model_cache()
+    fake_model = MagicMock()
+    fake_model.encode = MagicMock(side_effect=RuntimeError("oom"))
 
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(side_effect=RuntimeError("rate limit"))
-    fake_client_cls = MagicMock(return_value=mock_client)
-
-    with patch.object(real_settings, "openai_api_key", "sk-test"):
-        with _stub_openai_module(fake_client_cls):
-            result = asyncio.run(embed_text("test"))
+    with patch("services.vector_search._get_model", return_value=fake_model):
+        result = asyncio.run(embed_text("test"))
 
     assert result is None
+
+
+def test_embed_text_truncates_long_input():
+    """Input longer than 8000 chars is truncated before encode so we
+    don't hit the tokenizer's 512-token limit from the other side."""
+    _reset_model_cache()
+    captured = {}
+    fake_model = MagicMock()
+
+    def _fake_encode(text, **kwargs):
+        captured["text_len"] = len(text)
+        return [0.0] * 384
+    fake_model.encode = _fake_encode
+
+    with patch("services.vector_search._get_model", return_value=fake_model):
+        asyncio.run(embed_text("x" * 20_000))
+
+    assert captured["text_len"] == 8000
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -134,9 +136,9 @@ def test_search_sections_returns_empty_when_query_empty():
 
 
 def test_search_sections_returns_empty_when_embed_fails():
-    """Flag on + non-empty query, but embed_text returns None (no API
-    key or rate limit). search_sections returns [] — never silently runs
-    with a zero-vector query."""
+    """Flag on + non-empty query, but embed_text returns None (model
+    load issue or encode error). search_sections returns [] — never
+    silently runs with a zero vector."""
     from configs.settings import settings as real_settings
 
     fake_db = MagicMock()

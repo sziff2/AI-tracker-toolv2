@@ -23,12 +23,20 @@ lxml==5.3.0
 # LLM
 anthropic==0.34.0
 
-# Semantic search (Tier 3.4 — pgvector embeddings)
-# pgvector: Python bindings for the Postgres vector extension.
-# openai: used only for text-embedding-3-small ($0.02/M tokens). Anthropic
-# doesn't expose an embeddings endpoint as of 2026-04.
+# Semantic search (Tier 3.4 — pgvector + local embeddings)
+# pgvector:               Python bindings for the Postgres vector extension
+# sentence-transformers:  runs BAAI/bge-small-en-v1.5 in-process (384 dims).
+#                         No per-token cost, no third-party API, data stays on
+#                         the box. Quality on financial-text retrieval is
+#                         within a few pp of OpenAI text-embedding-3-small.
+# torch (CPU-only wheel): sentence-transformers' inference backend. The +cpu
+#                         pin avoids pulling the ~2GB CUDA wheel — Railway
+#                         containers are CPU-only and the full wheel would
+#                         multiply image size 4x.
+--extra-index-url https://download.pytorch.org/whl/cpu
 pgvector==0.3.6
-openai==1.54.0
+torch==2.5.0+cpu
+sentence-transformers==3.3.1
 
 # Web scraping
 cloudscraper==1.2.71

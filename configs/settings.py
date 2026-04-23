@@ -129,17 +129,19 @@ class Settings(BaseSettings):
 
     # Tier 3.4 — semantic search + RAG context assembly via pgvector.
     # Gated so we can ship the scaffold without committing Part 2 (embed
-    # at ingestion + RAG replacement + backfill). Requires:
-    #   (a) Postgres has `vector` extension enabled (lifespan attempts)
-    #   (b) OPENAI_API_KEY is set (for text-embedding-3-small)
+    # at ingestion + RAG replacement + backfill). Only precondition now
+    # that we use a local embedding model is that the Postgres `vector`
+    # extension is enabled (lifespan attempts automatically).
     # Env: USE_PGVECTOR_SEARCH=true
     use_pgvector_search: bool = False
 
-    # Optional — OpenAI embedding model id. text-embedding-3-small at
-    # 1536 dims is a safe default ($0.02 per 1M tokens, matches the
-    # document_sections.embedding column dim).
-    embedding_model: str = "text-embedding-3-small"
-    openai_api_key: str = ""
+    # Local embedding model (runs in-process via sentence-transformers).
+    # Default BAAI/bge-small-en-v1.5 is 384-dim, ~130MB weights, strong
+    # on MTEB retrieval. Switch to a bigger bge / e5 if quality becomes
+    # a bottleneck — the dim change requires a schema migration so it's
+    # not a free swap.
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
 
     # Stricter page cap for the narrative path — investor decks are
     # rarely over 50 pages, and over-size docs there add cost without
