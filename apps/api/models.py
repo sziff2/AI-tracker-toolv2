@@ -23,6 +23,14 @@ from sqlalchemy.orm import relationship
 
 from apps.api.database import Base, TimestampMixin, new_uuid
 
+# Tier 3.4 — pgvector embedding column type. Fall back to Text when the
+# package isn't installed locally yet so `pip install -r requirements.txt`
+# works cleanly from a stale environment; Railway prod always has it.
+try:
+    from pgvector.sqlalchemy import Vector as _Vector
+except ImportError:  # pragma: no cover — only hit pre-install
+    _Vector = lambda _dim: Text  # type: ignore[assignment]
+
 
 # ─────────────────────────────────────────────────────────────────
 # Companies
@@ -91,7 +99,10 @@ class DocumentSection(Base, TimestampMixin):
     section_title = Column(Text)
     page_number = Column(Integer)
     text_content = Column(Text)
-    # embedding = Column(VECTOR)  ← requires pgvector; add when needed
+    # Tier 3.4 — 1536-dim embedding matching OpenAI text-embedding-3-small.
+    # Nullable — rows without an embedding are invisible to vector search
+    # but still searchable via keyword. See services/vector_search.py.
+    embedding = Column(_Vector(1536), nullable=True)
 
     document = relationship("Document", back_populates="sections")
 

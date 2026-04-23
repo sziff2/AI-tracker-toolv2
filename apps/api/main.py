@@ -65,6 +65,21 @@ async def lifespan(app: FastAPI):
         await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS cik TEXT"))
         # Tier 5.1 — analyst-curated peer set for competitive positioning agent
         await conn.execute(sa_text("ALTER TABLE companies ADD COLUMN IF NOT EXISTS peer_tickers JSONB DEFAULT '[]'::jsonb"))
+        # Tier 3.4 — enable pgvector + add embedding column on document_sections.
+        # Wrapped so a DB that lacks the extension logs a warning but doesn't
+        # halt startup; services/vector_search.py also feature-flags off by
+        # default (settings.use_pgvector_search).
+        try:
+            await conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.execute(sa_text("ALTER TABLE document_sections ADD COLUMN IF NOT EXISTS embedding vector(1536)"))
+            # HNSW index on cosine distance — best quality/speed trade-off
+            # for top-k similarity search on ≥1k rows.
+            await conn.execute(sa_text(
+                "CREATE INDEX IF NOT EXISTS ix_document_sections_embedding "
+                "ON document_sections USING hnsw (embedding vector_cosine_ops)"
+            ))
+        except Exception as exc:
+            logger.warning("pgvector setup skipped: %s", str(exc)[:200])
         # Harvester tables
         await conn.execute(sa_text("""
             CREATE TABLE IF NOT EXISTS harvester_sources (

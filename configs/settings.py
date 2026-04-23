@@ -127,6 +127,20 @@ class Settings(BaseSettings):
     # Env: USE_CELERY_FOR_DOCUMENT_PROCESSING=true
     use_celery_for_document_processing: bool = False
 
+    # Tier 3.4 — semantic search + RAG context assembly via pgvector.
+    # Gated so we can ship the scaffold without committing Part 2 (embed
+    # at ingestion + RAG replacement + backfill). Requires:
+    #   (a) Postgres has `vector` extension enabled (lifespan attempts)
+    #   (b) OPENAI_API_KEY is set (for text-embedding-3-small)
+    # Env: USE_PGVECTOR_SEARCH=true
+    use_pgvector_search: bool = False
+
+    # Optional — OpenAI embedding model id. text-embedding-3-small at
+    # 1536 dims is a safe default ($0.02 per 1M tokens, matches the
+    # document_sections.embedding column dim).
+    embedding_model: str = "text-embedding-3-small"
+    openai_api_key: str = ""
+
     # Stricter page cap for the narrative path — investor decks are
     # rarely over 50 pages, and over-size docs there add cost without
     # signal gain. Tier 2.3 scope document has the detailed reasoning.

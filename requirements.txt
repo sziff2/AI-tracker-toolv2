@@ -23,6 +23,13 @@ lxml==5.3.0
 # LLM
 anthropic==0.34.0
 
+# Semantic search (Tier 3.4 — pgvector embeddings)
+# pgvector: Python bindings for the Postgres vector extension.
+# openai: used only for text-embedding-3-small ($0.02/M tokens). Anthropic
+# doesn't expose an embeddings endpoint as of 2026-04.
+pgvector==0.3.6
+openai==1.54.0
+
 # Web scraping
 cloudscraper==1.2.71
 
