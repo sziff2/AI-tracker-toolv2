@@ -116,6 +116,45 @@ async def embed_text(text: str) -> list[float] | None:
         return None
 
 
+async def embed_texts(texts: list[str]) -> list[list[float] | None]:
+    """Batch-embed many pieces of text in a single encode call.
+
+    ~10x faster than calling embed_text in a loop because
+    sentence-transformers batches inference internally. Returns a list
+    aligned to the input — None entries for empty strings or failure.
+
+    Called from the parser (one call per document, ~30-100 sections)
+    and the backfill script (batched by N rows).
+    """
+    if not texts:
+        return []
+    # Short-circuit for empties while preserving index alignment.
+    cleaned = [t[:8000] if (t and t.strip()) else "" for t in texts]
+    if not any(cleaned):
+        return [None] * len(texts)
+
+    model = _get_model()
+    if model is None:
+        return [None] * len(texts)
+    try:
+        vecs = await asyncio.to_thread(
+            model.encode, cleaned,
+            batch_size=32,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        out: list[list[float] | None] = []
+        for raw, vec in zip(cleaned, vecs):
+            if not raw:
+                out.append(None)
+            else:
+                out.append(list(map(float, vec)))
+        return out
+    except Exception as exc:
+        logger.warning("embed_texts failed: %s", str(exc)[:200])
+        return [None] * len(texts)
+
+
 async def search_sections(
     db: AsyncSession,
     query: str,

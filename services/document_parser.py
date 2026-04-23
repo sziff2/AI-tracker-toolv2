@@ -401,6 +401,7 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     )
 
     # 3. Persist sections (strip null bytes — PostgreSQL rejects \x00 in text)
+    section_objs: list[DocumentSection] = []
     for p in pages:
         clean_text = p["text"].replace("\x00", "") if p.get("text") else ""
         p["text"] = clean_text  # also clean for JSON export
@@ -413,6 +414,24 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
             text_content=clean_text,
         )
         db.add(section)
+        section_objs.append(section)
+
+    # 3b. Tier 3.4 — embed each section for semantic search. Gated on
+    # settings.use_pgvector_search so we don't pay the ~130MB model
+    # cold-start when the feature is off. Embedding failure is
+    # non-fatal — sections still get written, just without .embedding,
+    # and the UI falls back to keyword search for those rows.
+    if settings.use_pgvector_search and section_objs:
+        try:
+            from services.vector_search import embed_texts
+            vecs = await embed_texts([s.text_content or "" for s in section_objs])
+            for sec, vec in zip(section_objs, vecs):
+                if vec is not None:
+                    sec.embedding = vec
+            _ok = sum(1 for v in vecs if v is not None)
+            logger.info("Embedded %d/%d sections for doc %s", _ok, len(vecs), document.id)
+        except Exception as exc:
+            logger.warning("Section embedding failed for doc %s: %s", document.id, str(exc)[:200])
 
     # 4. Write processed JSON files
     proc_dir = Path(settings.storage_base_path) / "processed" / ticker / (document.period_label or "misc")

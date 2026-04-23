@@ -19,6 +19,7 @@ from services.vector_search import (
     SearchHit,
     _format_vector,
     embed_text,
+    embed_texts,
     search_sections,
 )
 
@@ -82,6 +83,49 @@ def test_embed_text_returns_none_on_encode_failure():
         result = asyncio.run(embed_text("test"))
 
     assert result is None
+
+
+def test_embed_texts_empty_list_returns_empty_list():
+    assert asyncio.run(embed_texts([])) == []
+
+
+def test_embed_texts_all_empty_returns_all_none():
+    """Every input is blank → all-None output, aligned to input length."""
+    _reset_model_cache()
+    with patch("services.vector_search._get_model", return_value=MagicMock()):
+        result = asyncio.run(embed_texts(["", "   ", ""]))
+    assert result == [None, None, None]
+
+
+def test_embed_texts_preserves_index_alignment_with_empties():
+    """Blanks become None at the correct position; non-blanks get vectors.
+    bge-small returns 384-dim vectors — use a stub that respects that."""
+    _reset_model_cache()
+    fake_model = MagicMock()
+    # sentence-transformers returns a 2D numpy-like; our stub returns a list
+    # of lists. cleaned ["a", "", "b"] → encode sees ["a", "", "b"] (blank
+    # preserved for alignment); the wrapper sets None on the blank.
+    fake_model.encode = MagicMock(return_value=[[0.1] * 384, [0.0] * 384, [0.2] * 384])
+
+    with patch("services.vector_search._get_model", return_value=fake_model):
+        result = asyncio.run(embed_texts(["topic A", "", "topic B"]))
+
+    assert len(result) == 3
+    assert result[0] is not None and len(result[0]) == 384
+    assert result[1] is None           # blank input → None preserved
+    assert result[2] is not None and len(result[2]) == 384
+
+
+def test_embed_texts_returns_all_none_on_encode_failure():
+    """A batch encode failure reports None for every input — never raises."""
+    _reset_model_cache()
+    fake_model = MagicMock()
+    fake_model.encode = MagicMock(side_effect=RuntimeError("oom"))
+
+    with patch("services.vector_search._get_model", return_value=fake_model):
+        result = asyncio.run(embed_texts(["one", "two", "three"]))
+
+    assert result == [None, None, None]
 
 
 def test_embed_text_truncates_long_input():
