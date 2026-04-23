@@ -99,6 +99,27 @@ async def lifespan(app: FastAPI):
                 "CREATE INDEX IF NOT EXISTS ix_document_sections_embedding "
                 "ON document_sections USING hnsw (embedding vector_cosine_ops)"
             ))
+            # One-line startup log of current embedding coverage. Makes
+            # Tier 3.4 rollout observable via Railway deploy logs without
+            # needing a session cookie for the /admin/embedding-stats
+            # route. Query is cheap — COUNT(*) on document_sections is
+            # ~instant at our scale.
+            try:
+                stats_q = await conn.execute(sa_text("""
+                    SELECT COUNT(*) AS total,
+                           COUNT(embedding) AS with_emb,
+                           COUNT(*) FILTER (WHERE embedding IS NULL
+                                            AND text_content IS NOT NULL
+                                            AND text_content <> '') AS candidates
+                    FROM document_sections
+                """))
+                _s = stats_q.one()
+                logger.info(
+                    "EMBEDDING_STATS total=%d with_embedding=%d backfill_candidates=%d dim=%d",
+                    _s.total, _s.with_emb, _s.candidates, target_dim,
+                )
+            except Exception as _stats_exc:
+                logger.warning("Embedding stats query skipped: %s", str(_stats_exc)[:120])
         except Exception as exc:
             logger.warning("pgvector setup skipped: %s", str(exc)[:200])
         # Harvester tables
