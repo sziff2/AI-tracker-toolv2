@@ -142,6 +142,14 @@ async def repair_missing_files(
             if not content:
                 raise ValueError("download returned empty body")
 
+            # Opportunistic eviction — prevents ENOSPC mid-run on a
+            # fixed-size volume. Only fires once usage crosses 80%.
+            if stats["fixed"] and stats["fixed"] % 50 == 0:
+                from services.doc_fetch import evict_if_pressure
+                evict_result = await evict_if_pressure()
+                if evict_result:
+                    logger.info("[FILE_REPAIR] mid-run eviction: %s", evict_result)
+
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(content)
 

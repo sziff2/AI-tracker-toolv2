@@ -293,45 +293,12 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
     file_path = document.file_path
     ext = Path(file_path).suffix.lower()
 
-    # Restore file if missing on disk (e.g. after Railway redeploy wipes ephemeral storage)
-    if not Path(file_path).exists():
-        source_url = getattr(document, 'source_url', None)
-        if source_url:
-            try:
-                import httpx, re as _re
-                download_url = source_url
-                headers = {"User-Agent": "Oldfield Partners research-bot@oldfieldpartners.com"}
-
-                # Detect EDGAR index pages and resolve to actual primary document
-                if '-index.htm' in source_url and 'sec.gov' in source_url:
-                    logger.info("Source URL is EDGAR index page, resolving primary document...")
-                    try:
-                        idx_resp = httpx.get(source_url, headers=headers, timeout=15.0)
-                        # Extract primary document link from index page
-                        # Pattern: accession folder URL + primary doc filename
-                        base_url = source_url.rsplit('/', 1)[0]
-                        doc_links = _re.findall(r'href="([^"]+\.htm)"', idx_resp.text)
-                        # Filter out the index page itself and find the primary document
-                        primary = [l for l in doc_links if '-index' not in l and l.endswith('.htm')]
-                        if primary:
-                            download_url = primary[0] if primary[0].startswith('http') else f"{base_url}/{primary[0]}"
-                            logger.info("Resolved primary doc: %s", download_url[-60:])
-                            # Update source_url on the document for future use
-                            document.source_url = download_url
-                    except Exception as idx_err:
-                        logger.warning("Index page resolution failed: %s", idx_err)
-
-                logger.info("File missing, re-downloading from %s", download_url[:80])
-                resp = httpx.get(download_url, headers=headers, timeout=60.0, follow_redirects=True)
-                resp.raise_for_status()
-                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-                Path(file_path).write_bytes(resp.content)
-                logger.info("Re-downloaded %d bytes to %s", len(resp.content), file_path)
-            except Exception as dl_err:
-                logger.warning("Re-download failed for %s: %s", source_url[:60], dl_err)
-
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"File not found and re-download failed: {file_path}")
+    # Raw file is a cache — services.doc_fetch.ensure_local_file handles
+    # lazy re-download from source_url when the local copy is missing
+    # (evicted under disk pressure, volume reset, etc). Single code path
+    # shared with the /file endpoint.
+    from services.doc_fetch import ensure_local_file
+    await ensure_local_file(document)
 
     # 1. Extract
     if ext == ".pdf":

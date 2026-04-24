@@ -459,31 +459,24 @@ async def get_extraction_profile(document_id: uuid.UUID, db: AsyncSession = Depe
 async def download_document_file(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Stream the original uploaded file inline (browser PDF viewer renders it).
 
-    Reads from disk under STORAGE_BASE_PATH. The file_content-from-DB
-    branch was removed when CLAUDE.md prohibited storing raw PDFs in
-    Postgres — the model no longer has that column. Accessing it threw
-    AttributeError before this fix, so the endpoint always 500'd. With
-    the persistent volume now mounted at /app/storage (Tier 0 infra,
-    2026-04-23), this filesystem read is reliable across deploys.
+    The raw file on disk is treated as a cache, not the source of truth.
+    If it's missing (e.g. evicted under disk pressure, or never landed
+    on the persistent volume), services.doc_fetch.ensure_local_file()
+    lazy-downloads from Document.source_url before serving. The user
+    never sees a 404 as long as source_url is set.
     """
     from fastapi.responses import Response
+    from services.doc_fetch import ensure_local_file
 
     result = await db.execute(select(Document).where(Document.id == document_id))
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    if not doc.file_path:
-        raise HTTPException(404, "Document has no file_path on record")
-
-    file_path = Path(doc.file_path)
-    if not file_path.exists():
-        raise HTTPException(
-            404,
-            f"File not found on disk at {doc.file_path}. The original may "
-            "have been wiped before the persistent volume was attached "
-            "(2026-04-23) — re-upload to recover.",
-        )
+    try:
+        file_path = await ensure_local_file(doc)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc))
 
     filename = doc.title or file_path.name
     suffix = file_path.suffix.lower()

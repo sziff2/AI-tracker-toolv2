@@ -1409,6 +1409,23 @@ async def admin_period_diagnostic(
     }
 
 
+@router.post("/admin/evict-old-files")
+async def admin_evict_old_files(
+    target_free_gb: float = 1.0,
+    dry_run: bool = True,
+):
+    """Delete oldest raw files under storage/raw until the volume has
+    at least target_free_gb free. DB rows stay untouched — anything
+    deleted will lazy-restore from Document.source_url on next access
+    via services.doc_fetch.ensure_local_file.
+
+    Dry-run by default. Flip dry_run=false to actually delete.
+    """
+    from services.doc_fetch import evict_until_free
+    target_bytes = int(target_free_gb * 1024 * 1024 * 1024)
+    return await evict_until_free(target_bytes, dry_run=dry_run)
+
+
 @router.get("/admin/storage-stats")
 async def admin_storage_stats():
     """Inspect what the pod actually sees for the storage volume.
