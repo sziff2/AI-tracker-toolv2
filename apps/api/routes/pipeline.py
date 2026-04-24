@@ -1146,6 +1146,100 @@ async def admin_backfill_prices(
         return {"status": "error", "error": str(exc)}
 
 
+@router.get("/admin/period-diagnostic/{ticker}/{period}")
+async def admin_period_diagnostic(
+    ticker: str,
+    period: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Single-URL diagnostic for a (ticker, period) pair. Surfaces the
+    state of all the things the agent pipeline reads — documents, their
+    parsing status, extracted metric counts, extraction profiles, and
+    ingestion-time narrative outputs (transcript/presentation/annual).
+
+    Use when a pipeline run returns all-agents-skipped (Phase A never
+    produced what the agents consume): this endpoint tells you whether
+    docs exist, whether parsing completed, whether extraction ran, and
+    whether narrative analysis ran — in one round-trip.
+    """
+    from sqlalchemy import text as sa_text
+    from apps.api.models import Company
+    from sqlalchemy import select as sa_select
+
+    cq = await db.execute(sa_select(Company).where(Company.ticker == ticker))
+    company = cq.scalar_one_or_none()
+    if not company:
+        return {"status": "error", "reason": f"No company with ticker {ticker!r}"}
+
+    cid = company.id
+
+    # 1. Documents for this company+period
+    docs_q = await db.execute(sa_text("""
+        SELECT d.id::text AS doc_id, d.title, d.document_type,
+               d.parsing_status, d.period_label, d.published_at,
+               d.source, d.file_path,
+               (SELECT COUNT(*) FROM document_sections ds
+                  WHERE ds.document_id = d.id) AS sections_count,
+               (SELECT COUNT(*) FROM extracted_metrics em
+                  WHERE em.document_id = d.id) AS metrics_count,
+               (SELECT COUNT(*) FROM extraction_profiles ep
+                  WHERE ep.document_id = d.id) AS profile_count
+        FROM documents d
+        WHERE d.company_id = :cid AND d.period_label = :period
+        ORDER BY d.published_at DESC NULLS LAST
+    """), {"cid": str(cid), "period": period})
+    docs = [dict(r._mapping) for r in docs_q]
+
+    # 2. Aggregate metric rows at the period level
+    metrics_q = await db.execute(sa_text("""
+        SELECT COUNT(*) AS total, COUNT(DISTINCT metric_name) AS distinct_names
+        FROM extracted_metrics
+        WHERE company_id = :cid AND period_label = :period
+    """), {"cid": str(cid), "period": period})
+    metrics = dict(metrics_q.one()._mapping)
+
+    # 3. Narrative outputs from the ingestion-time deep-reads
+    narrative_q = await db.execute(sa_text("""
+        SELECT output_type, COUNT(*) AS n
+        FROM research_outputs
+        WHERE company_id = :cid AND period_label = :period
+        GROUP BY output_type
+        ORDER BY output_type
+    """), {"cid": str(cid), "period": period})
+    narrative = {r.output_type: r.n for r in narrative_q}
+
+    # 4. Best-effort diagnosis — what's the likely reason agents skipped?
+    n_docs = len(docs)
+    n_parsed = sum(1 for d in docs if d.get("parsing_status") == "completed")
+    n_extracted = sum(1 for d in docs if (d.get("profile_count") or 0) > 0)
+    has_narrative = any(k in narrative for k in (
+        "transcript_analysis", "presentation_analysis", "annual_report_analysis",
+    ))
+
+    if n_docs == 0:
+        diagnosis = "no_documents — nothing to analyse for this period. Upload docs via the Documents tab."
+    elif n_parsed == 0:
+        diagnosis = "parse_never_completed — docs uploaded but parsing_status != 'completed' on all of them. Hit 'Process' on each, or check the processing_jobs table for errors."
+    elif metrics["total"] == 0 and not has_narrative:
+        diagnosis = "extraction_silently_failed — parsing finished but no extracted_metric rows and no narrative outputs. This matches the 'everything skipped' pipeline-run symptom. Check web-service logs around the reprocess for extractor errors."
+    elif metrics["total"] == 0:
+        diagnosis = "extraction_partial — no metrics extracted but narrative present. Pipeline should still fire (transcript/presentation alone is enough for financial_analyst.should_run). If agents still skipping, the narrative outputs may not have made it to build_agent_context — investigate."
+    else:
+        diagnosis = "looks_healthy — Phase A produced data. If agents still skipping, look upstream at context_builder output."
+
+    return {
+        "ticker":             ticker,
+        "period":             period,
+        "document_count":     n_docs,
+        "parsed_count":       n_parsed,
+        "extracted_count":    n_extracted,
+        "metrics":            metrics,
+        "narrative_outputs":  narrative,
+        "documents":          docs,
+        "diagnosis":          diagnosis,
+    }
+
+
 @router.post("/admin/backfill-embeddings")
 async def admin_backfill_embeddings(
     ticker: str | None = None,
