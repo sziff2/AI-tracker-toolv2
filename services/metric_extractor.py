@@ -824,7 +824,42 @@ async def extract_by_document_type(
     except Exception:
         pass
 
-    # Route to appropriate pipeline
+    # First-try: native Claude extraction (single call, format-agnostic).
+    # Behind a feature flag until A/B validated. Any failure OR a result
+    # with zero items automatically falls back to the legacy path so a
+    # bad LLM call never produces an empty period.
+    from configs.settings import settings as _settings
+    if getattr(_settings, "use_native_extraction", False):
+        try:
+            from services.native_extraction import run_native_extraction
+            logger.info(
+                "Using native-Claude extraction for %s (sector: %s)",
+                doc_type, sector or "generic",
+            )
+            pdf_path = None
+            if document.file_path and str(document.file_path).lower().endswith(".pdf"):
+                pdf_path = document.file_path
+            native_result = await run_native_extraction(
+                db, document, text, pdf_path=pdf_path,
+                sector=sector, industry=industry, country=country,
+            )
+            if native_result.get("items_extracted", 0) > 0:
+                # Persist metrics via the existing helper so DB shape is
+                # identical to the legacy path. No schema changes.
+                raw_items = native_result.get("raw_items") or []
+                await _persist_earnings_metrics(db, document, raw_items)
+                return native_result
+            logger.warning(
+                "Native extraction returned 0 items for %s (%s) — falling back to legacy",
+                doc_type, native_result.get("extraction_method"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Native extraction threw for %s: %s — falling back to legacy",
+                doc_type, str(exc)[:200],
+            )
+
+    # Legacy path (existing section-aware or legacy pipeline)
     if doc_type in SECTION_SPLIT_TYPES:
         logger.info("Using section-aware extraction for %s (sector: %s)", doc_type, sector or "generic")
         return await _extract_with_sections(

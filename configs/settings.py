@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     # Env: USE_CELERY_FOR_DOCUMENT_PROCESSING=true
     use_celery_for_document_processing: bool = False
 
+    # Tier 1.3 (consolidated) — native Claude extraction path. Single LLM
+    # call replaces section_splitter + two-pass + statement_extractors.
+    # Enabled once A/B validated on real filings. Legacy path stays the
+    # default (False) and is the fallback whenever native extraction
+    # returns an empty result or errors.
+    # Env: USE_NATIVE_EXTRACTION=true
+    use_native_extraction: bool = False
+
     # Tier 3.4 — semantic search + RAG context assembly via pgvector.
     # Gated so we can ship the scaffold without committing Part 2 (embed
     # at ingestion + RAG replacement + backfill). Only precondition now
