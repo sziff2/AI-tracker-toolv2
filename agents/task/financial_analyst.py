@@ -115,13 +115,21 @@ class FinancialAnalystAgent(BaseAgent):
     }
 
     def should_run(self, inputs: dict) -> bool:
-        """Run if we have any useful data — metrics, transcript, or presentation."""
+        """Run if we have any useful data — metrics, transcript, presentation,
+        or annual-report narrative analysis. The annual-report branch was
+        added after an ARW US 2025_Q4 run skipped every agent because the
+        10-K produced annual_report_analysis but zero metric rows (SEC
+        inline-XBRL HTML extraction limitation). A valid annual-report
+        narrative alone is enough fuel for a financial take."""
         metrics = inputs.get("extracted_metrics", "")
         has_metrics = metrics and metrics != "No metrics extracted for this period."
         has_transcript = bool(inputs.get("transcript_deep_dive") or inputs.get("transcript_text"))
         has_presentation = bool(inputs.get("presentation_analysis") or inputs.get("presentation_text"))
-        if not has_metrics and not has_transcript and not has_presentation:
-            logger.warning("Financial Analyst skipping — no metrics, transcript, or presentation data")
+        has_annual_report = bool(inputs.get("annual_report_analysis") or inputs.get("annual_report_text"))
+        if not (has_metrics or has_transcript or has_presentation or has_annual_report):
+            logger.warning(
+                "Financial Analyst skipping — no metrics, transcript, presentation, or annual-report data"
+            )
             return False
         return True
 
