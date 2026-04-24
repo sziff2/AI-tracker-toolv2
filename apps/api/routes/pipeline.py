@@ -1146,6 +1146,28 @@ async def admin_backfill_prices(
         return {"status": "error", "error": str(exc)}
 
 
+@router.post("/admin/backfill-embeddings")
+async def admin_backfill_embeddings(
+    ticker: str | None = None,
+    chunk_size: int = 64,
+    limit: int | None = None,
+):
+    """Dispatch the embedding backfill to the Celery worker (where
+    sentence-transformers is installed). Returns the task id immediately.
+    Watch worker logs for `[BACKFILL_EMBEDDINGS]` to see the result.
+
+    Trigger from the authenticated browser console:
+      fetch('/api/v1/admin/backfill-embeddings', {method: 'POST'})
+        .then(r => r.json()).then(console.log);
+    """
+    try:
+        from apps.worker.tasks import backfill_embeddings_task
+        task = backfill_embeddings_task.delay(ticker, chunk_size, limit)
+        return {"status": "dispatched", "task_id": task.id, "ticker": ticker}
+    except Exception as exc:
+        return {"status": "celery_failed", "error": str(exc)}
+
+
 @router.get("/admin/embedding-stats")
 async def admin_embedding_stats(db: AsyncSession = Depends(get_db)):
     """Ops check: DocumentSection embedding coverage for Tier 3.4.

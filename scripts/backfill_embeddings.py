@@ -68,6 +68,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+async def run_backfill(
+    db: AsyncSession,
+    ticker: str | None = None,
+    chunk_size: int = 64,
+    limit: int | None = None,
+    apply: bool = True,
+) -> dict:
+    """Public entry point — also imported by the Celery task that runs
+    the backfill inside the worker container (where sentence-transformers
+    is installed). Defaults are 'apply=True' since the typical caller
+    is the Celery task, not the CLI."""
+    return await _backfill(db, ticker, chunk_size, limit, apply)
+
+
 async def _backfill(
     db: AsyncSession,
     ticker: str | None,

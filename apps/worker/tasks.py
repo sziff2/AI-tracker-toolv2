@@ -308,6 +308,35 @@ def parse_and_extract_single_task(
         raise
 
 
+@celery_app.task(bind=True, name="backfill_embeddings", max_retries=0, time_limit=1800)
+def backfill_embeddings_task(
+    self,
+    ticker: str | None = None,
+    chunk_size: int = 64,
+    limit: int | None = None,
+) -> dict:
+    """One-shot Tier 3.4 backfill. Lives on the worker because that's
+    where sentence-transformers is installed (the user's laptop and
+    the web container's lifespan don't load it). 30-min hard cap is
+    plenty for ~3000 sections; bump if our footprint grows."""
+    from apps.api.database import AsyncSessionLocal
+    from scripts.backfill_embeddings import run_backfill
+
+    async def _run():
+        async with AsyncSessionLocal() as db:
+            return await run_backfill(
+                db, ticker=ticker, chunk_size=chunk_size,
+                limit=limit, apply=True,
+            )
+    try:
+        result = _run_async_task(_run())
+        logger.info("[BACKFILL_EMBEDDINGS] %s", result)
+        return result
+    except Exception as e:
+        logger.exception("backfill_embeddings failed: %s", e)
+        raise
+
+
 @celery_app.task(bind=True, name="parse_and_extract_batch", max_retries=0)
 def parse_and_extract_batch_task(
     self,
