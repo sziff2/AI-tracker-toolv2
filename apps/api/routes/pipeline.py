@@ -1436,7 +1436,7 @@ async def admin_repair_missing_files(
     ticker: str | None = None,
     dry_run: bool = True,
     limit: int | None = None,
-    via_celery: bool = True,
+    background: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     """Re-download raw files for Document rows whose file_path is missing.
@@ -1447,49 +1447,62 @@ async def admin_repair_missing_files(
     every agent skips. This endpoint restores files from the Document
     row's source_url.
 
+    MUST run on the web service, NOT Celery — Railway volumes mount to
+    a single service, and the persistent storage/raw/ volume is
+    attached to the web container only. Celery writes would land on
+    the worker's ephemeral disk and not be visible to parsing.
+
     Usage from the authenticated browser console:
 
-      // 1. Dry-run first (recommended) — counts what would be repaired:
-      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=true', {method:'POST'})
-        .then(r => r.json()).then(console.log);
+      // 1. Dry-run first — count what's missing:
+      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=true',
+            {method:'POST'}).then(r => r.json()).then(console.log);
 
-      // 2. Real run, one company to confirm the path works:
-      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=false', {method:'POST'})
-        .then(r => r.json()).then(console.log);
+      // 2. Real run, one company (inline; ~5s per company):
+      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=false',
+            {method:'POST'}).then(r => r.json()).then(console.log);
 
-      // 3. Whole portfolio (takes up to ~2h — dispatch to Celery):
-      fetch('/api/v1/admin/repair-missing-files?dry_run=false', {method:'POST'})
-        .then(r => r.json()).then(console.log);
-
-    Dry-runs return inline. Real runs default to Celery dispatch; set
-    via_celery=false to run inline (small scopes only — will hit the
-    HTTP timeout otherwise).
+      // 3. Whole portfolio in background (fire-and-forget, ~2-5 min):
+      fetch('/api/v1/admin/repair-missing-files?dry_run=false&background=true',
+            {method:'POST'}).then(r => r.json()).then(console.log);
+      //    Then poll the dry-run endpoint to watch `missing` drop.
     """
+    from services.file_repair import repair_missing_files
+
     # Dry-runs are fast — count only, no downloads. Always inline.
     if dry_run:
-        from services.file_repair import repair_missing_files
         return await repair_missing_files(
             db, ticker=ticker, dry_run=True, limit=limit,
         )
 
-    if via_celery:
-        try:
-            from apps.worker.tasks import repair_missing_files_task
-            task = repair_missing_files_task.delay(ticker, False, limit)
-            return {
-                "status": "dispatched",
-                "task_id": task.id,
-                "ticker": ticker,
-                "limit": limit,
-                "hint": "Watch worker logs for [FILE_REPAIR] entries. "
-                        "Summary emitted as [FILE_REPAIR_SUMMARY] on completion.",
-            }
-        except Exception as exc:
-            logger.warning("Celery dispatch for repair failed (%s) — running inline", str(exc)[:200])
+    # Background mode for long runs (whole portfolio). Fire-and-forget;
+    # progress visible by re-running the dry-run path and watching
+    # `missing` shrink. Uses a fresh AsyncSession so lifetime outlives
+    # the request scope.
+    if background:
+        import asyncio
+        from apps.api.database import AsyncSessionLocal
 
-    # Inline fallback — only use with a ticker + small limit, otherwise
-    # the HTTP request times out before the work completes.
-    from services.file_repair import repair_missing_files
+        async def _runner():
+            try:
+                async with AsyncSessionLocal() as bg_db:
+                    result = await repair_missing_files(
+                        bg_db, ticker=ticker, dry_run=False, limit=limit,
+                    )
+                    logger.info("[FILE_REPAIR_SUMMARY] %s", result)
+            except Exception:
+                logger.exception("[FILE_REPAIR] background run failed")
+
+        asyncio.create_task(_runner())
+        return {
+            "status": "started_in_background",
+            "ticker": ticker,
+            "limit": limit,
+            "hint": "Poll GET (or POST dry_run=true) to watch `missing` decrease. "
+                    "Summary logged as [FILE_REPAIR_SUMMARY] on completion.",
+        }
+
+    # Inline — good for single-ticker scopes (~5s per company).
     return await repair_missing_files(
         db, ticker=ticker, dry_run=False, limit=limit,
     )
