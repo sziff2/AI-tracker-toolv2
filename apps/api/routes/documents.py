@@ -491,11 +491,25 @@ async def download_document_file(document_id: uuid.UUID, db: AsyncSession = Depe
         ".pdf":  "application/pdf",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ".txt":  "text/plain",
+        ".html": "text/html",
+        ".htm":  "text/html",
     }.get(suffix, "application/octet-stream")
+
+    # Starlette encodes response headers as latin-1. Document titles
+    # contain em-dashes (e.g. "Arrow Electronics 10-K — 2025-12-31"),
+    # which crash that encode. RFC 5987 handles non-ASCII filenames:
+    # provide an ASCII fallback plus a percent-encoded UTF-8 version.
+    import re
+    from urllib.parse import quote
+    ascii_fallback = re.sub(r'[^\x20-\x7e]+', '-', filename).strip('-') or "file"
+    content_disposition = (
+        f'inline; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
     return Response(
         content=file_path.read_bytes(),
         media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition},
     )
 
 
