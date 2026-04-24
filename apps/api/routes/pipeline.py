@@ -1146,6 +1146,175 @@ async def admin_backfill_prices(
         return {"status": "error", "error": str(exc)}
 
 
+@router.post("/admin/native-extraction-ab/{ticker}/{period}")
+async def admin_native_extraction_ab(
+    ticker: str,
+    period: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Phase 2 of the Tier 1.3 consolidation. Runs the new native-Claude
+    extraction path against every doc in the period and compares against
+    the already-persisted legacy metrics.
+
+    NO WRITES — the native path is called directly and its output is
+    returned in-memory. The legacy side is read from extracted_metrics
+    rows that were written by the previous extraction runs.
+
+    Trigger from the authenticated browser console:
+      fetch('/api/v1/admin/native-extraction-ab/ARW%20US/2025_Q4', {method: 'POST'})
+        .then(r => r.json()).then(console.log);
+
+    Returns per-document comparisons + a summary. Also logs a one-line
+    NATIVE_AB_RESULT entry so the result is visible via Railway logs
+    even if the JSON response is lost.
+    """
+    from pathlib import Path as _Path
+    import json as _json
+    import time as _time
+    from sqlalchemy import text as sa_text
+    from apps.api.models import Company, Document, ExtractedMetric
+    from sqlalchemy import select as sa_select
+    from services.native_extraction import run_native_extraction
+    from configs.settings import settings as _settings
+
+    cq = await db.execute(sa_select(Company).where(Company.ticker == ticker))
+    company = cq.scalar_one_or_none()
+    if not company:
+        return {"status": "error", "reason": f"No company with ticker {ticker!r}"}
+
+    docs_q = await db.execute(
+        sa_select(Document)
+        .where(Document.company_id == company.id)
+        .where(Document.period_label == period)
+    )
+    docs = list(docs_q.scalars().all())
+    if not docs:
+        return {"status": "error", "reason": f"No docs for {ticker} / {period}"}
+
+    per_doc: list[dict] = []
+    totals = {
+        "legacy_metric_rows":  0,
+        "native_metric_rows":  0,
+        "native_total_ms":     0,
+        "native_failures":     0,
+    }
+
+    for doc in docs:
+        # Legacy side: count the metrics already written by prior runs
+        leg_q = await db.execute(sa_text("""
+            SELECT COUNT(*) AS n, COUNT(DISTINCT metric_name) AS distinct_names
+            FROM extracted_metrics WHERE document_id = :did
+        """), {"did": str(doc.id)})
+        leg = leg_q.one()
+        legacy_count = leg.n or 0
+        legacy_distinct = leg.distinct_names or 0
+
+        # Load the parsed text for this doc to feed the native path.
+        # The parser writes storage/processed/{ticker}/{period_label}/parsed_text.json
+        # as [{page: int, text: str}, ...]
+        proc_dir = (
+            _Path(_settings.storage_base_path)
+            / "processed" / (company.ticker or "")
+            / (doc.period_label or "misc")
+        )
+        text_file = proc_dir / "parsed_text.json"
+        full_text = ""
+        if text_file.exists():
+            try:
+                pages = _json.loads(text_file.read_text(encoding="utf-8"))
+                full_text = "\n\n".join(p.get("text", "") for p in pages if isinstance(p, dict))
+            except Exception as exc:
+                logger.warning("native-ab: failed to load parsed text for %s: %s", doc.id, str(exc)[:120])
+
+        if not full_text:
+            per_doc.append({
+                "doc_id":        str(doc.id),
+                "title":         doc.title,
+                "document_type": doc.document_type,
+                "skipped":       "no_parsed_text_available",
+                "legacy_rows":   legacy_count,
+                "native_rows":   None,
+            })
+            continue
+
+        # Native path, not persisted
+        t0 = _time.time()
+        try:
+            native = await run_native_extraction(
+                db, doc, full_text,
+                pdf_path=doc.file_path if (doc.file_path or "").lower().endswith(".pdf") else None,
+                sector=company.sector or "",
+                industry=company.industry or "",
+                country=company.country or "",
+            )
+            duration_ms = int((_time.time() - t0) * 1000)
+            native_items = native.get("raw_items") or []
+            # Pull a 10-sample for readability
+            sample = [
+                {
+                    "metric_name":  it.get("metric_name"),
+                    "metric_value": it.get("metric_value"),
+                    "unit":         it.get("unit"),
+                    "segment":      it.get("segment"),
+                }
+                for it in native_items[:10]
+            ]
+            per_doc.append({
+                "doc_id":             str(doc.id),
+                "title":              doc.title,
+                "document_type":      doc.document_type,
+                "legacy_rows":        legacy_count,
+                "legacy_distinct":    legacy_distinct,
+                "native_rows":        len(native_items),
+                "native_distinct":    len({it.get("metric_name") for it in native_items if it.get("metric_name")}),
+                "native_method":      native.get("extraction_method"),
+                "native_ms":          duration_ms,
+                "native_sample":      sample,
+                "native_mda_chars":   len(native.get("mda_narrative") or ""),
+                "native_segments":    len((native.get("segment_data") or {}).get("segments") or []),
+                "delta_rows":         len(native_items) - legacy_count,
+            })
+            totals["legacy_metric_rows"]  += legacy_count
+            totals["native_metric_rows"]  += len(native_items)
+            totals["native_total_ms"]     += duration_ms
+            if "failed" in (native.get("extraction_method") or ""):
+                totals["native_failures"] += 1
+        except Exception as exc:
+            logger.exception("native-ab: native path crashed for doc %s: %s", doc.id, exc)
+            per_doc.append({
+                "doc_id":       str(doc.id),
+                "title":        doc.title,
+                "document_type": doc.document_type,
+                "legacy_rows":  legacy_count,
+                "native_rows":  None,
+                "native_error": str(exc)[:300],
+            })
+            totals["native_failures"] += 1
+
+    summary = {
+        "ticker":  ticker,
+        "period":  period,
+        "n_docs":  len(docs),
+        "totals":  totals,
+        "verdict": (
+            "native_better"       if totals["native_metric_rows"] > totals["legacy_metric_rows"] * 1.2
+            else "native_similar" if totals["native_metric_rows"] >= totals["legacy_metric_rows"] * 0.8
+            else "native_worse"
+        ),
+    }
+
+    # One-line log for Railway-agent-readability
+    logger.info(
+        "NATIVE_AB_RESULT ticker=%s period=%s n_docs=%d legacy_rows=%d native_rows=%d "
+        "native_ms=%d failures=%d verdict=%s",
+        ticker, period, summary["n_docs"],
+        totals["legacy_metric_rows"], totals["native_metric_rows"],
+        totals["native_total_ms"], totals["native_failures"], summary["verdict"],
+    )
+
+    return {"status": "ok", "summary": summary, "per_doc": per_doc}
+
+
 @router.get("/admin/period-diagnostic/{ticker}/{period}")
 async def admin_period_diagnostic(
     ticker: str,
