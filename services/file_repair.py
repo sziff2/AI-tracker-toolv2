@@ -94,12 +94,23 @@ async def repair_missing_files(
     for doc in rows:
         stats["checked"] += 1
 
-        if not doc.file_path:
+        # Snapshot row fields EAGERLY before any I/O. A failure mid-loop
+        # (ENOSPC, HTTP error) triggers db.rollback(), which expires all
+        # attributes on `doc`. Any later `doc.id` / `doc.file_path` read
+        # would then fire a sync expired-attribute reload on the async
+        # session — that raises MissingGreenlet and kills the entire
+        # task. Grab the strings up front so the exception branch is
+        # pure Python.
+        doc_id_str   = str(doc.id)
+        file_path    = doc.file_path
+        source_url   = doc.source_url
+
+        if not file_path:
             stats["no_url"] += 1
-            failures.append({"doc_id": str(doc.id), "reason": "no_file_path"})
+            failures.append({"doc_id": doc_id_str, "reason": "no_file_path"})
             continue
 
-        p = Path(doc.file_path)
+        p = Path(file_path)
         try:
             if p.exists() and p.stat().st_size > 0:
                 stats["present"] += 1
@@ -110,12 +121,12 @@ async def repair_missing_files(
 
         stats["missing"] += 1
 
-        if not doc.source_url:
+        if not source_url:
             stats["no_url"] += 1
             failures.append({
-                "doc_id": str(doc.id),
-                "file_path": doc.file_path,
-                "reason": "no_source_url",
+                "doc_id":    doc_id_str,
+                "file_path": file_path,
+                "reason":    "no_source_url",
             })
             continue
 
@@ -123,7 +134,7 @@ async def repair_missing_files(
             continue
 
         try:
-            content, _suffix = await _download(doc.source_url)
+            content, _suffix = await _download(source_url)
             if not content:
                 raise ValueError("download returned empty body")
 
@@ -136,20 +147,23 @@ async def repair_missing_files(
             stats["fixed"] += 1
             logger.info(
                 "[FILE_REPAIR] Restored %s (%d bytes) from %s",
-                doc.file_path, len(content), doc.source_url,
+                file_path, len(content), source_url,
             )
         except Exception as exc:
-            await db.rollback()
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             stats["download_failed"] += 1
             failures.append({
-                "doc_id":     str(doc.id),
-                "file_path":  doc.file_path,
-                "source_url": doc.source_url,
+                "doc_id":     doc_id_str,
+                "file_path":  file_path,
+                "source_url": source_url,
                 "reason":     str(exc)[:300],
             })
             logger.warning(
                 "[FILE_REPAIR] Download failed for %s (%s): %s",
-                doc.id, doc.source_url, str(exc)[:200],
+                doc_id_str, source_url, str(exc)[:200],
             )
 
     stats["failures_sample"] = failures[:10]
