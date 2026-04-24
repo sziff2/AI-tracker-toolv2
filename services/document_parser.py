@@ -126,21 +126,40 @@ def extract_text_html(file_path: str) -> tuple[list[dict], list[dict]]:
         logger.info("Stripped XBRL: %d → %d bytes (%.0f%% reduction)",
                      file_size, len(raw), (1 - len(raw)/file_size) * 100)
 
-    # Step 2: For very large files, extract only financial sections
+    # Step 2: For very large files, try targeted section extraction to
+    # keep LLM token cost bounded. On modern SEC iXBRL filings the Item
+    # N headings are wrapped across tags and styled as divs, which breaks
+    # the naive regex — observed on ARW US 10-K 2025_Q4 returning ~2KB
+    # of boilerplate instead of the financial statements. When the
+    # section extraction produces a clearly-too-small result, fall
+    # through to the full stripped content so downstream extraction has
+    # something real to work with.
     working_html = raw
     if len(raw) > 2_000_000:  # > 2MB after XBRL strip
         sections = _extract_sec_sections(raw)
+        candidate = ""
         if sections:
-            # Combine financial statements + MD&A for extraction
-            working_html = sections.get('financial_statements', '')
+            candidate = sections.get('financial_statements', '')
             if 'mdna' in sections:
-                working_html += '\n\n' + sections['mdna']
-            logger.info("Large file: extracted %d chars from %d sections (financial + MD&A)",
-                         len(working_html), len(sections))
-        if len(working_html) < 1000:
-            # Section extraction failed — fall back to full but truncated
+                candidate += '\n\n' + sections['mdna']
+            logger.info("Large file: section-extracted %d chars from %d sections",
+                         len(candidate), len(sections))
+
+        # A usable financial extract from a 10-K/10-Q should be at LEAST
+        # ~50KB (financial statements + MD&A are hundreds of thousands of
+        # chars in practice). Anything below that is the iXBRL misfire —
+        # fall back to the full document (capped at 2MB) so Claude
+        # actually sees the numbers.
+        MIN_USEFUL = 50_000
+        if len(candidate) >= MIN_USEFUL:
+            working_html = candidate
+        else:
             working_html = raw[:2_000_000]
-            logger.warning("Section extraction found too little content, using first 2MB")
+            logger.warning(
+                "Section extraction produced only %d chars (<%d threshold) — "
+                "likely iXBRL misfire. Using full stripped HTML (%d chars).",
+                len(candidate), MIN_USEFUL, len(working_html),
+            )
 
     # Step 3: Extract tables via regex (faster than BeautifulSoup for large files)
     tables = []

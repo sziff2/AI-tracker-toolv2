@@ -190,10 +190,14 @@ async def run_native_extraction(
                 document.id, str(exc)[:120],
             )
 
-    # Text-mode cap. 150K chars ≈ 50K tokens — plenty of headroom on a 200K
-    # context window and still captures most of a 10-K's meaningful content
-    # (removes cover page + boilerplate which dominate the tail).
-    MAX_TEXT_CHARS = 150_000
+    # Text-mode cap. SEC 10-Ks after XBRL strip are ~800K-1.5M chars of
+    # mostly-useful content (boilerplate is <20% of the tail). 400K chars
+    # ≈ 100K tokens — fits comfortably inside Sonnet 4.6's 200K window,
+    # leaves ~100K for the prompt + output, and captures the full
+    # financial-statements + MD&A + footnotes block that a 150K cap was
+    # cutting off. Smaller filings (8-Ks, press releases) just pass
+    # through unchanged since they're 10-50K.
+    MAX_TEXT_CHARS = 400_000
     text_input = full_text or ""
     if len(text_input) > MAX_TEXT_CHARS:
         logger.info(

@@ -280,7 +280,7 @@ def test_run_native_extraction_returns_empty_on_bad_json():
 
 
 def test_run_native_extraction_truncates_long_text_input():
-    """150K-char cap on text input must fire — protect from blowing the
+    """400K-char cap on text input must fire — protect from blowing the
     context window on a 2MB stripped 10-K."""
     import json as _json
     captured = {}
@@ -292,12 +292,12 @@ def test_run_native_extraction_truncates_long_text_input():
 
     doc = _fake_document()
     db = _fake_db_company_lookup_empty()
-    long_text = "x" * 300_000
+    long_text = "x" * 800_000  # over the 400K cap
 
     with patch("services.llm_client.call_llm_native_async", new=_capture):
         asyncio.run(run_native_extraction(db, doc, full_text=long_text))
 
-    # Prompt template ~2k chars + truncated text (150k) → should be close to 152k
-    assert captured["prompt_len"] < 160_000
-    assert captured["prompt_len"] > 140_000  # sanity: truncation actually applied, not stripped to nothing
+    # Prompt template ~2k chars + truncated text (400k) → should be close to 402k
+    assert captured["prompt_len"] < 410_000
+    assert captured["prompt_len"] > 390_000  # sanity: truncation actually applied
     assert captured["pdf_path"] is None  # text mode
