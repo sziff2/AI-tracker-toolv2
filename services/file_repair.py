@@ -66,8 +66,19 @@ async def repair_missing_files(
         }
     """
     from services.harvester.dispatcher import _download
+    from sqlalchemy import update
 
-    q = select(Document)
+    # Select plain columns (not ORM objects) so the loop body never
+    # touches the SQLAlchemy session after a rollback. An ENOSPC mid-loop
+    # used to trigger db.rollback(), which expired every ORM attribute
+    # in the session's identity map — the next iteration's `doc.id`
+    # access then tried an async ping from a non-greenlet context and
+    # killed the whole task. Tuples are immune to that.
+    q = select(
+        Document.id,
+        Document.file_path,
+        Document.source_url,
+    )
     if ticker:
         ticker_u = ticker.upper().strip()
         q = q.join(Company, Document.company_id == Company.id).where(
@@ -77,7 +88,7 @@ async def repair_missing_files(
         q = q.limit(limit)
 
     result = await db.execute(q)
-    rows = list(result.scalars().all())
+    rows = list(result.all())
 
     stats = {
         "dry_run":         dry_run,
@@ -91,19 +102,12 @@ async def repair_missing_files(
     }
     failures: list[dict] = []
 
-    for doc in rows:
+    for row in rows:
         stats["checked"] += 1
 
-        # Snapshot row fields EAGERLY before any I/O. A failure mid-loop
-        # (ENOSPC, HTTP error) triggers db.rollback(), which expires all
-        # attributes on `doc`. Any later `doc.id` / `doc.file_path` read
-        # would then fire a sync expired-attribute reload on the async
-        # session — that raises MissingGreenlet and kills the entire
-        # task. Grab the strings up front so the exception branch is
-        # pure Python.
-        doc_id_str   = str(doc.id)
-        file_path    = doc.file_path
-        source_url   = doc.source_url
+        # Plain tuple from the SELECT — no ORM attributes to expire.
+        doc_id, file_path, source_url = row
+        doc_id_str = str(doc_id)
 
         if not file_path:
             stats["no_url"] += 1
@@ -141,8 +145,17 @@ async def repair_missing_files(
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(content)
 
-            doc.checksum = hashlib.sha256(content).hexdigest()
-            doc.parsing_status = "pending"
+            # Update via the table instead of ORM attribute writes —
+            # keeps the session's identity map empty so rollbacks on a
+            # subsequent iteration can't expire anything.
+            await db.execute(
+                update(Document)
+                .where(Document.id == doc_id)
+                .values(
+                    checksum=hashlib.sha256(content).hexdigest(),
+                    parsing_status="pending",
+                )
+            )
             await db.commit()
             stats["fixed"] += 1
             logger.info(

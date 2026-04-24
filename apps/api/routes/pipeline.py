@@ -1409,6 +1409,63 @@ async def admin_period_diagnostic(
     }
 
 
+@router.get("/admin/storage-stats")
+async def admin_storage_stats():
+    """Inspect what the pod actually sees for the storage volume.
+
+    Returns filesystem total/used/free bytes from shutil.disk_usage
+    (which queries the real mount, not Railway's metadata), plus a
+    count and total size of files under storage/raw/. Use this to
+    diagnose cases where Railway says a volume is 10 GB but the
+    mounted filesystem is still 1 GB.
+    """
+    import shutil
+    from pathlib import Path
+    from configs.settings import settings as _s
+
+    base = Path(_s.storage_base_path)
+    raw = base / "raw"
+
+    try:
+        usage = shutil.disk_usage(str(base) if base.exists() else "/")
+        fs = {
+            "total_bytes": usage.total,
+            "used_bytes":  usage.used,
+            "free_bytes":  usage.free,
+            "total_gb":    round(usage.total / 1024**3, 2),
+            "used_gb":     round(usage.used / 1024**3, 2),
+            "free_gb":     round(usage.free / 1024**3, 2),
+        }
+    except Exception as exc:
+        fs = {"error": str(exc)[:200]}
+
+    file_count = 0
+    total_size = 0
+    largest: list[dict] = []
+    if raw.exists():
+        for p in raw.rglob("*"):
+            if p.is_file():
+                file_count += 1
+                try:
+                    sz = p.stat().st_size
+                    total_size += sz
+                    largest.append({"path": str(p.relative_to(base)), "size_mb": round(sz / 1024**2, 2)})
+                except OSError:
+                    pass
+        largest.sort(key=lambda x: x["size_mb"], reverse=True)
+
+    return {
+        "storage_base_path":   str(base),
+        "storage_base_exists": base.exists(),
+        "filesystem":          fs,
+        "files_under_raw":     {
+            "count":          file_count,
+            "total_size_mb":  round(total_size / 1024**2, 2),
+            "top_10_largest": largest[:10],
+        },
+    }
+
+
 @router.post("/admin/backfill-embeddings")
 async def admin_backfill_embeddings(
     ticker: str | None = None,
