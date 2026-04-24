@@ -1431,6 +1431,70 @@ async def admin_backfill_embeddings(
         return {"status": "celery_failed", "error": str(exc)}
 
 
+@router.post("/admin/repair-missing-files")
+async def admin_repair_missing_files(
+    ticker: str | None = None,
+    dry_run: bool = True,
+    limit: int | None = None,
+    via_celery: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-download raw files for Document rows whose file_path is missing.
+
+    The container's filesystem was wiped before the Railway persistent
+    volume was attached (2026-04-23). DB rows referencing file_path
+    still exist but the files are gone, so extraction reads nothing and
+    every agent skips. This endpoint restores files from the Document
+    row's source_url.
+
+    Usage from the authenticated browser console:
+
+      // 1. Dry-run first (recommended) — counts what would be repaired:
+      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=true', {method:'POST'})
+        .then(r => r.json()).then(console.log);
+
+      // 2. Real run, one company to confirm the path works:
+      fetch('/api/v1/admin/repair-missing-files?ticker=ARW%20US&dry_run=false', {method:'POST'})
+        .then(r => r.json()).then(console.log);
+
+      // 3. Whole portfolio (takes up to ~2h — dispatch to Celery):
+      fetch('/api/v1/admin/repair-missing-files?dry_run=false', {method:'POST'})
+        .then(r => r.json()).then(console.log);
+
+    Dry-runs return inline. Real runs default to Celery dispatch; set
+    via_celery=false to run inline (small scopes only — will hit the
+    HTTP timeout otherwise).
+    """
+    # Dry-runs are fast — count only, no downloads. Always inline.
+    if dry_run:
+        from services.file_repair import repair_missing_files
+        return await repair_missing_files(
+            db, ticker=ticker, dry_run=True, limit=limit,
+        )
+
+    if via_celery:
+        try:
+            from apps.worker.tasks import repair_missing_files_task
+            task = repair_missing_files_task.delay(ticker, False, limit)
+            return {
+                "status": "dispatched",
+                "task_id": task.id,
+                "ticker": ticker,
+                "limit": limit,
+                "hint": "Watch worker logs for [FILE_REPAIR] entries. "
+                        "Summary emitted as [FILE_REPAIR_SUMMARY] on completion.",
+            }
+        except Exception as exc:
+            logger.warning("Celery dispatch for repair failed (%s) — running inline", str(exc)[:200])
+
+    # Inline fallback — only use with a ticker + small limit, otherwise
+    # the HTTP request times out before the work completes.
+    from services.file_repair import repair_missing_files
+    return await repair_missing_files(
+        db, ticker=ticker, dry_run=False, limit=limit,
+    )
+
+
 @router.get("/admin/embedding-stats")
 async def admin_embedding_stats(db: AsyncSession = Depends(get_db)):
     """Ops check: DocumentSection embedding coverage for Tier 3.4.

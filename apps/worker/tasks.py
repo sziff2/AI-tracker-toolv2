@@ -367,6 +367,36 @@ def parse_and_extract_batch_task(
         raise
 
 
+@celery_app.task(bind=True, name="repair_missing_files", max_retries=0, time_limit=7200)
+def repair_missing_files_task(
+    self,
+    ticker: str | None = None,
+    dry_run: bool = True,
+    limit: int | None = None,
+) -> dict:
+    """Re-download raw files for Document rows whose file_path is missing
+    from the persistent volume. Fixes the pre-2026-04-23 file-wipe —
+    most of the repository's extraction failures trace back to that
+    rather than to the extractor. 2-hour time cap covers the full
+    portfolio (56 companies × ~20 docs each, ~1-3s per download).
+    Watch worker logs for [FILE_REPAIR] lines."""
+    from apps.api.database import AsyncSessionLocal
+    from services.file_repair import repair_missing_files
+
+    async def _run():
+        async with AsyncSessionLocal() as db:
+            return await repair_missing_files(
+                db, ticker=ticker, dry_run=dry_run, limit=limit,
+            )
+    try:
+        result = _run_async_task(_run())
+        logger.info("[FILE_REPAIR_SUMMARY] %s", result)
+        return result
+    except Exception as e:
+        logger.exception("repair_missing_files failed: %s", e)
+        raise
+
+
 # ─────────────────────────────────────────────────────────────────
 # Daily DB backup — posts summary + download link to Teams
 # ─────────────────────────────────────────────────────────────────
