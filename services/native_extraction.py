@@ -212,9 +212,30 @@ async def run_native_extraction(
     # too dense for one call. Splitting into N parallel Haiku calls
     # (each ~50-80KB) finishes in 30-90s, with negligible recall loss
     # because each chunk asks for ALL metrics it can see. Sonnet stays
-    # the default for normal-size docs (8-Ks, 10-Qs, presentations).
+    # the default for normal-size docs (8-Ks, 10-Qs, presentations,
+    # transcripts).
     LARGE_DOC_CHARS = 100_000
-    if not use_native_pdf and len(text_input) > LARGE_DOC_CHARS:
+    is_large_doc = len(text_input) > LARGE_DOC_CHARS
+
+    # When we have BOTH a usable PDF AND the doc is large, prefer the
+    # chunked-PDF-Haiku route — gives the 10-K layout-aware reading
+    # (tables/columns) that text-chunking loses, while still using
+    # Haiku's speed advantage in parallel.
+    if use_native_pdf and is_large_doc and pdf_path:
+        logger.info(
+            "native_extraction: large doc with PDF (%d chars) — using chunked PDF-Haiku path",
+            len(text_input),
+        )
+        return await _run_chunked_pdf_haiku(
+            pdf_path,
+            doc_type=doc_type,
+            ticker=ticker,
+            sector=sector or "generic",
+            industry=industry or "",
+            period_label=period_label,
+        )
+
+    if not use_native_pdf and is_large_doc:
         logger.info(
             "native_extraction: large doc (%d chars) — using chunked Haiku path",
             len(text_input),
@@ -274,6 +295,91 @@ async def run_native_extraction(
 # ─────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────
+
+async def _run_chunked_pdf_haiku(
+    pdf_path: str,
+    *,
+    doc_type: str,
+    ticker: str,
+    sector: str,
+    industry: str,
+    period_label: str,
+    n_chunks: int = 4,
+) -> dict:
+    """Split a large PDF into N page-range chunks, send each as a native
+    PDF document block to Haiku in parallel, merge results.
+
+    Trade-off: gives the 10-K layout-aware reading (Claude sees columns,
+    tables, charts) that text-chunking loses, while keeping Haiku's
+    speed advantage. Each ~20-25 page chunk fits well under Anthropic's
+    100-page-per-doc cap. ~30-90s wall-clock for 4 parallel calls.
+    """
+    import asyncio
+    from pathlib import Path
+    from services.llm_client import call_llm_native_async
+    from services.doc_fetch import split_pdf_into_chunks
+
+    try:
+        chunk_paths = await asyncio.to_thread(
+            split_pdf_into_chunks, Path(pdf_path), n_chunks
+        )
+    except Exception as exc:
+        logger.warning("Chunked-PDF Haiku: split failed for %s: %s", pdf_path, str(exc)[:200])
+        return _empty_result(doc_type, reason=f"pdf_split_failed: {str(exc)[:120]}")
+
+    if not chunk_paths:
+        return _empty_result(doc_type, reason="empty_pdf")
+
+    async def _extract_one(idx: int, chunk_path: Path) -> Optional[dict]:
+        prompt = _EXTRACTION_PROMPT.format(
+            doc_type=doc_type,
+            ticker=ticker,
+            sector=sector,
+            industry=industry,
+            period_label=period_label,
+            document_text=(
+                f"(PDF chunk {idx + 1}/{len(chunk_paths)} attached above as a document block)"
+            ),
+        )
+        try:
+            r = await call_llm_native_async(
+                prompt,
+                model=settings.agent_fast_model,  # Haiku
+                max_tokens=8192,
+                timeout_seconds=300,
+                feature="native_extraction_pdf_chunk",
+                ticker=ticker,
+                period=period_label,
+                pdf_path=str(chunk_path),
+            )
+            parsed = _parse_json_safe((r.get("text") or "").strip())
+            if parsed is None:
+                logger.warning("Chunked-PDF Haiku: chunk %d JSON parse failed", idx + 1)
+            return parsed
+        except Exception as exc:
+            logger.warning("Chunked-PDF Haiku: chunk %d failed: %s", idx + 1, str(exc)[:200])
+            return None
+
+    parsed_list = await asyncio.gather(
+        *[_extract_one(i, p) for i, p in enumerate(chunk_paths)],
+        return_exceptions=False,
+    )
+    parsed_list = [p for p in parsed_list if p is not None]
+
+    if not parsed_list:
+        return _empty_result(doc_type, reason="all_pdf_chunks_failed")
+
+    merged = _merge_chunk_parsed(parsed_list)
+    logger.info(
+        "Chunked-PDF Haiku: merged %d/%d chunks → %d metrics, %d segments, %d guidance",
+        len(parsed_list), len(chunk_paths),
+        len(merged.get("metrics") or []),
+        len(merged.get("segments") or []), len(merged.get("guidance") or []),
+    )
+    result = _map_to_legacy_shape(merged, doc_type, use_native_pdf=True)
+    result["extraction_method"] = "native_claude_v1_chunked_pdf_haiku"
+    return result
+
 
 async def _run_chunked_haiku(
     text_input: str,

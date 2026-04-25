@@ -206,6 +206,48 @@ async def ensure_pdf_for_native(document) -> Optional[Path]:
         return None
 
 
+def split_pdf_into_chunks(pdf_path: Path, n_chunks: int = 4) -> list[Path]:
+    """Split a PDF into N roughly-equal page-range chunks. Returns the
+    chunk paths in order.
+
+    Used by services/native_extraction._run_chunked_pdf_haiku so a 10-K's
+    PDF render can be sent to Claude as N parallel native PDF document
+    blocks (Haiku) rather than one slow Sonnet call. Chunks are cached
+    next to the source under foo.html.pdf.chunk{N}.pdf so the eviction
+    loop reclaims them under the same policy as raw files.
+
+    Returns the original path wrapped in a single-element list when the
+    PDF has fewer pages than n_chunks (no point splitting).
+    """
+    import fitz  # type: ignore[import-untyped]
+
+    src = fitz.open(str(pdf_path))
+    n_pages = len(src)
+    if n_pages <= n_chunks:
+        src.close()
+        return [pdf_path]
+
+    chunk_pages = (n_pages + n_chunks - 1) // n_chunks  # ceil division
+    chunks: list[Path] = []
+    try:
+        for i in range(0, n_pages, chunk_pages):
+            chunk_doc = fitz.open()
+            chunk_doc.insert_pdf(
+                src,
+                from_page=i,
+                to_page=min(i + chunk_pages - 1, n_pages - 1),
+            )
+            chunk_path = pdf_path.with_name(
+                f"{pdf_path.stem}.chunk{len(chunks)}.pdf"
+            )
+            chunk_doc.save(str(chunk_path))
+            chunk_doc.close()
+            chunks.append(chunk_path)
+    finally:
+        src.close()
+    return chunks
+
+
 async def evict_until_free(
     target_free_bytes: int,
     *,
