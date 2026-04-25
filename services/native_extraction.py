@@ -206,6 +206,28 @@ async def run_native_extraction(
         )
         text_input = text_input[:MAX_TEXT_CHARS]
 
+    # Large-doc shortcut: chunk + Haiku.
+    # Observed on ARW US 2025_Q4 10-K: a single Sonnet call on the full
+    # 240KB iXBRL+text input ran 18 minutes and timed out — the doc is
+    # too dense for one call. Splitting into N parallel Haiku calls
+    # (each ~50-80KB) finishes in 30-90s, with negligible recall loss
+    # because each chunk asks for ALL metrics it can see. Sonnet stays
+    # the default for normal-size docs (8-Ks, 10-Qs, presentations).
+    LARGE_DOC_CHARS = 100_000
+    if not use_native_pdf and len(text_input) > LARGE_DOC_CHARS:
+        logger.info(
+            "native_extraction: large doc (%d chars) — using chunked Haiku path",
+            len(text_input),
+        )
+        return await _run_chunked_haiku(
+            text_input,
+            doc_type=doc_type,
+            ticker=ticker,
+            sector=sector or "generic",
+            industry=industry or "",
+            period_label=period_label,
+        )
+
     prompt = _EXTRACTION_PROMPT.format(
         doc_type=doc_type,
         ticker=ticker,
@@ -252,6 +274,126 @@ async def run_native_extraction(
 # ─────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────
+
+async def _run_chunked_haiku(
+    text_input: str,
+    *,
+    doc_type: str,
+    ticker: str,
+    sector: str,
+    industry: str,
+    period_label: str,
+    n_chunks: int = 4,
+) -> dict:
+    """Split a large doc into N chunks, run Haiku extraction on each in
+    parallel, merge results. Used for SEC 10-Ks where a single Sonnet
+    call times out at 600s+.
+
+    Trade-off: Haiku is ~3-5× faster than Sonnet but somewhat less
+    precise. For the ~3% of docs (10-Ks) that don't fit in a single
+    Sonnet call, that's the right trade. Each chunk asks for ALL
+    metrics it can see, then dedup on (metric_name, period) on merge.
+    """
+    import asyncio
+    from services.llm_client import call_llm_native_async
+
+    chunk_size = (len(text_input) + n_chunks - 1) // n_chunks
+    chunks = [text_input[i:i + chunk_size] for i in range(0, len(text_input), chunk_size)]
+    if not chunks:
+        return _empty_result(doc_type, reason="empty_text_input")
+
+    async def _extract_one(idx: int, chunk_text: str) -> Optional[dict]:
+        prompt = _EXTRACTION_PROMPT.format(
+            doc_type=doc_type,
+            ticker=ticker,
+            sector=sector,
+            industry=industry,
+            period_label=period_label,
+            document_text=f"[CHUNK {idx + 1}/{len(chunks)}]\n\n{chunk_text}",
+        )
+        try:
+            r = await call_llm_native_async(
+                prompt,
+                model=settings.agent_fast_model,  # Haiku — fast tier
+                max_tokens=8192,
+                timeout_seconds=300,
+                feature="native_extraction_chunk",
+                ticker=ticker,
+                period=period_label,
+            )
+            parsed = _parse_json_safe((r.get("text") or "").strip())
+            if parsed is None:
+                logger.warning("Chunked Haiku: chunk %d JSON parse failed", idx + 1)
+            return parsed
+        except Exception as exc:
+            logger.warning("Chunked Haiku: chunk %d failed: %s", idx + 1, str(exc)[:200])
+            return None
+
+    parsed_list = await asyncio.gather(
+        *[_extract_one(i, c) for i, c in enumerate(chunks)],
+        return_exceptions=False,
+    )
+    parsed_list = [p for p in parsed_list if p is not None]
+
+    if not parsed_list:
+        return _empty_result(doc_type, reason="all_chunks_failed")
+
+    merged = _merge_chunk_parsed(parsed_list)
+    logger.info(
+        "Chunked Haiku: merged %d chunks → %d metrics, %d segments, %d guidance",
+        len(parsed_list), len(merged.get("metrics") or []),
+        len(merged.get("segments") or []), len(merged.get("guidance") or []),
+    )
+    # Tag method so the A/B + downstream can see this was the chunked path.
+    result = _map_to_legacy_shape(merged, doc_type, use_native_pdf=False)
+    result["extraction_method"] = "native_claude_v1_chunked_haiku"
+    return result
+
+
+def _merge_chunk_parsed(results: list[dict]) -> dict:
+    """Merge per-chunk parsed JSONs. Dedup metrics on (name, period);
+    union segments by name; concat guidance/bridges; take longest MD&A."""
+    seen_metrics: set[tuple[str, str]] = set()
+    seen_segments: set[str] = set()
+    merged: dict = {
+        "metrics": [],
+        "segments": [],
+        "mda_narrative": "",
+        "guidance": [],
+        "non_gaap_bridges": [],
+        "confidence_profile": {},
+        "detected_period": "",
+        "disappearance_flags": {},
+    }
+    for r in results:
+        for m in (r.get("metrics") or []):
+            name = (m.get("metric_name") or "").strip()
+            if not name:
+                continue
+            key = (name, m.get("period") or "")
+            if key in seen_metrics:
+                continue
+            seen_metrics.add(key)
+            merged["metrics"].append(m)
+        for s in (r.get("segments") or []):
+            name = (s.get("name") or "").strip()
+            if not name or name in seen_segments:
+                continue
+            seen_segments.add(name)
+            merged["segments"].append(s)
+        if isinstance(r.get("mda_narrative"), str) and \
+           len(r["mda_narrative"]) > len(merged["mda_narrative"]):
+            merged["mda_narrative"] = r["mda_narrative"]
+        for g in (r.get("guidance") or []):
+            merged["guidance"].append(g)
+        for b in (r.get("non_gaap_bridges") or []):
+            merged["non_gaap_bridges"].append(b)
+        if not merged["confidence_profile"] and r.get("confidence_profile"):
+            merged["confidence_profile"] = r["confidence_profile"]
+        if not merged["detected_period"] and r.get("detected_period"):
+            merged["detected_period"] = r["detected_period"]
+    return merged
+
 
 def _parse_json_safe(raw: str) -> Optional[dict]:
     """Strip markdown fences and parse. Returns None if invalid.
