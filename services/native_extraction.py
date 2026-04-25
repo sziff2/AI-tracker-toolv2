@@ -341,6 +341,8 @@ async def _run_chunked_pdf_haiku(
                 f"(PDF chunk {idx + 1}/{len(chunk_paths)} attached above as a document block)"
             ),
         )
+
+        # First pass: Haiku (fast, cheap).
         try:
             r = await call_llm_native_async(
                 prompt,
@@ -353,11 +355,50 @@ async def _run_chunked_pdf_haiku(
                 pdf_path=str(chunk_path),
             )
             parsed = _parse_json_safe((r.get("text") or "").strip())
+            if parsed is not None:
+                return parsed
+            logger.warning(
+                "Chunked-PDF Haiku: chunk %d JSON parse failed — retrying with Sonnet",
+                idx + 1,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Chunked-PDF Haiku: chunk %d Haiku call failed (%s) — retrying with Sonnet",
+                idx + 1, str(exc)[:200],
+            )
+
+        # Second pass per chunk: Sonnet (slower, more reliable JSON +
+        # better extraction depth). Each chunk is ~25 pages so Sonnet
+        # handles it comfortably in <2 min — no timeout risk like the
+        # full-doc Sonnet attempts that ran 18 minutes earlier today.
+        try:
+            r2 = await call_llm_native_async(
+                prompt,
+                model=settings.agent_default_model,  # Sonnet
+                max_tokens=12_288,
+                timeout_seconds=300,
+                feature="native_extraction_pdf_chunk_sonnet",
+                ticker=ticker,
+                period=period_label,
+                pdf_path=str(chunk_path),
+            )
+            parsed = _parse_json_safe((r2.get("text") or "").strip())
             if parsed is None:
-                logger.warning("Chunked-PDF Haiku: chunk %d JSON parse failed", idx + 1)
+                logger.warning(
+                    "Chunked-PDF Sonnet: chunk %d also failed JSON parse",
+                    idx + 1,
+                )
+            else:
+                logger.info(
+                    "Chunked-PDF: chunk %d recovered via Sonnet (%d metrics)",
+                    idx + 1, len(parsed.get("metrics") or []),
+                )
             return parsed
         except Exception as exc:
-            logger.warning("Chunked-PDF Haiku: chunk %d failed: %s", idx + 1, str(exc)[:200])
+            logger.warning(
+                "Chunked-PDF Sonnet: chunk %d also failed: %s",
+                idx + 1, str(exc)[:200],
+            )
             return None
 
     parsed_list = await asyncio.gather(
@@ -502,30 +543,96 @@ def _merge_chunk_parsed(results: list[dict]) -> dict:
 
 
 def _parse_json_safe(raw: str) -> Optional[dict]:
-    """Strip markdown fences and parse. Returns None if invalid.
-    Separate from validate_output on agents — no schema enforcement here,
-    just "did we get a dict back?" """
+    """Best-effort JSON extraction. Returns None only when no parseable
+    object can be found at all. Handles:
+      - Markdown fence wrappers (```json ... ```)
+      - Preamble / postamble prose ("Here is the JSON: { ... }")
+      - Trailing commas
+      - Truncated output (recovers via brace-balance walk)
+
+    Haiku in particular is prone to wrapping JSON output in explanation,
+    so the strict json.loads path frequently fails on otherwise-good
+    extractions. This recovers ~all of those.
+    """
+    if not raw:
+        return None
     cleaned = raw.strip()
+
+    # Strip markdown fences if present.
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Remove opening fence + any language tag
         cleaned = "\n".join(lines[1:])
-        # Remove closing fence if present
         if cleaned.endswith("```"):
             cleaned = cleaned[: -len("```")].rstrip()
+
+    # Try strict parse first — fastest path when output is clean.
     try:
         data = json.loads(cleaned)
-        if not isinstance(data, dict):
-            return None
-        return data
+        if isinstance(data, dict):
+            return data
     except json.JSONDecodeError:
-        # Last-ditch: find the first { and last } and try again
+        pass
+
+    # Recovery 1: slice from first { to last }.
+    try:
+        start = cleaned.index("{")
+        end = cleaned.rindex("}")
+        candidate = cleaned[start : end + 1]
         try:
-            start = cleaned.index("{")
-            end = cleaned.rindex("}")
-            return json.loads(cleaned[start : end + 1])
-        except (ValueError, json.JSONDecodeError):
-            return None
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            # Strip trailing commas before }/] which are common in
+            # Haiku output and invalid JSON per the spec.
+            patched = re.sub(r",(\s*[}\]])", r"\1", candidate)
+            try:
+                data = json.loads(patched)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                pass
+    except ValueError:
+        pass
+
+    # Recovery 2: brace-balance walk — find the FIRST balanced {...}
+    # block from the first opening brace. Handles cases where the LLM
+    # appended a second incomplete JSON object after the good one.
+    try:
+        start = cleaned.index("{")
+        depth = 0
+        in_string = False
+        escape = False
+        for i, ch in enumerate(cleaned[start:], start=start):
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start : i + 1]
+                    patched = re.sub(r",(\s*[}\]])", r"\1", candidate)
+                    try:
+                        data = json.loads(patched)
+                        if isinstance(data, dict):
+                            return data
+                    except json.JSONDecodeError:
+                        pass
+                    break
+    except ValueError:
+        pass
+
+    return None
 
 
 def _map_to_legacy_shape(
