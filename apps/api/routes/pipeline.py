@@ -1454,7 +1454,7 @@ async def admin_clear_period(
     """
     from sqlalchemy import delete as sa_delete
     from apps.api.models import (
-        Company, DocumentSection, ExtractedMetric,
+        Company, Document, DocumentSection, ExtractedMetric,
         ExtractionProfile, ResearchOutput,
     )
     from pathlib import Path
