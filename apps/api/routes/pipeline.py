@@ -1237,12 +1237,28 @@ async def admin_native_extraction_ab(
             })
             continue
 
-        # Native path, not persisted
+        # Native path, not persisted. Pick up the same HTML→PDF logic
+        # the production extractor uses so the A/B faithfully reflects
+        # what flipping USE_NATIVE_EXTRACTION would do.
+        pdf_path = None
+        if doc.file_path:
+            fpl = str(doc.file_path).lower()
+            if fpl.endswith(".pdf"):
+                pdf_path = doc.file_path
+            elif fpl.endswith((".htm", ".html", ".xhtml")):
+                try:
+                    from services.doc_fetch import ensure_pdf_for_native
+                    converted = await ensure_pdf_for_native(doc)
+                    if converted:
+                        pdf_path = str(converted)
+                except Exception:
+                    pdf_path = None
+
         t0 = _time.time()
         try:
             native = await run_native_extraction(
                 db, doc, full_text,
-                pdf_path=doc.file_path if (doc.file_path or "").lower().endswith(".pdf") else None,
+                pdf_path=pdf_path,
                 sector=company.sector or "",
                 industry=company.industry or "",
                 country=company.country or "",

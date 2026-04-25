@@ -58,6 +58,13 @@ jinja2==3.1.4
 # polish matters.
 reportlab==4.4.10
 
+# HTML → PDF for SEC iXBRL 10-Ks. Pure-Python (built on reportlab),
+# no system deps. Used by services/doc_fetch.ensure_pdf_for_native to
+# give Claude's native PDF document block a layout-aware view of HTML
+# filings. Text-path native extraction times out at 300s on 240KB
+# iXBRL inputs — PDF block path is materially faster for large docs.
+xhtml2pdf==0.2.16
+
 # Quantitative (optimisation + factor regressions)
 # OLS regressions for factor shocks are pure-numpy — no statsmodels needed.
 numpy==1.26.4

@@ -837,8 +837,30 @@ async def extract_by_document_type(
                 doc_type, sector or "generic",
             )
             pdf_path = None
-            if document.file_path and str(document.file_path).lower().endswith(".pdf"):
-                pdf_path = document.file_path
+            if document.file_path:
+                fp_lower = str(document.file_path).lower()
+                if fp_lower.endswith(".pdf"):
+                    pdf_path = document.file_path
+                elif fp_lower.endswith((".htm", ".html", ".xhtml")):
+                    # SEC iXBRL HTML 10-Ks time out (300s+) on the
+                    # native text path. WeasyPrint-converted PDFs go
+                    # through Claude's native PDF block path which
+                    # processes layout-aware docs much faster. Cached
+                    # under the same volume eviction policy.
+                    try:
+                        from services.doc_fetch import ensure_pdf_for_native
+                        converted = await ensure_pdf_for_native(document)
+                        if converted:
+                            pdf_path = str(converted)
+                            logger.info(
+                                "Native extraction: using HTML→PDF conversion (%s)",
+                                converted.name,
+                            )
+                    except Exception as conv_exc:
+                        logger.warning(
+                            "HTML→PDF conversion threw, falling back to text path: %s",
+                            str(conv_exc)[:200],
+                        )
             native_result = await run_native_extraction(
                 db, document, text, pdf_path=pdf_path,
                 sector=sector, industry=industry, country=country,

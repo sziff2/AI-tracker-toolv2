@@ -106,6 +106,85 @@ def _resolve_edgar_index(source_url: str) -> str:
 # Eviction — keep disk usage bounded
 # ─────────────────────────────────────────────────────────────────
 
+async def ensure_pdf_for_native(document) -> Optional[Path]:
+    """Return a PDF path suitable for Claude's native PDF document block.
+
+    For PDFs: returns the existing file_path (lazy-restored if missing).
+    For HTML: converts via WeasyPrint and caches as
+    {file_path}.pdf alongside the source. The cached PDF survives until
+    the eviction loop reclaims it (same lifecycle as the source HTML).
+
+    Returns None when:
+      - The source format isn't supported (.docx, .txt, etc.)
+      - The conversion fails (bad HTML, WeasyPrint error)
+      - ensure_local_file fails to fetch the source
+
+    Used by services/metric_extractor.py to give Claude's native PDF
+    block path SEC iXBRL 10-Ks. Observed: text-path native extraction
+    on 240KB iXBRL inputs times out at 300s; native PDF on the same
+    content typically completes in 30-90s because Claude's document
+    API processes layout-aware PDFs more efficiently than equivalent
+    text payloads.
+    """
+    import asyncio as _aio
+
+    try:
+        src = await ensure_local_file(document)
+    except FileNotFoundError as exc:
+        logger.warning("[DOC_FETCH] ensure_pdf_for_native: source unavailable: %s", str(exc)[:200])
+        return None
+
+    suffix = src.suffix.lower()
+    if suffix == ".pdf":
+        return src
+    if suffix not in (".htm", ".html", ".xhtml"):
+        return None
+
+    # Cache PDF alongside source. .name + ".pdf" preserves the original
+    # extension in the filename for easier debugging (foo.html → foo.html.pdf).
+    pdf_path = src.with_name(src.name + ".pdf")
+    if pdf_path.exists() and pdf_path.stat().st_size > 0:
+        return pdf_path
+
+    # xhtml2pdf is pure-Python (built on reportlab); no Cairo/Pango.
+    # CPU-bound, so offload to a worker thread.
+    def _convert():
+        # Lazy import — xhtml2pdf pulls reportlab + html5lib at import time.
+        from xhtml2pdf import pisa
+
+        html = src.read_text(errors="replace")
+        # iXBRL filings often start with an <?xml declaration that pisa
+        # struggles with — stripping any leading XML processing
+        # instruction lets pisa fall through to the html5lib branch.
+        html = re.sub(r"^\s*<\?xml[^?]*\?>\s*", "", html, count=1)
+
+        with open(pdf_path, "wb") as out:
+            result = pisa.CreatePDF(html, dest=out, encoding="utf-8")
+        if result.err:
+            raise RuntimeError(f"pisa returned {result.err} errors")
+
+    try:
+        await _aio.to_thread(_convert)
+        size = pdf_path.stat().st_size
+        logger.info(
+            "[DOC_FETCH] HTML→PDF: %s → %s (%.1f KB)",
+            src.name, pdf_path.name, size / 1024,
+        )
+        return pdf_path
+    except Exception as exc:
+        logger.warning(
+            "[DOC_FETCH] HTML→PDF conversion failed for %s: %s",
+            src.name, str(exc)[:200],
+        )
+        # Clean up partial output so the next call retries cleanly.
+        if pdf_path.exists():
+            try:
+                pdf_path.unlink()
+            except OSError:
+                pass
+        return None
+
+
 async def evict_until_free(
     target_free_bytes: int,
     *,
