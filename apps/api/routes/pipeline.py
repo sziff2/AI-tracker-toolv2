@@ -1425,6 +1425,119 @@ async def admin_period_diagnostic(
     }
 
 
+@router.post("/admin/clear-period/{ticker:path}/{period}")
+async def admin_clear_period(
+    ticker: str,
+    period: str,
+    keep_files: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Wipe extraction state for a (ticker, period) so processing can
+    re-run from a clean slate. Keeps the Document DB rows intact —
+    file_path, source_url, etc. all preserved. Resets parsing_status
+    to 'pending' on those docs so the UI's process button re-fires
+    them.
+
+    Removes:
+      - DocumentSection rows for the period's docs
+      - ExtractedMetric rows for the period's docs
+      - ExtractionProfile rows for the (company, period)
+      - ResearchOutput rows for the (company, period)
+      - Cached source files + cached HTML→PDF outputs from disk
+        (unless keep_files=true) so lazy-restore + re-render fires
+
+    Pipeline_runs are NOT deleted (kept as audit history).
+
+    Trigger from authenticated browser console:
+      fetch('/api/v1/admin/clear-period/ARW%20US/2025_Q4', {method:'POST'})
+        .then(r => r.json()).then(console.log);
+    """
+    from sqlalchemy import delete as sa_delete
+    from apps.api.models import (
+        Company, DocumentSection, ExtractedMetric,
+        ExtractionProfile, ResearchOutput,
+    )
+    from pathlib import Path
+
+    ticker = ticker.upper().strip()
+    co_q = await db.execute(select(Company).where(Company.ticker == ticker))
+    co = co_q.scalar_one_or_none()
+    if not co:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    docs_q = await db.execute(
+        select(Document).where(
+            Document.company_id == co.id,
+            Document.period_label == period,
+        )
+    )
+    docs = list(docs_q.scalars().all())
+    if not docs:
+        return {"status": "no_docs", "ticker": ticker, "period": period}
+
+    doc_ids = [d.id for d in docs]
+
+    sec_res = await db.execute(
+        sa_delete(DocumentSection).where(DocumentSection.document_id.in_(doc_ids))
+    )
+    met_res = await db.execute(
+        sa_delete(ExtractedMetric).where(ExtractedMetric.document_id.in_(doc_ids))
+    )
+    prof_res = await db.execute(
+        sa_delete(ExtractionProfile).where(
+            ExtractionProfile.company_id == co.id,
+            ExtractionProfile.period_label == period,
+        )
+    )
+    ro_res = await db.execute(
+        sa_delete(ResearchOutput).where(
+            ResearchOutput.company_id == co.id,
+            ResearchOutput.period_label == period,
+        )
+    )
+
+    # Reset parsing_status so the UI Process button re-runs everything.
+    for doc in docs:
+        doc.parsing_status = "pending"
+
+    files_removed: list[str] = []
+    if not keep_files:
+        for doc in docs:
+            if not doc.file_path:
+                continue
+            base = Path(doc.file_path)
+            # Source file + cached HTML→PDF render (foo.html.pdf).
+            for candidate in (base, Path(str(base) + ".pdf")):
+                if candidate.exists():
+                    try:
+                        candidate.unlink()
+                        files_removed.append(candidate.name)
+                    except OSError:
+                        pass
+
+    await db.commit()
+
+    return {
+        "status":          "ok",
+        "ticker":          ticker,
+        "period":          period,
+        "docs_affected":   len(docs),
+        "doc_ids":         [str(d) for d in doc_ids],
+        "deleted_rows": {
+            "sections":         sec_res.rowcount or 0,
+            "metrics":          met_res.rowcount or 0,
+            "profiles":         prof_res.rowcount or 0,
+            "research_outputs": ro_res.rowcount or 0,
+        },
+        "files_removed":   files_removed,
+        "next_step": (
+            "Trigger /api/v1/documents/{doc_id}/process for each doc, "
+            "or click Process in the UI. Lazy-restore will re-fetch the "
+            "source file and re-render the cached PDF."
+        ),
+    }
+
+
 @router.post("/admin/evict-old-files")
 async def admin_evict_old_files(
     target_free_gb: float = 1.0,
