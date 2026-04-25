@@ -296,6 +296,165 @@ async def run_native_extraction(
 # Helpers
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+# Second-pass: targeted IS / BS / CF extraction
+# ─────────────────────────────────────────────────────────────────
+
+_STATEMENTS_PROMPT = """You are extracting the three core financial statements from a {doc_type} for {ticker}.
+
+Period: {period_label}
+
+Look at the attached PDF. If it contains the consolidated income statement, consolidated balance sheet, or consolidated cash flow statement, extract EVERY line item with EVERY period column shown.
+
+If the PDF chunk contains none of these statements, return an empty array for each.
+
+Rules:
+- Use the EXACT line-item name as printed (e.g. "Sales", "Cost of products sold", "Net income attributable to shareholders")
+- Return ALL period columns (typically 2-3 years for a 10-K, 2-3 quarters for a 10-Q)
+- Period format: YYYY_FY for annual, YYYY_QN for quarterly (e.g. "2025_FY", "2024_FY", "2023_FY")
+- Numeric values only — strip $ signs and "thousand"/"million" suffixes; report the unit separately
+- Unit: USD_M for millions, USD_B for billions, USD_K for thousands, %, x, count
+- Skip subtotals and EPS lines if absent from the face of the statement
+- Skip the notes / footnotes — those are separate
+
+Return STRICT JSON (no preamble, no markdown fences):
+
+{{
+  "income_statement": [
+    {{"line_item": "Sales", "period": "2025_FY", "value": 30852.9, "unit": "USD_M"}},
+    {{"line_item": "Sales", "period": "2024_FY", "value": 27911.7, "unit": "USD_M"}},
+    ...
+  ],
+  "balance_sheet": [
+    {{"line_item": "Cash and cash equivalents", "period": "2025_FY", "value": 306.5, "unit": "USD_M"}},
+    ...
+  ],
+  "cash_flow": [
+    {{"line_item": "Cash from operating activities", "period": "2025_FY", "value": 1234.5, "unit": "USD_M"}},
+    ...
+  ]
+}}
+"""
+
+
+# Doc types where targeted IS/BS/CF extraction is worth running.
+# Press releases / 8-Ks / presentations either lack the full statements
+# or have them as too-summary data (better caught by the main pass).
+_STATEMENTS_DOC_TYPES = frozenset({
+    "annual_report",
+    "10-k", "10k",
+    "10-q", "10q",
+    "earnings_release",
+    "financial_statements",
+})
+
+
+async def _run_targeted_statements_pass(
+    pdf_chunks: list,
+    *,
+    doc_type: str,
+    ticker: str,
+    sector: str,
+    industry: str,
+    period_label: str,
+) -> Optional[dict]:
+    """Second-pass extraction: targeted at IS/BS/CF line items × all
+    period columns. Runs Sonnet on each PDF chunk with a strict
+    statements-only prompt. Returns the parsed result in the same
+    legacy shape as the main pass so it can be merged.
+
+    Each chunk is independent — chunks without the statements just
+    return empty arrays. ~$0.30-0.60 per 10-K; bought back many times
+    over by the missing comparator data.
+    """
+    import asyncio
+    from services.llm_client import call_llm_native_async
+
+    async def _extract_one(idx: int, chunk_path) -> Optional[dict]:
+        prompt = _STATEMENTS_PROMPT.format(
+            doc_type=doc_type,
+            ticker=ticker,
+            period_label=period_label,
+        )
+        try:
+            r = await call_llm_native_async(
+                prompt,
+                model=settings.agent_default_model,  # Sonnet — accuracy matters here
+                max_tokens=8192,
+                timeout_seconds=300,
+                feature="native_extraction_statements_pass",
+                ticker=ticker,
+                period=period_label,
+                pdf_path=str(chunk_path),
+            )
+            return _parse_json_safe((r.get("text") or "").strip())
+        except Exception as exc:
+            logger.warning("Statements pass: chunk %d failed: %s", idx + 1, str(exc)[:200])
+            return None
+
+    parsed_chunks = await asyncio.gather(
+        *[_extract_one(i, p) for i, p in enumerate(pdf_chunks)],
+        return_exceptions=False,
+    )
+
+    # Flatten IS/BS/CF nested structure into a single metrics array
+    # in the legacy shape so it merges with chunked-Haiku results.
+    metrics: list[dict] = []
+    seen: set[tuple] = set()
+    n_lines_by_stmt = {"income_statement": 0, "balance_sheet": 0, "cash_flow": 0}
+
+    for chunk_result in parsed_chunks:
+        if not chunk_result:
+            continue
+        for stmt_key in ("income_statement", "balance_sheet", "cash_flow"):
+            for line in (chunk_result.get(stmt_key) or []):
+                label = (line.get("line_item") or "").strip()
+                period = (line.get("period") or "").strip()
+                if not label:
+                    continue
+                # Snake-case the label for downstream code that keys on metric_name
+                metric_name = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+                if not metric_name:
+                    continue
+                key = (stmt_key, metric_name, period)
+                if key in seen:
+                    continue
+                seen.add(key)
+                value = line.get("value")
+                metrics.append({
+                    "metric_name":    metric_name,
+                    "metric_value":   value,
+                    "metric_text":    str(value) if value is not None else label,
+                    "unit":           line.get("unit") or "USD_M",
+                    "segment":        "consolidated",
+                    "period":         period,
+                    "source_snippet": f"{stmt_key}: {label}",
+                    "confidence":     0.95,
+                    "is_one_off":     False,
+                })
+                n_lines_by_stmt[stmt_key] += 1
+
+    if not metrics:
+        return None
+
+    logger.info(
+        "Statements pass: extracted IS=%d, BS=%d, CF=%d line-items (total %d)",
+        n_lines_by_stmt["income_statement"],
+        n_lines_by_stmt["balance_sheet"],
+        n_lines_by_stmt["cash_flow"],
+        len(metrics),
+    )
+    return {
+        "metrics":             metrics,
+        "segments":            [],
+        "mda_narrative":       "",
+        "guidance":            [],
+        "non_gaap_bridges":    [],
+        "confidence_profile":  {},
+        "detected_period":     "",
+    }
+
+
 async def _run_chunked_pdf_haiku(
     pdf_path: str,
     *,
@@ -401,24 +560,46 @@ async def _run_chunked_pdf_haiku(
             )
             return None
 
-    parsed_list = await asyncio.gather(
+    # Run main pass + targeted statements pass concurrently.
+    # Targeted pass only fires on doc types where IS/BS/CF is expected.
+    main_task = asyncio.gather(
         *[_extract_one(i, p) for i, p in enumerate(chunk_paths)],
         return_exceptions=False,
     )
-    parsed_list = [p for p in parsed_list if p is not None]
+    if doc_type.lower() in _STATEMENTS_DOC_TYPES:
+        statements_task = _run_targeted_statements_pass(
+            chunk_paths,
+            doc_type=doc_type,
+            ticker=ticker,
+            sector=sector,
+            industry=industry,
+            period_label=period_label,
+        )
+        main_results, statements_result = await asyncio.gather(main_task, statements_task)
+    else:
+        main_results = await main_task
+        statements_result = None
+
+    parsed_list = [p for p in main_results if p is not None]
+    if statements_result is not None:
+        parsed_list.append(statements_result)
 
     if not parsed_list:
         return _empty_result(doc_type, reason="all_pdf_chunks_failed")
 
     merged = _merge_chunk_parsed(parsed_list)
+    main_chunk_count = sum(1 for p in main_results if p is not None)
     logger.info(
-        "Chunked-PDF Haiku: merged %d/%d chunks → %d metrics, %d segments, %d guidance",
-        len(parsed_list), len(chunk_paths),
+        "Chunked-PDF Haiku: merged %d/%d main chunks + %s statements pass → "
+        "%d metrics, %d segments, %d guidance",
+        main_chunk_count, len(chunk_paths),
+        "1" if statements_result is not None else "0",
         len(merged.get("metrics") or []),
         len(merged.get("segments") or []), len(merged.get("guidance") or []),
     )
     result = _map_to_legacy_shape(merged, doc_type, use_native_pdf=True)
-    result["extraction_method"] = "native_claude_v1_chunked_pdf_haiku"
+    suffix = "+statements" if statements_result is not None else ""
+    result["extraction_method"] = f"native_claude_v1_chunked_pdf_haiku{suffix}"
     return result
 
 
