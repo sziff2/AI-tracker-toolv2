@@ -520,15 +520,30 @@ async def process_doc(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     company = company_result.scalar_one_or_none()
     ticker = company.ticker if company else "UNKNOWN"
 
-    # Railway redeploys wipe the ephemeral filesystem. If the file is gone
-    # there's no recovery path (raw PDFs are no longer stored in the DB per
-    # CLAUDE.md) — the analyst has to re-upload.
-    file_path = Path(doc.file_path)
-    if not file_path.exists():
-        raise HTTPException(400, "File not found on disk (likely wiped by a redeploy). Please re-upload this document.")
+    # File-on-disk check removed — process_document now calls
+    # services.doc_fetch.ensure_local_file which lazy-restores from
+    # Document.source_url when the local cache copy is missing. The old
+    # 400 "re-upload required" message is no longer accurate.
 
-    summary = await process_document(db, doc, ticker=ticker)
-    return summary
+    # Surface the exception to logs + the response. The bare-500 response
+    # we kept seeing on the ARW 10-K had no body and no Railway-visible
+    # traceback, which made root-causing impossible. Wrap explicitly so
+    # the next failure is debuggable.
+    try:
+        summary = await process_document(db, doc, ticker=ticker)
+        return summary
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import traceback as _tb
+        tb = _tb.format_exc()
+        logger.error("[PROCESS_DOC] Failed for %s (%s): %s\n%s",
+                     document_id, doc.title, exc, tb)
+        raise HTTPException(
+            500,
+            {"error": type(exc).__name__, "message": str(exc)[:500],
+             "traceback_tail": tb.splitlines()[-15:]},
+        )
 
 
 # ─────────────────────────────────────────────────────────────────
