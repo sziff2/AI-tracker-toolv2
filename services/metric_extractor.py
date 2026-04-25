@@ -841,17 +841,25 @@ async def extract_by_document_type(
                 "Using native-Claude extraction for %s (sector: %s)",
                 doc_type, sector or "generic",
             )
+            # Routing for native extraction:
+            #   PDF → native PDF block (good for decks, transcripts)
+            #   HTML + small text (≤100K) → convert to PDF for layout-aware reading
+            #   HTML + LARGE text (>100K, e.g. SEC 10-K) → skip PDF, pass text.
+            #     run_native_extraction sees no pdf_path + text > 100K and
+            #     routes to chunked-Haiku (4 parallel Haiku calls, ~30-90s
+            #     total). Sonnet PDF on a 100-page iXBRL 10-K times out at
+            #     18 min — proven 2026-04-25. Chunking is the fix.
+            LARGE_TEXT_THRESHOLD = 100_000
+            text_len = len(text or "")
             pdf_path = None
             if document.file_path:
                 fp_lower = str(document.file_path).lower()
                 if fp_lower.endswith(".pdf"):
                     pdf_path = document.file_path
-                elif fp_lower.endswith((".htm", ".html", ".xhtml")):
-                    # SEC iXBRL HTML 10-Ks time out (300s+) on the
-                    # native text path. WeasyPrint-converted PDFs go
-                    # through Claude's native PDF block path which
-                    # processes layout-aware docs much faster. Cached
-                    # under the same volume eviction policy.
+                elif (
+                    fp_lower.endswith((".htm", ".html", ".xhtml"))
+                    and text_len <= LARGE_TEXT_THRESHOLD
+                ):
                     try:
                         from services.doc_fetch import ensure_pdf_for_native
                         converted = await ensure_pdf_for_native(document)
@@ -866,6 +874,11 @@ async def extract_by_document_type(
                             "HTML→PDF conversion threw, falling back to text path: %s",
                             str(conv_exc)[:200],
                         )
+                elif fp_lower.endswith((".htm", ".html", ".xhtml")):
+                    logger.info(
+                        "Native extraction: large HTML (%d chars) — skipping HTML→PDF; "
+                        "chunked-Haiku path will fire", text_len,
+                    )
             native_result = await run_native_extraction(
                 db, document, text, pdf_path=pdf_path,
                 sector=sector, industry=industry, country=country,
