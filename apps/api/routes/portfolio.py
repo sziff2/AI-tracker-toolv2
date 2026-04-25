@@ -1237,7 +1237,7 @@ class AbPdfInput(BaseModel):
 
 class AbPdfBatch(BaseModel):
     pdfs: list[AbPdfInput]
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = "claude-sonnet-4-6"
     max_tokens: int = 2048
 
 

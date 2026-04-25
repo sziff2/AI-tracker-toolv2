@@ -469,9 +469,9 @@ class ChatResponse(BaseModel):
 
 
 MODEL_MAP = {
-    "fast": "claude-3-5-haiku-20241022",
-    "standard": "claude-sonnet-4-20250514",
-    "deep": "claude-opus-4-20250514",
+    "fast": "claude-haiku-4-5-20251001",
+    "standard": "claude-sonnet-4-6",
+    "deep": "claude-opus-4-6",
 }
 
 

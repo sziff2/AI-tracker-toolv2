@@ -388,7 +388,7 @@ def run_native_one(filing: dict, dry_run: bool = False) -> ArmResult:
     t0 = time.time()
     try:
         resp = client.messages.create(
-            model="claude-sonnet-4-5-20250929",  # stable Sonnet model
+            model="claude-sonnet-4-6",  # current Sonnet (4.5/4 retire June 15 2026)
             max_tokens=2048,
             messages=[{
                 "role": "user",

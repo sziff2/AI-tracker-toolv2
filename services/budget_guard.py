@@ -8,11 +8,15 @@ from configs.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Approximate pricing per 1K tokens (update as Anthropic changes rates)
+# Approximate pricing per 1K tokens (update as Anthropic changes rates).
+# Legacy 4-20250514 entries kept so historical agent_output rows that
+# reference them still cost-out correctly; they retire 2026-06-15.
 _RATES = {
+    "claude-sonnet-4-6":           {"input": 0.003,  "output": 0.015},
+    "claude-opus-4-6":             {"input": 0.015,  "output": 0.075},
     "claude-haiku-4-5-20251001":   {"input": 0.001,  "output": 0.005},
-    "claude-sonnet-4-20250514":    {"input": 0.003,  "output": 0.015},
-    "claude-opus-4-20250514":      {"input": 0.015,  "output": 0.075},
+    "claude-sonnet-4-20250514":    {"input": 0.003,  "output": 0.015},  # legacy
+    "claude-opus-4-20250514":      {"input": 0.015,  "output": 0.075},  # legacy
 }
 
 
@@ -28,7 +32,7 @@ class BudgetGuard:
         self._warned = False
 
     def track(self, input_tokens: int, output_tokens: int, model: str):
-        rate = _RATES.get(model, _RATES["claude-sonnet-4-20250514"])
+        rate = _RATES.get(model, _RATES["claude-sonnet-4-6"])
         cost = (input_tokens / 1000) * rate["input"] + (output_tokens / 1000) * rate["output"]
         self.total_spend += cost
         self.call_count += 1
