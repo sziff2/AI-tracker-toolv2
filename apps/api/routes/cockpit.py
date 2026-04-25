@@ -803,7 +803,16 @@ Answer directly and specifically. Reference which period data comes from. Highli
 # All extracted metrics for a company — browsable, filterable
 # ─────────────────────────────────────────────────────────────────
 @router.get("/companies/{ticker}/metrics")
-async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = Depends(get_db)):
+async def get_all_metrics(
+    ticker: str,
+    period: str = None,
+    frequency: str = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Optional `frequency` filter: 'Q' (quarterly), 'FY' (full-year),
+    'H1' / 'H2' (half-year). Without it both Q and FY rows are returned
+    for the same period_label, so the caller can distinguish a 12-month
+    figure from a 3-month figure under the same year."""
     from apps.api.models import ExtractedMetric
     result = await db.execute(select(Company).where(Company.ticker == ticker.upper()))
     company = result.scalar_one_or_none()
@@ -813,18 +822,18 @@ async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = De
     q = select(ExtractedMetric).where(ExtractedMetric.company_id == company.id)
     if period:
         q = q.where(ExtractedMetric.period_label == period)
+    if frequency:
+        q = q.where(ExtractedMetric.period_frequency == frequency.upper())
     q = q.order_by(ExtractedMetric.period_label.desc(), ExtractedMetric.confidence.desc())
 
     result = await db.execute(q)
     metrics = result.scalars().all()
 
-    # Group by period
-    by_period = {}
+    by_period: dict[str, list] = {}
+    freq_counts: dict[str, int] = {}
     for m in metrics:
         p = m.period_label or "unknown"
-        if p not in by_period:
-            by_period[p] = []
-        by_period[p].append({
+        by_period.setdefault(p, []).append({
             "id": str(m.id),
             "metric_name": m.metric_name,
             "metric_value": float(m.metric_value) if m.metric_value else None,
@@ -832,14 +841,18 @@ async def get_all_metrics(ticker: str, period: str = None, db: AsyncSession = De
             "unit": m.unit,
             "segment": m.segment,
             "geography": m.geography,
+            "period_frequency": m.period_frequency or "Q",
             "source_snippet": m.source_snippet[:200] if m.source_snippet else None,
             "confidence": float(m.confidence) if m.confidence else None,
             "needs_review": m.needs_review,
         })
+        f = (m.period_frequency or "Q").upper()
+        freq_counts[f] = freq_counts.get(f, 0) + 1
 
     return {
         "ticker": ticker,
         "total_metrics": len(metrics),
+        "by_frequency": freq_counts,
         "periods": list(by_period.keys()),
         "by_period": by_period,
     }

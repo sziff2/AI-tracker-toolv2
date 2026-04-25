@@ -122,6 +122,15 @@ class ExtractedMetric(Base, TimestampMixin):
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False)
     period_label = Column(Text)
+    # Distinguishes the SHAPE of the period: a single quarter ("Q") vs
+    # a full fiscal year ("FY") vs interim halves ("H1"/"H2"). Same
+    # year+quarter labels mean very different things — Q4 2025 sales
+    # ($8B for ARW) vs FY 2025 sales ($31B). Without this the dedup
+    # silently collapses 12-month and 3-month figures into one row
+    # whichever was extracted last. Default "Q" preserves existing
+    # quarterly behaviour; the targeted IS/BS/CF native-extraction
+    # pass writes "FY" for 10-K full-year line items.
+    period_frequency = Column(Text, default="Q", nullable=True)
     metric_name = Column(Text, nullable=False)
     metric_value = Column(Numeric)
     metric_text = Column(Text)             # raw text representation

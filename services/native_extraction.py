@@ -421,16 +421,31 @@ async def _run_targeted_statements_pass(
                     continue
                 seen.add(key)
                 value = line.get("value")
+                # Infer frequency from the period the LLM emitted. 10-K
+                # statements pass produces FY by default; quarterly docs
+                # would emit Q1/Q2/Q3/Q4. Required so dedup keeps FY
+                # full-year values separate from same-quarter quarterly
+                # numbers (Q4 2025 sales $8B ≠ FY 2025 sales $31B).
+                period_upper = period.upper()
+                if "FY" in period_upper:
+                    freq = "FY"
+                elif "H1" in period_upper:
+                    freq = "H1"
+                elif "H2" in period_upper:
+                    freq = "H2"
+                else:
+                    freq = "Q"
                 metrics.append({
-                    "metric_name":    metric_name,
-                    "metric_value":   value,
-                    "metric_text":    str(value) if value is not None else label,
-                    "unit":           line.get("unit") or "USD_M",
-                    "segment":        "consolidated",
-                    "period":         period,
-                    "source_snippet": f"{stmt_key}: {label}",
-                    "confidence":     0.95,
-                    "is_one_off":     False,
+                    "metric_name":      metric_name,
+                    "metric_value":     value,
+                    "metric_text":      str(value) if value is not None else label,
+                    "unit":             line.get("unit") or "USD_M",
+                    "segment":          "consolidated",
+                    "period":           period,
+                    "period_frequency": freq,
+                    "source_snippet":   f"{stmt_key}: {label}",
+                    "confidence":       0.95,
+                    "is_one_off":       False,
                 })
                 n_lines_by_stmt[stmt_key] += 1
 

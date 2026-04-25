@@ -940,11 +940,27 @@ async def _persist_earnings_metrics(db, document, raw_items):
                 raw_period = item.get("period") or document.period_label or ""
                 canonical_period = normalise_period(raw_period) or document.period_label
 
+                # Frequency: explicit on the item (FY/Q/H1/H2) or inferred
+                # from the raw period string. Default 'Q' to preserve
+                # historical behaviour for quarterly extractors.
+                freq = (item.get("period_frequency") or "").upper().strip()
+                if not freq:
+                    raw_upper = (raw_period or "").upper()
+                    if "_FY" in raw_upper or raw_upper.startswith("FY") or raw_upper.endswith("FY") or " FY" in raw_upper:
+                        freq = "FY"
+                    elif "_H1" in raw_upper or " H1" in raw_upper or raw_upper.startswith("H1"):
+                        freq = "H1"
+                    elif "_H2" in raw_upper or " H2" in raw_upper or raw_upper.startswith("H2"):
+                        freq = "H2"
+                    else:
+                        freq = "Q"
+
                 metric = ExtractedMetric(
                     id=uuid.uuid4(),
                     company_id=document.company_id,
                     document_id=document.id,
                     period_label=canonical_period,
+                    period_frequency=freq,
                     metric_name=item.get("metric_name", ""),
                     metric_value=val,
                     metric_text=item.get("metric_text", ""),

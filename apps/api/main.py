@@ -297,10 +297,22 @@ async def lifespan(app: FastAPI):
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         """))
-        # Per-metric qualifier columns
-        for col in ["is_one_off BOOLEAN DEFAULT FALSE", "qualifier_json TEXT"]:
+        # Per-metric qualifier columns + period_frequency for FY-vs-Q
+        # disambiguation. Default 'Q' on backfill matches the historical
+        # quarterly-only assumption; native-extraction's IS/BS/CF pass
+        # writes 'FY' for 10-K full-year line items so they no longer
+        # collide with same-period quarterly metrics.
+        for col in [
+            "is_one_off BOOLEAN DEFAULT FALSE",
+            "qualifier_json TEXT",
+            "period_frequency TEXT DEFAULT 'Q'",
+        ]:
             col_name = col.split()[0]
             await conn.execute(sa_text(f"ALTER TABLE extracted_metrics ADD COLUMN IF NOT EXISTS {col}"))
+        # Backfill: ensure all existing rows have the new default.
+        await conn.execute(sa_text(
+            "UPDATE extracted_metrics SET period_frequency = 'Q' WHERE period_frequency IS NULL"
+        ))
 
         # Reconciliation report column on extraction_profiles
         await conn.execute(sa_text(

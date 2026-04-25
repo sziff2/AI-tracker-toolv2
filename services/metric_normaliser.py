@@ -232,7 +232,12 @@ def normalise_metrics_batch(items: list[dict]) -> list[dict]:
 def deduplicate_metrics(items: list[dict]) -> list[dict]:
     """
     Remove duplicate metrics, keeping the one with highest confidence.
-    Key: (metric_name, period, segment)
+    Key: (metric_name, period, segment, frequency)
+
+    Frequency added so a 12-month FY revenue figure ($31B for ARW)
+    doesn't collide with a 3-month Q4 quarterly figure (~$8B) under
+    the same (name, period, segment) tuple. Without it the higher-
+    confidence one wins and the other is silently dropped.
     """
     if not items:
         return items
@@ -245,7 +250,8 @@ def deduplicate_metrics(items: list[dict]) -> list[dict]:
         name = item.get("metric_name", "")
         period = item.get("period", "")
         segment = item.get("segment", "") or "Total"
-        key = (name.lower(), period.lower(), segment.lower())
+        freq = (item.get("period_frequency") or "Q").upper()
+        key = (name.lower(), period.lower(), segment.lower(), freq)
 
         confidence = item.get("confidence", 0)
         if key not in unique or confidence > unique[key].get("confidence", 0):
