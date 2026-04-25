@@ -217,12 +217,16 @@ async def run_native_extraction(
 
     # Make the call. Keep max_tokens high for long 10-Ks (can emit hundreds
     # of metric rows). Sonnet is the right tier — extraction accuracy matters.
+    # Bump timeout to 5 minutes — observed on ARW US 2025_Q4 10-K: 240KB of
+    # iXBRL+text input + 16K-token output regularly takes 90-180s. The
+    # 90s default was eating the request before Claude could finish.
     try:
         from services.llm_client import call_llm_native_async
         result = await call_llm_native_async(
             prompt,
             model=settings.agent_default_model,  # Sonnet
             max_tokens=16_384,
+            timeout_seconds=300,
             feature="native_extraction",
             ticker=ticker,
             period=period_label,
