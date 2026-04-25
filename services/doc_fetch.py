@@ -158,6 +158,27 @@ async def ensure_pdf_for_native(document) -> Optional[Path]:
         # instruction lets pisa fall through to the html5lib branch.
         html = re.sub(r"^\s*<\?xml[^?]*\?>\s*", "", html, count=1)
 
+        # Anthropic's native PDF block has a HARD 100-page-per-doc cap.
+        # SEC 10-Ks render to 120-180 pages at default xhtml2pdf layout
+        # — fall back to text path when that hits, which then times out.
+        # Inject tight @page + body rules so the same content fits in
+        # 60-90 pages, well under the cap. This is purely a layout
+        # density tweak; the content/text Claude reads is unchanged.
+        DENSITY_CSS = """
+        <style>
+          @page { size: letter; margin: 0.3in; }
+          body, p, div, td, th, li { font-size: 7pt; line-height: 1.05; }
+          table { font-size: 6.5pt; }
+          h1, h2, h3, h4 { font-size: 9pt; margin: 4pt 0 2pt 0; }
+          td, th { padding: 1pt 2pt; }
+        </style>
+        """
+        # Inject before </head> if present, else prepend.
+        if "</head>" in html.lower():
+            html = re.sub(r"</head>", DENSITY_CSS + "</head>", html, count=1, flags=re.IGNORECASE)
+        else:
+            html = DENSITY_CSS + html
+
         with open(pdf_path, "wb") as out:
             result = pisa.CreatePDF(html, dest=out, encoding="utf-8")
         if result.err:
