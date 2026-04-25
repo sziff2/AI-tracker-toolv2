@@ -1428,20 +1428,48 @@ async def admin_period_diagnostic(
 @router.get("/admin/settings-debug")
 async def admin_settings_debug():
     """Reveal current values of feature-flag settings so we can verify
-    env-var changes propagated to the live pod. No secrets included."""
+    env-var changes propagated to the live pod. No secrets included.
+
+    Also dumps the raw os.environ value alongside the parsed setting so
+    we can detect cases where Pydantic isn't picking up an env var
+    (mismatched casing, hidden whitespace, type-coercion failure)."""
+    import os as _os
     from configs.settings import settings as _s
-    return {
-        "use_native_extraction":            getattr(_s, "use_native_extraction", None),
-        "use_native_pdf_for_analysis":      getattr(_s, "use_native_pdf_for_analysis", None),
-        "native_pdf_fallback":              getattr(_s, "native_pdf_fallback", None),
-        "use_celery_for_document_processing": getattr(_s, "use_celery_for_document_processing", None),
-        "use_pgvector_search":              getattr(_s, "use_pgvector_search", None),
-        "completeness_gate_mode":           getattr(_s, "completeness_gate_mode", None),
-        "reconciliation_mode":              getattr(_s, "reconciliation_mode", None),
-        "agent_default_model":              getattr(_s, "agent_default_model", None),
-        "agent_fast_model":                 getattr(_s, "agent_fast_model", None),
-        "llm_model":                        getattr(_s, "llm_model", None),
-    }
+
+    flag_keys = [
+        "use_native_extraction",
+        "use_native_pdf_for_analysis",
+        "native_pdf_fallback",
+        "use_celery_for_document_processing",
+        "use_pgvector_search",
+        "completeness_gate_mode",
+        "reconciliation_mode",
+        "agent_default_model",
+        "agent_fast_model",
+        "llm_model",
+    ]
+
+    def _env_repr(key_lower: str) -> dict:
+        """Inspect raw os.environ for the upper-cased key — return
+        length, first/last char (so callers can spot quote/whitespace
+        issues without us echoing the actual value into responses)."""
+        env_key = key_lower.upper()
+        raw = _os.environ.get(env_key)
+        if raw is None:
+            return {"present": False}
+        return {
+            "present": True,
+            "length":  len(raw),
+            "first_char_repr": repr(raw[:1]),
+            "last_char_repr":  repr(raw[-1:]),
+            "lower_eq_true":   raw.strip().lower() == "true",
+        }
+
+    out: dict = {"settings_parsed": {}, "env_raw": {}}
+    for k in flag_keys:
+        out["settings_parsed"][k] = getattr(_s, k, None)
+        out["env_raw"][k.upper()] = _env_repr(k)
+    return out
 
 
 @router.post("/admin/clear-period/{ticker:path}/{period}")
