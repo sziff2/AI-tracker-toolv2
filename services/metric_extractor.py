@@ -829,7 +829,12 @@ async def extract_by_document_type(
     # with zero items automatically falls back to the legacy path so a
     # bad LLM call never produces an empty period.
     from configs.settings import settings as _settings
-    if getattr(_settings, "use_native_extraction", False):
+    _flag = getattr(_settings, "use_native_extraction", False)
+    logger.info(
+        "extract_by_document_type: doc=%s dtype=%s use_native_extraction=%r",
+        document.id, doc_type, _flag,
+    )
+    if _flag:
         try:
             from services.native_extraction import run_native_extraction
             logger.info(

@@ -1425,6 +1425,25 @@ async def admin_period_diagnostic(
     }
 
 
+@router.get("/admin/settings-debug")
+async def admin_settings_debug():
+    """Reveal current values of feature-flag settings so we can verify
+    env-var changes propagated to the live pod. No secrets included."""
+    from configs.settings import settings as _s
+    return {
+        "use_native_extraction":            getattr(_s, "use_native_extraction", None),
+        "use_native_pdf_for_analysis":      getattr(_s, "use_native_pdf_for_analysis", None),
+        "native_pdf_fallback":              getattr(_s, "native_pdf_fallback", None),
+        "use_celery_for_document_processing": getattr(_s, "use_celery_for_document_processing", None),
+        "use_pgvector_search":              getattr(_s, "use_pgvector_search", None),
+        "completeness_gate_mode":           getattr(_s, "completeness_gate_mode", None),
+        "reconciliation_mode":              getattr(_s, "reconciliation_mode", None),
+        "agent_default_model":              getattr(_s, "agent_default_model", None),
+        "agent_fast_model":                 getattr(_s, "agent_fast_model", None),
+        "llm_model":                        getattr(_s, "llm_model", None),
+    }
+
+
 @router.post("/admin/clear-period/{ticker:path}/{period}")
 async def admin_clear_period(
     ticker: str,

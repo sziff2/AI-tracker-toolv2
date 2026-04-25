@@ -198,8 +198,13 @@ async def cross_verify_metrics(items: list[dict], source_text: str, max_items: i
         for item in to_check
     )
 
-    # Truncate source text to fit in context
-    truncated_source = source_text[:12000]
+    # 200K cap — fits comfortably in Sonnet's 200K window. The old 12K
+    # cap landed on the cover page of large filings (SEC iXBRL 10-Ks
+    # come in ~240KB after parsing) and the cross-checker would reject
+    # all extracted metrics with "this is just a cover page". Observed
+    # on ARW US 2025_Q4 10-K (2026-04-25) — extractor found 129 metrics,
+    # cross-check rejected 128 because it only saw the table of contents.
+    truncated_source = source_text[:200_000]
 
     # Use DB-active prompt variant if available
     check_template = CROSS_CHECK_PROMPT
