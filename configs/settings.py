@@ -136,12 +136,14 @@ class Settings(BaseSettings):
     use_native_extraction: bool = False
 
     # Tier 3.4 — semantic search + RAG context assembly via pgvector.
-    # Gated so we can ship the scaffold without committing Part 2 (embed
-    # at ingestion + RAG replacement + backfill). Only precondition now
-    # that we use a local embedding model is that the Postgres `vector`
-    # extension is enabled (lifespan attempts automatically).
-    # Env: USE_PGVECTOR_SEARCH=true
-    use_pgvector_search: bool = False
+    # On by default (flipped 2026-04-26 alongside Sprint K Part 2b RAG
+    # wire-up in apps/api/routes/search.py). search_sections() returns
+    # [] when the model can't load or the column is empty, so callers
+    # transparently fall back to keyword ILIKE — safe to enable
+    # globally even on instances that don't have sentence-transformers
+    # installed.
+    # Env: USE_PGVECTOR_SEARCH=false   (to disable)
+    use_pgvector_search: bool = True
 
     # Local embedding model (runs in-process via sentence-transformers).
     # Default BAAI/bge-small-en-v1.5 is 384-dim, ~130MB weights, strong

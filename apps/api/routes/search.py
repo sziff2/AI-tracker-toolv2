@@ -110,8 +110,42 @@ async def global_search(body: SearchRequest, db: AsyncSession = Depends(get_db))
         return company_map.get(str(cid), ("??", "Unknown"))
 
     hits: list[dict] = []
+    seen_section_ids: set[str] = set()
 
-    # ── 1. Document Sections ────────────────────────────────────
+    # ── 1a. Document Sections via vector search (Tier 3.4 Part 2b) ──
+    # Semantic search using BAAI/bge-small-en-v1.5 embeddings stored
+    # in document_sections.embedding (vector(384), pgvector cosine
+    # distance). Returns [] when the feature flag is off or the model
+    # can't load — keyword path below catches both cases.
+    try:
+        from services.vector_search import search_sections as vector_search_sections
+        single_company_id = company_ids[0] if company_ids and len(company_ids) == 1 else None
+        v_hits = await vector_search_sections(
+            db, body.query,
+            company_id=str(single_company_id) if single_company_id else None,
+            k=20,
+        )
+        for v in v_hits:
+            ticker, name = co_info(v.company_id) if v.company_id else ("??", "Unknown")
+            hits.append({
+                "type": "section",
+                "ticker": ticker,
+                "company_name": name,
+                "period": v.period_label,
+                "title": f"{v.document_title} — {v.section_title or 'paragraph'}",
+                "snippet": v.snippet[:400],
+                "_section_id": v.section_id,
+                "_match_kind": "vector",
+                "_distance": v.distance,
+            })
+            seen_section_ids.add(v.section_id)
+    except Exception as exc:
+        logger.warning("Vector section search failed, falling back to keyword: %s", str(exc)[:200])
+
+    # ── 1b. Document Sections via keyword ILIKE ─────────────────
+    # Always run alongside vector — picks up exact-phrase hits the
+    # semantic model under-weights (ticker codes, proper nouns, debt
+    # CUSIPs, segment names, …). Dedup against vector hits by section id.
     sec_q = select(DocumentSection, Document).join(
         Document, DocumentSection.document_id == Document.id
     ).where(_build_ilike(DocumentSection.text_content, terms))
@@ -125,6 +159,9 @@ async def global_search(body: SearchRequest, db: AsyncSession = Depends(get_db))
 
     sec_rows = await db.execute(sec_q)
     for sec, doc in sec_rows.all():
+        sid = str(sec.id)
+        if sid in seen_section_ids:
+            continue
         ticker, name = co_info(doc.company_id)
         snippet = (sec.text_content or "")[:400].strip()
         hits.append({
@@ -134,7 +171,10 @@ async def global_search(body: SearchRequest, db: AsyncSession = Depends(get_db))
             "period": doc.period_label,
             "title": f"{doc.title or doc.document_type} — {sec.section_title or sec.section_type or 'paragraph'}",
             "snippet": snippet,
+            "_section_id": sid,
+            "_match_kind": "keyword",
         })
+        seen_section_ids.add(sid)
 
     # ── 2. Extracted Metrics ────────────────────────────────────
     met_q = select(ExtractedMetric, Company).join(
