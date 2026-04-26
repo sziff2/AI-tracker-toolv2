@@ -701,9 +701,13 @@ def normalise_period(raw_period: str) -> str:
 
 def _previous_period(period_label: str) -> str:
     """
-    Derive the prior period label.
-    Handles: 2025_Q1→2024_Q4, 2025_Q2→2025_Q1, 2025_HY→2024_HY,
-             2025_FY→2024_FY, 2025_H1→2024_H1, etc.
+    Derive the prior period label across the canonical 9 shapes.
+
+    Sequential within year:  Q2→Q1, Q3→Q2, Q4→Q3, H2→H1
+    Sequential cross year:   Q1→prior Q4
+    Year-on-year:            FY→prior FY, H1→prior H1, L3Q→prior L3Q,
+                             LTM→prior LTM (annual shapes have no
+                             in-year sequential analogue)
     """
     if not period_label or "_" not in period_label:
         return ""
@@ -721,9 +725,10 @@ def _previous_period(period_label: str) -> str:
             return f"{year - 1}_{suffix}"
         elif suffix == "H2":
             return f"{year}_H1"
-        elif suffix == "FY":
-            # FY is equivalent to Q4 — prior period is Q3 of same year
-            return f"{year}_Q3"
+        elif suffix in ("FY", "L3Q", "LTM"):
+            # Annual / YTD / trailing — natural prior is the same shape
+            # one year earlier (YoY comparison).
+            return f"{year - 1}_{suffix}"
         else:
             return f"{year - 1}_{suffix}"
     except Exception:
@@ -759,11 +764,20 @@ def _comparable_periods(period_label: str) -> list[str]:
             candidates.append(f"{year}_H1")
             candidates.append(f"{year-1}_H2")
         elif suffix == "FY":
-            # FY is equivalent to Q4 — compare against Q3 (sequential), Q4 prior year (YoY), and prior FY
-            candidates.append(f"{year}_Q3")
-            candidates.append(f"{year-1}_Q4")
+            # Annual — primary comparable is prior FY (YoY). Fall back
+            # to L3Q + Q4 (which together compose the year), and then
+            # H1 + H2 of the prior year for guidance reconciliation.
             candidates.append(f"{year-1}_FY")
+            candidates.append(f"{year}_L3Q")
+            candidates.append(f"{year-1}_Q4")
             candidates.append(f"{year-1}_H2")
+        elif suffix == "L3Q":
+            # 9-month YTD — compare against prior-year L3Q (YoY).
+            candidates.append(f"{year-1}_L3Q")
+            candidates.append(f"{year-1}_Q3")
+        elif suffix == "LTM":
+            candidates.append(f"{year-1}_LTM")
+            candidates.append(f"{year-1}_FY")
         return candidates
     except Exception:
         return []

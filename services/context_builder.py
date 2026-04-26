@@ -34,18 +34,25 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────
 
 def _previous_period(period: str) -> str:
-    """
-    Return the immediately prior period label.
-    2025_Q1 → 2024_Q4,  2025_Q2 → 2025_Q1, etc.
-    FY is treated as Q4 throughout the codebase.
-    """
-    match = re.match(r"(\d{4})_Q(\d)", period)
-    if not match:
+    """Return the immediately prior period label across all 9 canonical
+    shapes. Q[1-4] / H2 are sequential; FY / H1 / L3Q / LTM are YoY
+    (no sequential analogue inside a fiscal year)."""
+    m = re.match(r"^(\d{4})_(Q[1-4]|H[12]|L3Q|FY|LTM)$", period or "")
+    if not m:
         return period
-    year, quarter = int(match.group(1)), int(match.group(2))
-    if quarter == 1:
-        return f"{year - 1}_Q4"
-    return f"{year}_Q{quarter - 1}"
+    year = int(m.group(1))
+    suffix = m.group(2)
+    if suffix.startswith("Q"):
+        q = int(suffix[1:])
+        if q == 1:
+            return f"{year - 1}_Q4"
+        return f"{year}_Q{q - 1}"
+    if suffix == "H2":
+        return f"{year}_H1"
+    if suffix == "H1":
+        return f"{year - 1}_H1"
+    # FY / L3Q / LTM — same shape, prior year.
+    return f"{year - 1}_{suffix}"
 
 
 # ─────────────────────────────────────────────────────────────────

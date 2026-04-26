@@ -63,15 +63,16 @@ SCHEMA:
 {{
   "metrics": [
     {{
-      "metric_name":    "<canonical snake_case name, e.g. 'revenue', 'operating_income', 'combined_ratio'>",
-      "metric_value":   <number, null if non-numeric>,
-      "metric_text":    "<verbatim figure from the doc, e.g. '$1,234.5 million' or '18.5%'>",
-      "unit":           "<USD_M | USD_B | EUR_M | % | bps | x | count | null>",
-      "segment":        "<segment/business unit name OR 'consolidated' OR null>",
-      "period":         "<YYYY_QN or YYYY_FY — leave blank to inherit the document's period>",
-      "source_snippet": "<≤200 chars of surrounding context so a reader can verify this line>",
-      "confidence":     <0.0-1.0>,
-      "is_one_off":     <true if explicitly called out as non-recurring, else false>
+      "metric_name":      "<canonical snake_case name, e.g. 'revenue', 'operating_income', 'combined_ratio'>",
+      "metric_value":     <number, null if non-numeric>,
+      "metric_text":      "<verbatim figure from the doc, e.g. '$1,234.5 million' or '18.5%'>",
+      "unit":             "<USD_M | USD_B | EUR_M | % | bps | x | count | null>",
+      "segment":          "<segment/business unit name OR 'consolidated' OR null>",
+      "period":           "<YYYY_Q1|Q2|Q3|Q4|H1|H2|L3Q|FY|LTM — leave blank to inherit the document's period>",
+      "period_frequency": "<Q1|Q2|Q3|Q4|H1|H2|L3Q|FY|LTM — the SHAPE of the period this number covers. CRITICAL: a $31B FY revenue figure and a $8B Q4 figure are DIFFERENT — tagging both 'Q' would silently drop one in dedup. Infer from the column header: 'Year Ended Dec 31 2025' → FY; 'Three Months Ended Sept 30 2025' → Q3; 'Nine Months Ended Sept 30 2025' → L3Q; 'Six Months Ended Jun 30 2025' → H1.>",
+      "source_snippet":   "<≤200 chars of surrounding context so a reader can verify this line>",
+      "confidence":       <0.0-1.0>,
+      "is_one_off":       <true if explicitly called out as non-recurring, else false>
     }}
   ],
 

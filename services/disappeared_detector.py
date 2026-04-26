@@ -30,7 +30,13 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 
 def _previous_period(period: str) -> Optional[str]:
-    """Compute the likely prior period label."""
+    """Compute the likely prior period label across all 9 canonical
+    shapes (Q1..Q4, H1, H2, L3Q, FY, LTM).
+
+    Sequential vs YoY: Q[1-4] is sequential (Q2 → Q1 same year); annual
+    and half-year shapes (FY, H1, L3Q, LTM) compare to the same shape
+    in the prior year, since they have no in-year sequential analogue.
+    H2 is sequential-within-year (H2 → H1 same year)."""
     if not period:
         return None
 
@@ -49,7 +55,7 @@ def _previous_period(period: str) -> Optional[str]:
     if m:
         return f"FY {int(m.group(1)) - 1}"
 
-    # H1 2025 → H1 2024, H2 2025 → H1 2025
+    # H1 2025 → H1 2024 (YoY), H2 2025 → H1 2025 (sequential)
     m = re.match(r'^H([12])\s*(\d{4})$', period)
     if m:
         h, y = int(m.group(1)), int(m.group(2))
@@ -57,13 +63,22 @@ def _previous_period(period: str) -> Optional[str]:
             return f"H1 {y - 1}"
         return f"H1 {y}"
 
-    # 2025_Q2 format
-    m = re.match(r'^(\d{4})[_\-]Q([1-4])$', period)
+    # Canonical underscore formats: 2025_Q2, 2025_FY, 2025_H1, 2025_L3Q, 2025_LTM
+    m = re.match(r'^(\d{4})[_\-](Q[1-4]|H[12]|L3Q|FY|LTM)$', period)
     if m:
-        y, q = int(m.group(1)), int(m.group(2))
-        if q == 1:
-            return f"Q4 {y - 1}"
-        return f"Q{q - 1} {y}"
+        y = int(m.group(1))
+        suffix = m.group(2)
+        if suffix.startswith("Q"):
+            q = int(suffix[1:])
+            if q == 1:
+                return f"{y - 1}_Q4"
+            return f"{y}_Q{q - 1}"
+        if suffix == "H1":
+            return f"{y - 1}_H1"
+        if suffix == "H2":
+            return f"{y}_H1"
+        if suffix in ("FY", "L3Q", "LTM"):
+            return f"{y - 1}_{suffix}"
 
     return None
 

@@ -4,6 +4,7 @@ an analyst needs for one company in one call.
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 
@@ -839,8 +840,23 @@ async def get_all_metrics(
     rows = []
     by_period: dict[str, list] = {}
     freq_counts: dict[str, int] = {}
+
+    def _freq_for(stored: str | None, label: str | None) -> str:
+        """Prefer the stored period_frequency; otherwise infer from the
+        canonical period_label suffix; otherwise mark UNKNOWN. Never
+        silently default to 'Q' — that hides FY/H1/H2/L3Q/LTM rows."""
+        f = (stored or "").upper().strip()
+        if f in ("Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"):
+            return f
+        if label:
+            sm = re.match(r"^\d{4}_(Q[1-4]|H[12]|L3Q|FY|LTM)$", label.upper())
+            if sm:
+                return sm.group(1)
+        return "UNKNOWN"
+
     for m in metrics:
         p = m.period_label or "unknown"
+        f = _freq_for(m.period_frequency, m.period_label)
         item = {
             "id": str(m.id),
             "metric_name": m.metric_name,
@@ -850,7 +866,7 @@ async def get_all_metrics(
             "segment": m.segment,
             "geography": m.geography,
             "period_label": p,
-            "period_frequency": m.period_frequency or "Q",
+            "period_frequency": f,
             "source_snippet": m.source_snippet[:200] if m.source_snippet else None,
             "confidence": float(m.confidence) if m.confidence else None,
             "needs_review": m.needs_review,
@@ -858,7 +874,6 @@ async def get_all_metrics(
         }
         rows.append(item)
         by_period.setdefault(p, []).append(item)
-        f = (m.period_frequency or "Q").upper()
         freq_counts[f] = freq_counts.get(f, 0) + 1
 
     derived_count = 0
@@ -877,7 +892,7 @@ async def get_all_metrics(
                     "unit": r.unit,
                     "segment": r.segment,
                     "period_label": r.period_label,
-                    "period_frequency": r.period_frequency or "Q",
+                    "period_frequency": _freq_for(r.period_frequency, r.period_label),
                     "confidence": float(r.confidence) if r.confidence else None,
                 }
                 for r in full_rows

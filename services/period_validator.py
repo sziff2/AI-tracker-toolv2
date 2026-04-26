@@ -96,23 +96,14 @@ def _month_to_quarter(month: str) -> Optional[str]:
 
 
 def _normalise_period(label: str) -> str:
-    """Normalise period labels to consistent format."""
+    """Normalise period labels to '{shape} {year}' format covering all
+    9 canonical shapes (Q1..Q4, H1, H2, L3Q, FY, LTM)."""
     label = label.strip().upper()
 
-    # "2025_Q2" → "Q2 2025"
-    m = re.match(r'^(\d{4})[_\-]?Q([1-4])$', label)
+    # Canonical "YYYY_SHAPE" form.
+    m = re.match(r'^(\d{4})[_\-]?(Q[1-4]|H[12]|L3Q|FY|LTM)$', label)
     if m:
-        return f"Q{m.group(2)} {m.group(1)}"
-
-    # "2025_H1" → "H1 2025"
-    m = re.match(r'^(\d{4})[_\-]?H([12])$', label)
-    if m:
-        return f"H{m.group(2)} {m.group(1)}"
-
-    # "2025_FY" → "FY 2025"
-    m = re.match(r'^(\d{4})[_\-]?FY$', label)
-    if m:
-        return f"FY {m.group(1)}"
+        return f"{m.group(2)} {m.group(1)}"
 
     return label
 
@@ -197,6 +188,10 @@ def _get_plausible_periods(primary_period: str) -> set[str]:
         if q == 2:
             plausible.add(f"H1 {year}")
             plausible.add(f"H1 {year - 1}")
+        # Q3 10-Q typically reports YTD figures alongside the quarter.
+        if q == 3:
+            plausible.add(f"L3Q {year}")
+            plausible.add(f"L3Q {year - 1}")
         # Sequential quarter
         if q > 1:
             plausible.add(f"Q{q-1} {year}")
@@ -213,6 +208,8 @@ def _get_plausible_periods(primary_period: str) -> set[str]:
             plausible.add(f"Q{q} {year - 1}")
         plausible.add(f"H1 {year}")
         plausible.add(f"H2 {year}")
+        plausible.add(f"L3Q {year}")
+        plausible.add(f"LTM {year}")
         return plausible
 
     m = re.match(r'^H([12])\s+(\d{4})$', primary_period)
@@ -220,6 +217,28 @@ def _get_plausible_periods(primary_period: str) -> set[str]:
         h = int(m.group(1))
         year = int(m.group(2))
         plausible.add(f"H{h} {year - 1}")
+        plausible.add(f"FY {year}")
+        plausible.add(f"FY {year - 1}")
+        return plausible
+
+    # L3Q (9-month YTD) — Q3 10-Q filings. Plausible comparatives
+    # include prior-year L3Q and the constituent quarters.
+    m = re.match(r'^L3Q\s+(\d{4})$', primary_period)
+    if m:
+        year = int(m.group(1))
+        plausible.add(f"L3Q {year - 1}")
+        for q in (1, 2, 3):
+            plausible.add(f"Q{q} {year}")
+            plausible.add(f"Q{q} {year - 1}")
+        plausible.add(f"H1 {year}")
+        return plausible
+
+    # LTM (trailing twelve months) — typically appears in management
+    # commentary / tracker dashboards. Compare to prior LTM and FY.
+    m = re.match(r'^LTM\s+(\d{4})$', primary_period)
+    if m:
+        year = int(m.group(1))
+        plausible.add(f"LTM {year - 1}")
         plausible.add(f"FY {year}")
         plausible.add(f"FY {year - 1}")
         return plausible

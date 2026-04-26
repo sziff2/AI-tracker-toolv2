@@ -34,14 +34,20 @@ class TestPreviousPeriod:
         assert _previous_period("2025_Q4") == "2025_Q3"
 
     def test_fy(self):
-        # FY is treated as equivalent to Q4 — prior period is Q3 of same year
-        assert _previous_period("2025_FY") == "2025_Q3"
+        # FY is its own canonical shape — prior is FY of the prior year (YoY).
+        assert _previous_period("2025_FY") == "2024_FY"
 
     def test_hy(self):
         assert _previous_period("2025_HY") == "2024_HY"
 
     def test_h2(self):
         assert _previous_period("2025_H2") == "2025_H1"
+
+    def test_l3q(self):
+        assert _previous_period("2025_L3Q") == "2024_L3Q"
+
+    def test_ltm(self):
+        assert _previous_period("2025_LTM") == "2024_LTM"
 
     def test_invalid(self):
         assert _previous_period("invalid") == ""
