@@ -642,6 +642,10 @@ app.include_router(pipeline_router, prefix=PREFIX)
 from apps.api.routes.briefing import router as briefing_router
 app.include_router(briefing_router, prefix=PREFIX)
 
+# Tier 3.4 Part 2b — global semantic search (vector + keyword merge)
+from apps.api.routes.search import router as search_router
+app.include_router(search_router, prefix=PREFIX)
+
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
