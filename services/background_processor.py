@@ -381,6 +381,21 @@ async def _process_one_doc(
             # Extract + document analysis in parallel
             async def _run_extraction():
                 try:
+                    if dtype == "consensus":
+                        # Consensus docs go to a dedicated extractor that
+                        # writes to consensus_expectations rather than
+                        # extracted_metrics — they're not the company's
+                        # actuals, just analyst estimates to compare against.
+                        from services.consensus_extractor import extract_consensus
+                        co_q = await doc_db.execute(
+                            select(Company).where(Company.id == doc.company_id)
+                        )
+                        co = co_q.scalar_one_or_none()
+                        return ("consensus", await extract_consensus(
+                            doc_db, doc, full_text,
+                            company_name=co.name if co else "",
+                            ticker=co.ticker if co else "",
+                        ))
                     if dtype in ESG_DOC_TYPES:
                         return ("esg", await extract_esg(doc_db, doc, full_text))
                     else:
@@ -436,6 +451,19 @@ async def _process_one_doc(
                     await _persist_extraction_profile(doc_db, doc, extraction)
                 except Exception as ep:
                     logger.warning("Failed to persist extraction profile for %s: %s", did, str(ep)[:200])
+            elif ext_kind == "consensus":
+                # Consensus rows already persisted to consensus_expectations
+                # by extract_consensus — nothing for the metrics pipeline
+                # to consume, but record the count for the UI status panel.
+                extraction = ext_value
+                doc_result["steps"].append({
+                    "step":      "extract_consensus",
+                    "status":    "ok" if not extraction.get("error") else "error",
+                    "extracted": int(extraction.get("extracted") or 0),
+                    **({"detail": extraction["error"]} if extraction.get("error") else {}),
+                })
+                logger.info("Extracted consensus from %s: %d rows",
+                            did, extraction.get("extracted") or 0)
             else:
                 doc_result["steps"].append({"step": "extract", "status": "error", "detail": ext_value})
 

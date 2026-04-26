@@ -6360,7 +6360,7 @@ function edgarPeriodOpts(selected){
   return opts.join('');
 }
 function edgarDocTypeOpts(selected){
-  var types=[['earnings_release','Earnings Release'],['transcript','Transcript'],['broker_note','Broker Note'],['presentation','Presentation'],['10-Q','10-Q'],['10-K','10-K'],['annual_report','Annual Report'],['proxy_statement','Proxy Statement'],['sustainability_report','Sustainability Report'],['other','Other']];
+  var types=[['earnings_release','Earnings Release'],['transcript','Transcript'],['broker_note','Broker Note'],['presentation','Presentation'],['10-Q','10-Q'],['10-K','10-K'],['annual_report','Annual Report'],['proxy_statement','Proxy Statement'],['sustainability_report','Sustainability Report'],['consensus','Consensus / Estimates'],['other','Other']];
   return types.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===selected?' selected':'')+'>'+t[1]+'</option>';}).join('');
 }
 var _edgarFilings=[];var _edgarTicker='';

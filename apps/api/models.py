@@ -545,6 +545,28 @@ class ManagementStatement(Base, TimestampMixin):
 
 
 # ─────────────────────────────────────────────────────────────────
+# Consensus Expectations — analyst-curated street estimates
+# Used to render Actual-vs-Consensus beat/miss in the Results tab
+# alongside extracted_metrics and to feed agent prompts the right
+# benchmark for "what did the market expect" framing.
+# ─────────────────────────────────────────────────────────────────
+class ConsensusExpectation(Base, TimestampMixin):
+    __tablename__ = "consensus_expectations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, index=True)
+    period_label = Column(Text, nullable=False, index=True)
+    metric_name = Column(Text, nullable=False)   # canonical name, e.g. "Revenue", "EPS", "NII"
+    consensus_value = Column(Numeric)            # numeric estimate
+    unit = Column(Text)                          # e.g. "SEK_M", "USD_M", "%", "x"
+    source = Column(Text)                        # e.g. "VARA", "Bloomberg", "Visible Alpha", "Analyst inputs"
+    notes = Column(Text)                         # free-form: "median of 12 analysts", etc.
+    uploaded_by = Column(Text)                   # analyst name from localStorage
+
+    company = relationship("Company")
+
+
+# ─────────────────────────────────────────────────────────────────
 # Management Execution Scorecard
 # ─────────────────────────────────────────────────────────────────
 class ExecutionScorecard(Base, TimestampMixin):

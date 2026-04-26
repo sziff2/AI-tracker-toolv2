@@ -378,6 +378,32 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS warnings JSONB"
         ))
 
+        # ── Consensus expectations (analyst-uploaded street estimates) ──
+        await conn.execute(sa_text("""
+            CREATE TABLE IF NOT EXISTS consensus_expectations (
+                id UUID PRIMARY KEY,
+                company_id UUID REFERENCES companies(id) NOT NULL,
+                period_label TEXT NOT NULL,
+                metric_name TEXT NOT NULL,
+                consensus_value NUMERIC,
+                unit TEXT,
+                source TEXT,
+                notes TEXT,
+                uploaded_by TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_consensus_company_period "
+            "ON consensus_expectations(company_id, period_label)"
+        ))
+        # Upsert by (company, period, metric) — analysts re-paste over old.
+        await conn.execute(sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_consensus_unique "
+            "ON consensus_expectations(company_id, period_label, metric_name)"
+        ))
+
         # ── Harvest reports schema drift ─────────────────────────
         # Scheduler writes run_at/summary_json/details_json/teams_sent but
         # the ORM model (HarvestReport) was refactored to use started_at /
@@ -645,6 +671,10 @@ app.include_router(briefing_router, prefix=PREFIX)
 # Tier 3.4 Part 2b — global semantic search (vector + keyword merge)
 from apps.api.routes.search import router as search_router
 app.include_router(search_router, prefix=PREFIX)
+
+# Consensus expectations — analyst-uploaded street estimates per period
+from apps.api.routes.consensus import router as consensus_router
+app.include_router(consensus_router, prefix=PREFIX)
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
