@@ -2,6 +2,7 @@
 Pipeline API routes — trigger and monitor Phase B agent runs.
 """
 import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -1666,6 +1667,89 @@ async def admin_period_shapes(
         "nonstandard_period_frequencies": nonstandard_freqs,
         "label_freq_mismatches":          mismatches[:20],
     }
+
+
+@router.post("/admin/renormalise-period-labels")
+async def admin_renormalise_period_labels(
+    dry_run: bool = True,
+    limit: int = 5000,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-run normalise_period over rows whose period_label suffix is
+    not in the canonical 9-shape taxonomy (Q1..Q4, H1, H2, L3Q, FY, LTM).
+
+    Catches legacy formats surfaced by /admin/period-shapes — e.g.
+    "9M 2025", "1Q-26", "FULL YEAR 2025", "Three Months Ended Sept 30
+    2025", "Six Months Ended June 30 2025". For each row, runs the
+    current normalise_period; if it produces a canonical form, updates
+    period_label + matching period_frequency.
+
+    `dry_run=true` (default) shows what WOULD change without writing.
+    """
+    from sqlalchemy import text as sa_text
+    from collections import Counter
+    from services.metric_normaliser import normalise_period
+
+    canonical = {"Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"}
+
+    rows_q = await db.execute(sa_text(f"""
+        SELECT em.id, em.period_label, em.period_frequency, c.ticker
+        FROM extracted_metrics em
+        JOIN companies c ON c.id = em.company_id
+        WHERE em.period_label IS NOT NULL
+          AND COALESCE(SUBSTRING(em.period_label FROM '[^_]+$'), '') NOT IN
+              ('Q1','Q2','Q3','Q4','H1','H2','L3Q','FY','LTM')
+        ORDER BY em.created_at DESC
+        LIMIT :lim
+    """), {"lim": int(limit)})
+    rows = rows_q.all()
+
+    rewrites: list[dict] = []
+    unchanged: Counter = Counter()
+    for r in rows:
+        old_label = r.period_label
+        new_label = normalise_period(old_label)
+        if new_label == old_label:
+            unchanged[old_label] += 1
+            continue
+        # Confirm the new label is in canonical form before persisting.
+        m = re.match(r"^\d{4}_(Q[1-4]|H[12]|L3Q|FY|LTM)$", new_label or "")
+        if not m:
+            unchanged[old_label] += 1
+            continue
+        new_freq = m.group(1)
+        rewrites.append({
+            "id":         str(r.id),
+            "ticker":     r.ticker,
+            "old_label":  old_label,
+            "new_label":  new_label,
+            "old_freq":   r.period_frequency,
+            "new_freq":   new_freq,
+        })
+
+    summary = {
+        "total_candidates":     len(rows),
+        "rewrites":             len(rewrites),
+        "unchanged_top_labels": unchanged.most_common(20),
+        "dry_run":              dry_run,
+    }
+    if dry_run:
+        return {**summary, "sample": rewrites[:30]}
+
+    # Apply updates in batches.
+    n = 0
+    for w in rewrites:
+        await db.execute(
+            sa_text("""
+                UPDATE extracted_metrics
+                SET period_label = :nl, period_frequency = :nf
+                WHERE id = :rid
+            """),
+            {"nl": w["new_label"], "nf": w["new_freq"], "rid": w["id"]},
+        )
+        n += 1
+    await db.commit()
+    return {**summary, "updated_rows": n}
 
 
 @router.get("/admin/storage-stats")

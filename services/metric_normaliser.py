@@ -510,24 +510,29 @@ def normalise_period(raw_period: str) -> str:
         return raw_period or ""
 
     def _raw_to_canonical(original: str) -> str:
-        s = original.upper()
+        s = original.upper().strip()
 
         # Already canonical: 2025_Q2, 2025_H1, 2025_FY, 2025_L3Q, 2025_LTM
         m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY|L3Q|LTM)$", s)
         if m:
             return f"{m.group(1)}_{m.group(2)}"
 
-        # L3Q signals — "Nine Months Ended" / "9M YYYY" / "L3Q YYYY"
-        # — produced by Q3 10-Q filings reporting YTD figures. Map year
-        # from the as-of language; keep frequency=L3Q to distinguish
-        # from a single-quarter Q3 number.
+        # L3Q signals — "Nine Months Ended" / "9M YYYY" / "L3Q YYYY" /
+        # "YTD SEPT/SEP YYYY". Produced by Q3 10-Q filings reporting
+        # YTD figures. Map year from the as-of language; keep frequency
+        # =L3Q to distinguish from a single-quarter Q3 number.
         l3q_year = None
-        if re.search(r"\bNINE MONTHS ENDED\b", s):
+        if re.search(r"\bNINE\s+MONTHS\s+ENDED\b", s):
             ym = re.search(r"\b(\d{4})\b", s)
             if ym:
                 l3q_year = ym.group(1)
         if l3q_year is None:
             ml = re.search(r"\b(?:L3Q|9M|NINE\s*MONTHS)\s+(\d{4})\b", s)
+            if ml:
+                l3q_year = ml.group(1)
+        if l3q_year is None:
+            # YTD anchored on Sept = L3Q
+            ml = re.search(r"\bYTD\b.*?\b(?:SEP|SEPT|SEPTEMBER|9/30|9-30)\b.*?(\d{4})", s)
             if ml:
                 l3q_year = ml.group(1)
         if l3q_year:
@@ -543,6 +548,52 @@ def normalise_period(raw_period: str) -> str:
                 ltm_year = ym.group(1)
         if ltm_year:
             return f"{ltm_year}_LTM"
+
+        # FULL YEAR / FULL-YEAR / FULL_YEAR YYYY — common alternative
+        # to "FY YYYY", surfaced by the audit (~48 rows on FULL YEAR 2025).
+        fy_full = re.search(r"\bFULL[\s\-_]+YEAR\s+(\d{4})\b", s)
+        if fy_full:
+            return f"{fy_full.group(1)}_FY"
+
+        # Twelve-month / 12M / "Twelve Months Ended YYYY" → FY (point-
+        # estimate full-year shape, distinct from rolling LTM which
+        # carries an explicit LTM/TTM marker handled above).
+        fy_twelve = re.search(r"\b(?:12M|TWELVE\s+MONTHS\s+ENDED)\s.*?(\d{4})", s)
+        if fy_twelve:
+            return f"{fy_twelve.group(1)}_FY"
+
+        # Six months ended YYYY → H1 (interim half-year filers).
+        h1_six = re.search(r"\bSIX\s+MONTHS\s+ENDED\b.*?(\d{4})", s)
+        if h1_six:
+            return f"{h1_six.group(1)}_H1"
+        # YTD anchored on June = H1
+        ytd_h1 = re.search(r"\bYTD\b.*?\b(?:JUN|JUNE|6/30|6-30)\b.*?(\d{4})", s)
+        if ytd_h1:
+            return f"{ytd_h1.group(1)}_H1"
+
+        # Three months ended YYYY → quarter inferred from month.
+        q_three = re.search(
+            r"\bTHREE\s+MONTHS\s+ENDED\s+([A-Z]+)[\s\.\,]+\d{0,2}[\s\.\,]+(\d{4})",
+            s,
+        )
+        if q_three:
+            month_name = q_three.group(1).lower()
+            yr = q_three.group(2)
+            mn = _MONTH_NAME_TO_NUM.get(month_name)
+            if mn:
+                q = _MONTH_END_TO_QUARTER.get(mn)
+                if q:
+                    return f"{yr}_{q}"
+
+        # Alternative quarterly format: "1Q-26", "2Q-25", "4Q25", "1Q/26"
+        # Surfaced by audit (~200 rows). Search rather than match so it
+        # picks up the suffix-only form too.
+        qy = re.search(r"\b([1-4])Q[\-_/\s]?'?(\d{2}|\d{4})\b", s)
+        if qy:
+            yr = qy.group(2)
+            if len(yr) == 2:
+                yr = ("20" + yr) if int(yr) < 80 else ("19" + yr)
+            return f"{yr}_Q{qy.group(1)}"
 
         # Conservative guardrail: refuse to rewrite obvious descriptions.
         # Exception: still try the explicit "Q[1-4] YYYY" anchored search below.

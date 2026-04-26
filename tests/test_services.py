@@ -74,31 +74,60 @@ class TestComparablePeriods:
 # ─────────────────────────────────────────────────────────────────
 
 class TestNormalisePeriod:
+    """Canonical 9-shape taxonomy: Q1, Q2, Q3, Q4, H1, H2, L3Q, FY, LTM.
+    No folding — each shape preserves its own period_label."""
+
     def test_q4_2025(self):
         assert normalise_period("Q4 2025") == "2025_Q4"
 
-    def test_fy_folds_to_q4(self):
-        # Storage convention: FY folds to the Q4 bucket so annual-report
-        # metrics coexist with quarterly metrics in the same period slice.
-        assert normalise_period("FY 2025") == "2025_Q4"
-        assert normalise_period("2025_FY") == "2025_Q4"
-        assert normalise_period("FY25") == "2025_Q4"
+    def test_fy_preserved(self):
+        # FY is its own canonical shape, not folded into Q4 — the
+        # period_frequency column distinguishes 12-month from 3-month figures.
+        assert normalise_period("FY 2025") == "2025_FY"
+        assert normalise_period("2025_FY") == "2025_FY"
+        assert normalise_period("FY25") == "2025_FY"
 
     def test_2025_q4(self):
         assert normalise_period("2025 Q4") == "2025_Q4"
 
-    def test_h1_folds_to_q2(self):
-        # Storage convention: H1/HY folds to the Q2 bucket so half-year
-        # interim reports (European filers) land alongside quarterly data.
-        assert normalise_period("HY 2025") == "2025_Q2"
-        assert normalise_period("H1 2025") == "2025_Q2"
-        assert normalise_period("2025_H1") == "2025_Q2"
+    def test_h1_preserved(self):
+        # H1/HY stays as H1 — distinct from Q2 (3 months vs 6 months).
+        assert normalise_period("HY 2025") == "2025_H1"
+        assert normalise_period("H1 2025") == "2025_H1"
+        assert normalise_period("2025_H1") == "2025_H1"
 
-    def test_h2_not_folded(self):
-        # H2 is distinct from FY (second-half-only, not full year) and
-        # stays as-is.
+    def test_h2_preserved(self):
         assert normalise_period("H2 2025") == "2025_H2"
         assert normalise_period("2025_H2") == "2025_H2"
+
+    def test_l3q_nine_months(self):
+        # Q3 10-Q YTD figures land as L3Q (9-month accumulation).
+        assert normalise_period("9M 2025") == "2025_L3Q"
+        assert normalise_period("L3Q 2025") == "2025_L3Q"
+        assert normalise_period("Nine Months Ended September 30, 2025") == "2025_L3Q"
+        assert normalise_period("2025_L3Q") == "2025_L3Q"
+
+    def test_ltm_trailing(self):
+        assert normalise_period("LTM 2025") == "2025_LTM"
+        assert normalise_period("TTM 2025") == "2025_LTM"
+        assert normalise_period("Trailing Twelve Months ending Sept 2025") == "2025_LTM"
+
+    def test_full_year_variant(self):
+        # Common in European filers: "FULL YEAR 2025" instead of "FY 2025".
+        assert normalise_period("FULL YEAR 2025") == "2025_FY"
+        assert normalise_period("Full-Year 2025") == "2025_FY"
+
+    def test_alt_quarterly_format(self):
+        # Inverted format: 1Q-26, 2Q25, 4Q-25, 1Q/26
+        assert normalise_period("1Q-26") == "2026_Q1"
+        assert normalise_period("2Q25") == "2025_Q2"
+        assert normalise_period("4Q-25") == "2025_Q4"
+        assert normalise_period("3Q/26") == "2026_Q3"
+
+    def test_period_ended_phrases(self):
+        assert normalise_period("Three Months Ended June 30, 2025") == "2025_Q2"
+        assert normalise_period("Six Months Ended June 30, 2025") == "2025_H1"
+        assert normalise_period("Twelve Months Ended December 31, 2025") == "2025_FY"
 
     def test_empty(self):
         assert normalise_period("") == ""
