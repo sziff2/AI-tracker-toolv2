@@ -457,27 +457,24 @@ _MONTH_NAME_TO_NUM = {
 
 
 def _fold_half_and_fy_to_quarters(label: str) -> str:
-    """Fold H1/HY → Q2 and FY → Q4 at the storage-convention level.
+    """Historically folded H1 → Q2 and FY → Q4 to make different filing
+    cadences comparable in a single bucket. **Now a no-op.**
 
-    European half-year filers publish H1 interim reports and FY annual
-    reports; US filers publish Q1/Q2/Q3 interim and Q4/10-K annual. To
-    let the UI, agent pipeline, and comparisons treat both filing
-    cadences uniformly, we store H1 metrics under the Q2 bucket and
-    FY metrics under the Q4 bucket — half-year = 2 quarters in,
-    full-year = 4 quarters in. H2 (second-half-only) is distinct from
-    FY and is left as-is.
+    Bug surfaced 2026-04-25 on ARW US 2025_Q4 10-K: a 12-month FY
+    figure ($31B Sales) and a 3-month Q4 figure (~$8B Sales) both
+    landed under period_label=2025_Q4, then dedup silently dropped one.
+    The right answer is to keep period_label honest about the SHAPE of
+    the period — the period_frequency column on ExtractedMetric makes
+    the distinction queryable without losing the underlying labels.
 
-    Applied as the last step of normalise_period() so every code path
-    produces the same folded result.
+    Canonical shapes preserved in period_label:
+        Q1, Q2, Q3, Q4   — single quarter (3 months)
+        H1, H2           — half-year (6 months)
+        L3Q              — first three quarters / "Nine Months Ended" (9 months)
+        FY               — full fiscal year (12 months)
+        LTM              — trailing twelve months ending on a given date
     """
-    import re
-    m = re.match(r"^(\d{4})_(H1|FY)$", label)
-    if not m:
-        return label
-    yr, tag = m.group(1), m.group(2)
-    if tag == "H1":
-        return f"{yr}_Q2"
-    return f"{yr}_Q4"
+    return label
 
 
 def normalise_period(raw_period: str) -> str:
@@ -515,10 +512,37 @@ def normalise_period(raw_period: str) -> str:
     def _raw_to_canonical(original: str) -> str:
         s = original.upper()
 
-        # Already canonical: 2025_Q2, 2025_H1, 2025_FY
-        m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY)$", s)
+        # Already canonical: 2025_Q2, 2025_H1, 2025_FY, 2025_L3Q, 2025_LTM
+        m = re.match(r"^(\d{4})[_\-](Q[1-4]|H[12]|FY|L3Q|LTM)$", s)
         if m:
             return f"{m.group(1)}_{m.group(2)}"
+
+        # L3Q signals — "Nine Months Ended" / "9M YYYY" / "L3Q YYYY"
+        # — produced by Q3 10-Q filings reporting YTD figures. Map year
+        # from the as-of language; keep frequency=L3Q to distinguish
+        # from a single-quarter Q3 number.
+        l3q_year = None
+        if re.search(r"\bNINE MONTHS ENDED\b", s):
+            ym = re.search(r"\b(\d{4})\b", s)
+            if ym:
+                l3q_year = ym.group(1)
+        if l3q_year is None:
+            ml = re.search(r"\b(?:L3Q|9M|NINE\s*MONTHS)\s+(\d{4})\b", s)
+            if ml:
+                l3q_year = ml.group(1)
+        if l3q_year:
+            return f"{l3q_year}_L3Q"
+
+        # LTM signals — trailing/last-twelve-months. Common forms:
+        # "LTM 2025", "TTM 2025", "Trailing Twelve Months ending Sept 2025"
+        ltm_year = None
+        ltm_match = re.search(r"\b(?:LTM|TTM|TRAILING\s+TWELVE\s+MONTHS|LAST\s+TWELVE\s+MONTHS)\b", s)
+        if ltm_match:
+            ym = re.search(r"\b(\d{4})\b", s)
+            if ym:
+                ltm_year = ym.group(1)
+        if ltm_year:
+            return f"{ltm_year}_LTM"
 
         # Conservative guardrail: refuse to rewrite obvious descriptions.
         # Exception: still try the explicit "Q[1-4] YYYY" anchored search below.

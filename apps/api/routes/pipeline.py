@@ -1602,6 +1602,72 @@ async def admin_evict_old_files(
     return await evict_until_free(target_bytes, dry_run=dry_run)
 
 
+@router.get("/admin/period-shapes")
+async def admin_period_shapes(
+    ticker: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Distribution of period_label suffixes + period_frequency across
+    extracted_metrics. Use this to verify the canonical shape taxonomy:
+        Q1 | Q2 | Q3 | Q4 | H1 | H2 | L3Q | FY | LTM
+
+    Optional `ticker` filter scopes to one company.
+    """
+    from sqlalchemy import text as sa_text
+
+    where = ""
+    params: dict = {}
+    if ticker:
+        where = "WHERE c.ticker = :ticker"
+        params["ticker"] = ticker.upper().strip()
+
+    # Suffix breakdown of period_label (everything after the last _).
+    suffix_q = await db.execute(sa_text(f"""
+        SELECT
+            COALESCE(SUBSTRING(em.period_label FROM '[^_]+$'), '(none)') AS suffix,
+            em.period_frequency AS freq,
+            COUNT(*) AS n
+        FROM extracted_metrics em
+        JOIN companies c ON c.id = em.company_id
+        {where}
+        GROUP BY suffix, em.period_frequency
+        ORDER BY n DESC
+    """), params)
+    rows = suffix_q.all()
+
+    # Aggregate to the two views the user cares about.
+    by_suffix: dict[str, int] = {}
+    by_freq: dict[str, int] = {}
+    mismatches: list[dict] = []
+    for r in rows:
+        s = r.suffix or "(none)"
+        f = r.freq or "(none)"
+        n = int(r.n)
+        by_suffix[s] = by_suffix.get(s, 0) + n
+        by_freq[f] = by_freq.get(f, 0) + n
+        # Flag rows where label suffix and frequency disagree, e.g.
+        # period_label=2025_Q4 + period_frequency=FY (the legacy fold
+        # the migration is meant to clean up).
+        if s != f and s in {"Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"} \
+                  and f in {"Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"}:
+            mismatches.append({"suffix": s, "frequency": f, "rows": n})
+
+    canonical_shapes = {"Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"}
+    nonstandard_suffixes = {s: n for s, n in by_suffix.items() if s not in canonical_shapes}
+    nonstandard_freqs = {f: n for f, n in by_freq.items() if f not in canonical_shapes}
+
+    return {
+        "ticker": ticker,
+        "total_rows":          sum(by_suffix.values()),
+        "canonical_shapes":    sorted(canonical_shapes),
+        "by_label_suffix":     by_suffix,
+        "by_period_frequency": by_freq,
+        "nonstandard_label_suffixes":     nonstandard_suffixes,
+        "nonstandard_period_frequencies": nonstandard_freqs,
+        "label_freq_mismatches":          mismatches[:20],
+    }
+
+
 @router.get("/admin/storage-stats")
 async def admin_storage_stats():
     """Inspect what the pod actually sees for the storage volume.

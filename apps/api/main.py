@@ -314,6 +314,30 @@ async def lifespan(app: FastAPI):
             "UPDATE extracted_metrics SET period_frequency = 'Q' WHERE period_frequency IS NULL"
         ))
 
+        # 2026-04-26: re-canonicalise period_label on rows where the old
+        # FY→Q4 / H1→Q2 fold was applied. Now that normalise_period
+        # preserves the shape natively, those rows should sit under
+        # 2025_FY / 2025_H1 etc. rather than collide with quarterly
+        # buckets. period_frequency was already correctly tagged so
+        # we use it as the source of truth.
+        await conn.execute(sa_text("""
+            UPDATE extracted_metrics
+            SET period_label = REGEXP_REPLACE(period_label, '_Q4$', '_FY')
+            WHERE period_frequency = 'FY' AND period_label ~ '_Q4$'
+        """))
+        await conn.execute(sa_text("""
+            UPDATE extracted_metrics
+            SET period_label = REGEXP_REPLACE(period_label, '_Q2$', '_H1')
+            WHERE period_frequency = 'H1' AND period_label ~ '_Q2$'
+        """))
+        # Normalise frequency values written as the suffix (Q1/Q2/Q3/Q4)
+        # — pick the right Q[1-4] from the period_label.
+        await conn.execute(sa_text("""
+            UPDATE extracted_metrics
+            SET period_frequency = SUBSTRING(period_label FROM '_(Q[1-4])$')
+            WHERE period_frequency = 'Q' AND period_label ~ '_Q[1-4]$'
+        """))
+
         # Reconciliation report column on extraction_profiles
         await conn.execute(sa_text(
             "ALTER TABLE extraction_profiles ADD COLUMN IF NOT EXISTS reconciliation JSONB"

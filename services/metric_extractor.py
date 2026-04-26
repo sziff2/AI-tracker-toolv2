@@ -940,20 +940,42 @@ async def _persist_earnings_metrics(db, document, raw_items):
                 raw_period = item.get("period") or document.period_label or ""
                 canonical_period = normalise_period(raw_period) or document.period_label
 
-                # Frequency: explicit on the item (FY/Q/H1/H2) or inferred
-                # from the raw period string. Default 'Q' to preserve
-                # historical behaviour for quarterly extractors.
+                # Period frequency: the SHAPE of the period — one of
+                #   Q1 | Q2 | Q3 | Q4   (single quarter, 3 months)
+                #   H1 | H2             (half-year, 6 months)
+                #   L3Q                 (first three quarters, 9 months — Q3 YTD)
+                #   FY                  (full fiscal year, 12 months)
+                #   LTM                 (trailing twelve months as of as-of date)
+                #
+                # Prefer the explicit period_frequency on the item; if
+                # absent, infer from the canonical period_label suffix
+                # (since normalise_period now preserves it).
                 freq = (item.get("period_frequency") or "").upper().strip()
-                if not freq:
-                    raw_upper = (raw_period or "").upper()
-                    if "_FY" in raw_upper or raw_upper.startswith("FY") or raw_upper.endswith("FY") or " FY" in raw_upper:
-                        freq = "FY"
-                    elif "_H1" in raw_upper or " H1" in raw_upper or raw_upper.startswith("H1"):
-                        freq = "H1"
-                    elif "_H2" in raw_upper or " H2" in raw_upper or raw_upper.startswith("H2"):
-                        freq = "H2"
+                if freq not in ("Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"):
+                    suffix_match = None
+                    if canonical_period:
+                        m = re.match(r"^\d{4}_(Q[1-4]|H[12]|L3Q|FY|LTM)$", canonical_period.upper())
+                        if m:
+                            suffix_match = m.group(1)
+                    if suffix_match:
+                        freq = suffix_match
                     else:
-                        freq = "Q"
+                        # Fall back to inference from raw period string.
+                        raw_upper = (raw_period or "").upper()
+                        if "LTM" in raw_upper or "TTM" in raw_upper or "TRAILING TWELVE" in raw_upper:
+                            freq = "LTM"
+                        elif "L3Q" in raw_upper or "NINE MONTHS" in raw_upper or "_9M" in raw_upper:
+                            freq = "L3Q"
+                        elif "_FY" in raw_upper or " FY" in raw_upper or raw_upper.startswith("FY"):
+                            freq = "FY"
+                        elif "H2" in raw_upper:
+                            freq = "H2"
+                        elif "H1" in raw_upper or "HY" in raw_upper:
+                            freq = "H1"
+                        else:
+                            # Pick the quarter from the canonical_period if available
+                            qm = re.search(r"_(Q[1-4])$", canonical_period or "")
+                            freq = qm.group(1) if qm else "Q4"
 
                 metric = ExtractedMetric(
                     id=uuid.uuid4(),
