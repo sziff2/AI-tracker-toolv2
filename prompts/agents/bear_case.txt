@@ -28,6 +28,10 @@ SEGMENT BREAKDOWN (find the weak segments):
 HISTORICAL DRAWDOWN DISTRIBUTION (anchor downside scenarios to this):
 {historical_drawdowns}
 
+RELEVANT PASSAGES FROM THIS PERIOD'S FILINGS (semantic retrieval — quote
+verbatim where it sharpens the bear case):
+{rag_passages}
+
 MACRO ASSUMPTIONS (use these — macro headwinds for this company):
 {context_contract}
 ═══════════════════════════════════════

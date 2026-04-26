@@ -102,6 +102,7 @@ async def build_agent_context(
         annual_report_analysis,
         metrics_history_result,
         historical_drawdowns_block,
+        rag_ctx,
     ) = await asyncio.gather(
         _with_session(_build_company_meta, company_id),
         _with_session(build_thesis_context, company_id),
@@ -117,6 +118,7 @@ async def build_agent_context(
         _with_session(_load_document_analysis, company_id, period, "annual_report_analysis"),
         _with_session(_build_metrics_history, company_id, period),
         _with_session(build_historical_drawdowns_block, company_id),
+        _with_session(build_rag_context, company_id, period),
     )
 
     # Fix 2a — only load raw transcript/presentation text as fallback
@@ -183,6 +185,12 @@ async def build_agent_context(
         "peer_metrics":          peer_ctx["peer_metrics"],
         "prior_subject_metrics": peer_ctx["prior_subject_metrics"],
         "prior_peer_metrics":    peer_ctx["prior_peer_metrics"],
+        # Tier 3.4 Part 2c — semantically-retrieved passages from THIS
+        # period's filings, scoped to (company_id, period_label) and
+        # ranked by cosine similarity. Empty when pgvector is off or
+        # the period has no embedded sections.
+        "rag_passages":          rag_ctx.get("rag_passages", ""),
+        "rag_hits":              rag_ctx.get("rag_hits", []),
     }
 
 
@@ -429,6 +437,104 @@ async def _build_peer_context(
         "peer_metrics": peer_curr,
         "prior_subject_metrics": subj_prior,
         "prior_peer_metrics": peer_prior,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────
+# RAG context — semantic retrieval over THIS period's filings
+# ─────────────────────────────────────────────────────────────────
+
+# Topical queries used for the per-period RAG pull. Each generates one
+# vector search; results are merged + dedup'd by section_id. Picked to
+# cover the four analytical lenses agents reason from — change with
+# care since adding queries multiplies LLM context cost downstream.
+_RAG_TOPICAL_QUERIES = [
+    "key financial drivers, organic growth, and margin trajectory",
+    "competitive position, pricing power, and market share",
+    "risks, headwinds, regulatory pressure, and bear case",
+    "guidance, capital allocation, balance sheet, and cash flow",
+]
+
+
+async def build_rag_context(
+    db: AsyncSession,
+    company_id,
+    period: str,
+    *,
+    k_per_query: int = 4,
+    snippet_chars: int = 600,
+) -> dict:
+    """Pull the most semantically relevant passages from THIS period's
+    filings for the company, using pgvector cosine search across four
+    analytical topics. Returns a dict shaped for downstream agents:
+
+        {
+          "rag_passages": "<formatted block, ready to drop into a prompt>",
+          "rag_hits":     [<dict per hit for structured consumers>],
+          "rag_query_count": <number of topical queries that fired>,
+        }
+
+    Returns empty values when:
+      - pgvector flag is off (settings.use_pgvector_search False)
+      - the company has no embedded sections for this period
+      - the embedding model can't load (sentence-transformers absent)
+
+    Safe to add unconditionally to build_agent_context — agents that
+    don't reference rag_passages just ignore it."""
+    try:
+        from services.vector_search import search_sections
+    except Exception:  # pragma: no cover — defensive
+        return {"rag_passages": "", "rag_hits": [], "rag_query_count": 0}
+
+    seen_section_ids: set[str] = set()
+    merged_hits: list[dict] = []
+    fired_queries = 0
+
+    for query in _RAG_TOPICAL_QUERIES:
+        try:
+            hits = await search_sections(
+                db, query,
+                company_id=str(company_id),
+                period_label=period,
+                k=k_per_query,
+            )
+        except Exception as exc:
+            logger.warning("RAG query failed (%s): %s", query[:40], str(exc)[:120])
+            continue
+        if not hits:
+            continue
+        fired_queries += 1
+        for h in hits:
+            if h.section_id in seen_section_ids:
+                continue
+            seen_section_ids.add(h.section_id)
+            merged_hits.append({
+                "topic":          query,
+                "document_title": h.document_title,
+                "section_title":  h.section_title or "paragraph",
+                "page":           h.page_number,
+                "distance":       round(h.distance, 4),
+                "snippet":        (h.snippet or "")[:snippet_chars].strip(),
+            })
+
+    if not merged_hits:
+        return {"rag_passages": "", "rag_hits": [], "rag_query_count": 0}
+
+    # Sort by ascending cosine distance — most relevant passages first.
+    merged_hits.sort(key=lambda h: h["distance"])
+
+    lines: list[str] = []
+    for i, h in enumerate(merged_hits, start=1):
+        page_str = f" p.{h['page']}" if h.get("page") else ""
+        lines.append(
+            f"[{i}] {h['document_title']} — {h['section_title']}{page_str}"
+            f" (relevance {1 - h['distance']:.2f})\n{h['snippet']}"
+        )
+
+    return {
+        "rag_passages":    "\n\n".join(lines),
+        "rag_hits":        merged_hits,
+        "rag_query_count": fired_queries,
     }
 
 

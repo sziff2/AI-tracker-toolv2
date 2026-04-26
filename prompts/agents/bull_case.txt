@@ -29,6 +29,10 @@ MANAGEMENT LANGUAGE SIGNALS:
 HISTORICAL DRAWDOWN DISTRIBUTION (context for the upside ceiling):
 {historical_drawdowns}
 
+RELEVANT PASSAGES FROM THIS PERIOD'S FILINGS (semantic retrieval — quote
+verbatim where it strengthens the bull case):
+{rag_passages}
+
 MACRO ASSUMPTIONS (find macro tailwinds for this company):
 {context_contract}
 ═══════════════════════════════════════
