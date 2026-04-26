@@ -229,3 +229,180 @@ async def delete_consensus(row_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(400, "invalid id")
     await db.execute(delete(ConsensusExpectation).where(ConsensusExpectation.id == rid))
     await db.commit()
+
+
+# ─────────────────────────────────────────────────────────────────
+# Results summary — joins Actuals × Consensus × Prior-year YoY
+# ─────────────────────────────────────────────────────────────────
+
+@router.get("/companies/{ticker}/results-summary")
+async def results_summary(
+    ticker: str,
+    period: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Quarterly Summary feed for the Results tab.
+
+    Joins three sources for one period:
+      • extracted_metrics for the period          → actual
+      • extracted_metrics for the prior-year period → YoY anchor
+      • consensus_expectations for the period     → vs-consensus benchmark
+
+    Match key is lowercase, whitespace-stripped metric_name. Returns
+    rows ordered as: rows-with-consensus first (sorted by absolute
+    beat/miss magnitude), then actuals-only rows. Each row includes
+    the raw fields plus pre-computed yoy_pct and beat_miss_pct so
+    the UI can render directly.
+    """
+    from apps.api.models import ExtractedMetric
+    from services.metric_normaliser import _previous_period
+
+    co_q = await db.execute(select(Company).where(Company.ticker == ticker.upper().strip()))
+    co = co_q.scalar_one_or_none()
+    if not co:
+        raise HTTPException(404, f"Company {ticker} not found")
+
+    # 1. Actuals for this period
+    cur_q = await db.execute(
+        select(ExtractedMetric).where(
+            ExtractedMetric.company_id == co.id,
+            ExtractedMetric.period_label == period,
+        )
+    )
+    cur_rows = cur_q.scalars().all()
+
+    # 2. Prior-year period for YoY (use the canonical _previous_period
+    #    semantics — Q[1-4] / H2 sequential, FY / H1 / L3Q / LTM YoY)
+    prior_period = _previous_period(period)
+    prior_rows: list = []
+    if prior_period:
+        prior_q = await db.execute(
+            select(ExtractedMetric).where(
+                ExtractedMetric.company_id == co.id,
+                ExtractedMetric.period_label == prior_period,
+            )
+        )
+        prior_rows = prior_q.scalars().all()
+
+    # 3. Consensus expectations for this period
+    cons_q = await db.execute(
+        select(ConsensusExpectation).where(
+            ConsensusExpectation.company_id == co.id,
+            ConsensusExpectation.period_label == period,
+        )
+    )
+    cons_rows = cons_q.scalars().all()
+
+    def _key(name: str) -> str:
+        return (name or "").strip().lower()
+
+    # Index prior + consensus by normalised metric name.
+    prior_by_name: dict[str, ExtractedMetric] = {}
+    for r in prior_rows:
+        k = _key(r.metric_name)
+        # Keep the highest-confidence row when duplicates exist.
+        if k not in prior_by_name or (
+            float(r.confidence or 0) > float(prior_by_name[k].confidence or 0)
+        ):
+            prior_by_name[k] = r
+
+    cons_by_name: dict[str, ConsensusExpectation] = {}
+    for r in cons_rows:
+        cons_by_name[_key(r.metric_name)] = r
+
+    # Build the joined rows. Drive off actuals, then add consensus-only
+    # rows (consensus uploaded but no matching extracted metric — usually
+    # means the metric name doesn't align; surface so the analyst sees it).
+    seen_keys: set[str] = set()
+    rows: list[dict] = []
+
+    for r in cur_rows:
+        k = _key(r.metric_name)
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        actual = float(r.metric_value) if r.metric_value is not None else None
+        prior = prior_by_name.get(k)
+        prior_v = float(prior.metric_value) if (prior and prior.metric_value is not None) else None
+        cons = cons_by_name.get(k)
+        cons_v = float(cons.consensus_value) if (cons and cons.consensus_value is not None) else None
+
+        yoy_pct = None
+        if actual is not None and prior_v not in (None, 0):
+            yoy_pct = round((actual - prior_v) / abs(prior_v) * 100, 2)
+
+        beat_miss_pct = None
+        beat_miss_abs = None
+        if actual is not None and cons_v not in (None, 0):
+            beat_miss_abs = round(actual - cons_v, 2)
+            beat_miss_pct = round((actual - cons_v) / abs(cons_v) * 100, 2)
+
+        rows.append({
+            "metric_name":     r.metric_name,
+            "unit":            r.unit,
+            "segment":         r.segment,
+            "period_label":    r.period_label,
+            "period_frequency": r.period_frequency,
+            "actual":          actual,
+            "actual_text":     r.metric_text,
+            "prior_period":    prior_period if prior else None,
+            "prior_value":     prior_v,
+            "yoy_pct":         yoy_pct,
+            "consensus":       cons_v,
+            "consensus_unit":  cons.unit if cons else None,
+            "consensus_source": cons.source if cons else None,
+            "consensus_notes": cons.notes if cons else None,
+            "beat_miss_abs":   beat_miss_abs,
+            "beat_miss_pct":   beat_miss_pct,
+            "has_consensus":   cons_v is not None,
+            "confidence":      float(r.confidence) if r.confidence is not None else None,
+        })
+
+    # Consensus-only rows (no matching actual). Helpful for the analyst:
+    # if they uploaded "Total income" but the extractor wrote "Revenue",
+    # the mismatch is now visible.
+    for k, cons in cons_by_name.items():
+        if k in seen_keys:
+            continue
+        cons_v = float(cons.consensus_value) if cons.consensus_value is not None else None
+        rows.append({
+            "metric_name":     cons.metric_name,
+            "unit":            cons.unit,
+            "segment":         None,
+            "period_label":    period,
+            "period_frequency": None,
+            "actual":          None,
+            "actual_text":     None,
+            "prior_period":    None,
+            "prior_value":     None,
+            "yoy_pct":         None,
+            "consensus":       cons_v,
+            "consensus_unit":  cons.unit,
+            "consensus_source": cons.source,
+            "consensus_notes": cons.notes,
+            "beat_miss_abs":   None,
+            "beat_miss_pct":   None,
+            "has_consensus":   True,
+            "confidence":      None,
+            "consensus_only":  True,
+        })
+
+    # Sort: consensus-bearing rows first (by abs beat/miss magnitude
+    # descending so the most-surprising lines lead), then actuals-only.
+    def _sort_key(r):
+        has_cons = bool(r.get("has_consensus"))
+        bm = abs(r.get("beat_miss_pct") or 0.0)
+        return (not has_cons, -bm)
+    rows.sort(key=_sort_key)
+
+    return {
+        "ticker":              co.ticker,
+        "company_name":        co.name,
+        "period":              period,
+        "prior_period":        prior_period,
+        "rows":                rows,
+        "rows_with_consensus": sum(1 for r in rows if r.get("has_consensus") and r.get("actual") is not None),
+        "rows_total":          len(rows),
+        "consensus_uploaded":  len(cons_rows),
+        "consensus_only":      sum(1 for r in rows if r.get("consensus_only")),
+    }

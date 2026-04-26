@@ -984,6 +984,7 @@ function renderCockpit(ticker,d){
     renderPeriodActions(ticker,visiblePeriod,document.getElementById('period-actions-'+visiblePeriod));
     restorePipelineStatus(ticker,visiblePeriod);
     loadAgentOutputs(ticker,visiblePeriod);
+    loadResultsSummary(ticker,visiblePeriod);
     loadReconciliationBanner(ticker,visiblePeriod,(d.docs_by_period||{})[visiblePeriod]||[]);
   }
 }
@@ -993,6 +994,7 @@ function loadPeriodData(ticker,period){
   renderPeriodActions(ticker,period,document.getElementById('period-actions-'+period));
   restorePipelineStatus(ticker,period);
   loadAgentOutputs(ticker,period);
+  loadResultsSummary(ticker,period);
   // Re-fetch docs for this period to drive the banner
   fetch('/api/v1/companies/'+enc(ticker)+'/documents')
     .then(function(r){return r.ok?r.json():[];})
@@ -1243,6 +1245,7 @@ function renderCkResults(ticker,d){
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h2 style="margin:0">'+(normalisePeriodLabel(p)||esc(p))+'</h2><div style="display:flex;gap:6px;align-items:center"><div id="period-actions-'+esc(p)+'"></div><button onclick="downloadBriefingPdf(\''+esc(ticker)+'\',\''+esc(p)+'\',this)" style="font-family:var(--sans);font-size:11px;color:var(--gold);background:none;cursor:pointer;padding:5px 8px;border:1px solid var(--gold);border-radius:5px" title="Download briefing PDF">📄 PDF</button><button style="color:var(--red);font-family:var(--sans);font-size:11px;background:none;border:none;cursor:pointer;padding:5px 8px" onclick="deletePeriod(\''+ticker+'\',\''+esc(p)+'\')">Delete</button></div></div>';
     h+='<div id="pipeline-panel-'+esc(p)+'" style="display:none;margin-bottom:16px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px"></div>';
     h+='<div id="recon-banner-'+esc(p)+'" style="margin-bottom:12px"></div>';
+    h+='<div id="results-summary-'+esc(p)+'" style="margin-bottom:16px"></div>';
     h+='<div id="agent-outputs-'+esc(p)+'" style="margin-bottom:16px"></div>';
     // Ask a Question
     h+='<div style="margin-bottom:20px"><div style="display:flex;gap:8px;align-items:center"><input class="fi" id="chat-input-'+esc(p)+'" placeholder="Ask a question about '+esc(p)+'…" style="flex:1;font-size:13px"><select id="chat-model-'+esc(p)+'" class="fi" style="width:auto;font-size:11px;padding:8px 10px"><option value="fast">⚡ Fast</option><option value="standard" selected>⚖️ Standard</option><option value="deep">🧠 Deep</option></select><button class="btn" style="padding:10px 20px;white-space:nowrap" onclick="askQuestion(\''+ticker+'\',\''+esc(p)+'\')">Ask</button></div><div id="chat-history-'+esc(p)+'" style="margin-top:12px"></div></div>';
@@ -2067,6 +2070,138 @@ async function loadReconciliationBanner(ticker,period,docs){
     h+='</div></details>';
     container.innerHTML=h;
   }catch(e){/* non-fatal */}
+}
+
+// ─── Quarterly Summary panel — actuals × consensus × YoY ────────
+async function loadResultsSummary(ticker,period){
+  var el=document.getElementById('results-summary-'+period);
+  if(!el)return;
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/results-summary?period='+encodeURIComponent(period));
+    if(!r.ok){el.innerHTML='';return;}
+    var d=await r.json();
+    if(!d.rows||!d.rows.length){
+      el.innerHTML=renderConsensusUploadHint(ticker,period,0,0);
+      return;
+    }
+    el.innerHTML=renderResultsSummaryCard(ticker,period,d);
+  }catch(e){el.innerHTML='';}
+}
+
+function _fmtNum(v,unit){
+  if(v===null||v===undefined||isNaN(v))return '—';
+  var u=(unit||'').toUpperCase();
+  var abs=Math.abs(v);
+  // Currency-in-millions / billions formatting; pass through %, x, bps as-is.
+  if(u==='%'||u==='X'||u==='BPS')return v.toFixed(2)+(u==='%'?'%':u==='X'?'x':'bps');
+  if(abs>=1000)return (v/1000).toFixed(2)+'k';
+  if(abs>=10)return v.toFixed(0);
+  return v.toFixed(2);
+}
+function _fmtPct(v){
+  if(v===null||v===undefined||isNaN(v))return '—';
+  var sign=v>0?'+':'';
+  return sign+v.toFixed(1)+'%';
+}
+function _bmColour(pct){
+  if(pct===null||pct===undefined||isNaN(pct))return 'var(--text4)';
+  if(pct>=2)return 'var(--green)';
+  if(pct<=-2)return 'var(--red)';
+  return 'var(--amber)';
+}
+
+function renderConsensusUploadHint(ticker,period,withCons,total){
+  var h='<div class="cd" style="padding:14px 18px;margin-bottom:12px;border-left:3px solid var(--gold)">';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:14px">📊</span><span style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.5px">Consensus comparison</span></div>';
+  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3);line-height:1.5">No consensus expectations uploaded for '+esc(period)+'. ';
+  h+='Either (a) upload a consensus PDF / spreadsheet via the <strong>Documents</strong> tab and tag it <code style="font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 6px;border-radius:4px">Consensus / Estimates</code> — the LLM will extract the values automatically — or (b) <a href="#" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\');return false;" style="color:var(--gold)">paste a CSV directly</a>.</div>';
+  h+='</div>';
+  return h;
+}
+
+function renderResultsSummaryCard(ticker,period,d){
+  var rows=d.rows||[];
+  var withCons=rows.filter(function(r){return r.has_consensus&&r.actual!==null;});
+  var consOnly=rows.filter(function(r){return r.consensus_only;});
+  var actualsOnly=rows.filter(function(r){return !r.has_consensus&&r.actual!==null;});
+  var h='<div class="cd" style="padding:20px;margin-bottom:16px;border-left:3px solid var(--gold)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
+  h+='<div class="cd-t" style="margin:0">Quarterly Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+rows.length+' metrics · '+withCons.length+' vs consensus · '+(d.prior_period?'YoY vs '+esc(d.prior_period):'no prior period')+'</div>';
+  h+='</div>';
+  // Quick action bar
+  h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
+  h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\')">+ Paste consensus (CSV)</button>';
+  h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="loadResultsSummary(\''+esc(ticker)+'\',\''+esc(period)+'\')">⟳ Refresh</button>';
+  h+='</div>';
+  // Table
+  if(!rows.length){h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4)">No metrics yet — run extraction first.</div>';h+='</div>';return h;}
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
+  h+='<thead><tr style="border-bottom:1px solid var(--border);color:var(--text4);text-align:right">';
+  h+='<th style="text-align:left;padding:7px 8px;font-weight:600">Metric</th>';
+  h+='<th style="padding:7px 8px;font-weight:600">Actual</th>';
+  h+='<th style="padding:7px 8px;font-weight:600">Prior</th>';
+  h+='<th style="padding:7px 8px;font-weight:600">YoY</th>';
+  h+='<th style="padding:7px 8px;font-weight:600">Consensus</th>';
+  h+='<th style="padding:7px 8px;font-weight:600">Beat / Miss</th>';
+  h+='<th style="text-align:left;padding:7px 8px;font-weight:600">Source</th>';
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
+    var bmCol=_bmColour(r.beat_miss_pct);
+    var yoyCol=_bmColour(r.yoy_pct);
+    var unit=r.unit||r.consensus_unit||'';
+    var rowStyle=r.consensus_only?'opacity:0.7;font-style:italic':'';
+    h+='<tr style="border-bottom:1px solid var(--border);'+rowStyle+'">';
+    h+='<td style="padding:7px 8px;color:var(--text)"><strong>'+esc(r.metric_name)+'</strong>';
+    if(unit)h+=' <span style="color:var(--text4);font-size:10px">'+esc(unit)+'</span>';
+    if(r.consensus_only)h+=' <span style="color:var(--amber);font-size:10px;margin-left:4px">consensus only — no actual matched</span>';
+    h+='</td>';
+    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text)">'+_fmtNum(r.actual,unit)+'</td>';
+    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text3)">'+_fmtNum(r.prior_value,unit)+'</td>';
+    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:'+yoyCol+'">'+_fmtPct(r.yoy_pct)+'</td>';
+    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text3)">'+_fmtNum(r.consensus,unit)+'</td>';
+    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:'+bmCol+';font-weight:600">'+_fmtPct(r.beat_miss_pct)+'</td>';
+    h+='<td style="padding:7px 8px;color:var(--text4);font-size:10px">'+esc(r.consensus_source||'')+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  if(actualsOnly.length){h+='<div style="margin-top:10px;font-family:var(--sans);font-size:11px;color:var(--text4)">'+actualsOnly.length+' metric(s) without a consensus benchmark — upload a consensus pack to expand the comparison.</div>';}
+  h+='</div>';
+  return h;
+}
+
+// Inline CSV-paste for consensus — opens a modal-style overlay
+function openConsensusPaste(ticker,period){
+  var existing=document.getElementById('cons-paste-modal');
+  if(existing)existing.remove();
+  var d=document.createElement('div');
+  d.id='cons-paste-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px';
+  d.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:600px;width:100%;max-height:80vh;overflow:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-family:var(--sans);font-size:14px;font-weight:600">Paste Consensus — '+esc(period)+'</div><button onclick="document.getElementById(\'cons-paste-modal\').remove()" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer">&times;</button></div>'+
+    '<div style="font-family:var(--sans);font-size:12px;color:var(--text3);margin-bottom:10px">CSV or TSV — first row must be a header. Required column: <code style="font-family:var(--mono);font-size:11px">metric_name</code>. Optional: <code style="font-family:var(--mono);font-size:11px">consensus_value</code>, <code style="font-family:var(--mono);font-size:11px">unit</code>, <code style="font-family:var(--mono);font-size:11px">source</code>, <code style="font-family:var(--mono);font-size:11px">notes</code>.</div>'+
+    '<textarea id="cons-paste-text" placeholder="metric_name,consensus_value,unit\nTotal Income,14336,SEK_M\nNII,9976,SEK_M\nEPS,2.98,SEK\nROE,12.35,%" style="width:100%;min-height:220px;padding:10px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.5"></textarea>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="cons-paste-source" placeholder="Source (e.g. Bloomberg consensus)" style="flex:1;padding:7px 10px;background:var(--bg1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:12px"><button class="btn" style="padding:8px 18px;font-size:12px" onclick="submitConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\')">Upload</button></div>'+
+    '<div id="cons-paste-status" style="margin-top:10px;font-family:var(--sans);font-size:11px;color:var(--text4)"></div>'+
+    '</div>';
+  document.body.appendChild(d);
+}
+async function submitConsensusPaste(ticker,period){
+  var txt=(document.getElementById('cons-paste-text')||{}).value||'';
+  var src=(document.getElementById('cons-paste-source')||{}).value||'';
+  var status=document.getElementById('cons-paste-status');
+  if(!txt.trim()){if(status)status.textContent='Paste at least a header + one row.';return;}
+  if(status){status.textContent='Uploading…';status.style.color='var(--text4)';}
+  try{
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/consensus/bulk',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({period_label:period,csv_text:txt,source:src||null,uploaded_by:localStorage.getItem('op_author')||null}),
+    });
+    var b=await r.json();
+    if(!r.ok)throw new Error(b.detail||('HTTP '+r.status));
+    if(status){status.style.color='var(--green)';status.textContent='Inserted '+b.inserted+' row(s)'+(b.skipped?(', skipped '+b.skipped):'')+'. Refreshing…';}
+    setTimeout(function(){var m=document.getElementById('cons-paste-modal');if(m)m.remove();loadResultsSummary(ticker,period);},700);
+  }catch(e){if(status){status.style.color='var(--red)';status.textContent='Failed: '+e.message;}}
 }
 
 async function loadAgentOutputs(ticker,period){
