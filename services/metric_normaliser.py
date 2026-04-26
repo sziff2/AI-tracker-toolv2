@@ -250,8 +250,16 @@ def deduplicate_metrics(items: list[dict]) -> list[dict]:
         name = item.get("metric_name", "")
         period = item.get("period", "")
         segment = item.get("segment", "") or "Total"
-        freq = (item.get("period_frequency") or "Q").upper()
-        key = (name.lower(), period.lower(), segment.lower(), freq)
+        # Infer frequency from the period suffix when missing — defaulting
+        # to "Q" was the original ARW bug: a $31B FY figure and a $8B Q4
+        # figure both collapsed to (..., "Q") and the lower-confidence
+        # one was silently dropped. Suffix lookup keeps each shape on
+        # its own dedup key.
+        freq_raw = (item.get("period_frequency") or "").upper().strip()
+        if freq_raw not in ("Q1", "Q2", "Q3", "Q4", "H1", "H2", "L3Q", "FY", "LTM"):
+            m = re.match(r"^\d{4}_(Q[1-4]|H[12]|L3Q|FY|LTM)$", (period or "").upper())
+            freq_raw = m.group(1) if m else "UNK"
+        key = (name.lower(), period.lower(), segment.lower(), freq_raw)
 
         confidence = item.get("confidence", 0)
         if key not in unique or confidence > unique[key].get("confidence", 0):

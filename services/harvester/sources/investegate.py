@@ -72,32 +72,37 @@ _HEADERS = {
 # Period inference from headline text
 # ─────────────────────────────────────────────────────────────────
 _PERIOD_PATTERNS = [
+    # Period inference now emits canonical 9-shape labels — no more
+    # FY→_Q4 / H1→_Q2 fold. Document.period_label carries the actual
+    # filing shape so downstream queries can distinguish a 6-month H1
+    # interim from a 3-month Q2 release.
+    #
     # German half-year report — placed first so it beats the bare-year fallback
-    (r"halbjahres?(?:finanz)?bericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q2"),
-    (r"halbjahr.{0,40}(\d{4})",      lambda m: f"{m.group(1)}_Q2"),
+    (r"halbjahres?(?:finanz)?bericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_H1"),
+    (r"halbjahr.{0,40}(\d{4})",      lambda m: f"{m.group(1)}_H1"),
     # German annual report
-    (r"gesch(?:ä|ae)ftsbericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_Q4"),
+    (r"gesch(?:ä|ae)ftsbericht.{0,40}(\d{4})", lambda m: f"{m.group(1)}_FY"),
     # Q3 2025, Q1 2026
     (r"Q([1-4])\s*[\-&]?\s*(\d{4})", lambda m: f"{m.group(2)}_Q{m.group(1)}"),
     # 4Q25, 1Q26
     (r"([1-4])Q(\d{2})(?:\s|$)", lambda m: f"20{m.group(2)}_Q{m.group(1)}"),
     # FY2025, FY 2024
-    (r"FY\s*(\d{4})", lambda m: f"{m.group(1)}_Q4"),
+    (r"FY\s*(\d{4})", lambda m: f"{m.group(1)}_FY"),
     # Year-first: "2025 Annual Report", "2025 Full Year Results"
-    (r"(\d{4})\s+(?:annual|full[- ]?year)", lambda m: f"{m.group(1)}_Q4"),
+    (r"(\d{4})\s+(?:annual|full[- ]?year)", lambda m: f"{m.group(1)}_FY"),
     # Year-first: "2025 Half Year", "2025 Interim"
-    (r"(\d{4})\s+(?:half[- ]?year|interim)", lambda m: f"{m.group(1)}_Q2"),
+    (r"(\d{4})\s+(?:half[- ]?year|interim)", lambda m: f"{m.group(1)}_H1"),
     # Full year / annual + year (keyword first)
     (r"(?:full[- ]?year|annual)\s+(?:results?\s+)?(?:report\s+)?(?:and\s+)?(?:accounts?\s+)?(?:for\s+)?(?:the\s+)?(?:year\s+)?(?:ended?\s+)?.*?(\d{4})",
-     lambda m: f"{m.group(1)}_Q4"),
+     lambda m: f"{m.group(1)}_FY"),
     # Half year / interim + year (keyword first)
     (r"(?:half[- ]?year|interim)\s+(?:results?\s+)?(?:report\s+)?(?:for\s+)?(?:the\s+)?.*?(\d{4})",
-     lambda m: f"{m.group(1)}_Q2"),
+     lambda m: f"{m.group(1)}_H1"),
     # H1 2025, H2 2024
-    (r"H1\s*(\d{4})", lambda m: f"{m.group(1)}_Q2"),
-    (r"H2\s*(\d{4})", lambda m: f"{m.group(1)}_Q4"),
-    # "2025/26" in trading statements — use first year
-    (r"(\d{4})/\d{2}", lambda m: f"{m.group(1)}_Q4"),
+    (r"H1\s*(\d{4})", lambda m: f"{m.group(1)}_H1"),
+    (r"H2\s*(\d{4})", lambda m: f"{m.group(1)}_H2"),
+    # "2025/26" in trading statements — use first year, treat as FY
+    (r"(\d{4})/\d{2}", lambda m: f"{m.group(1)}_FY"),
 ]
 
 

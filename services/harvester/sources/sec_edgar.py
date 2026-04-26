@@ -136,7 +136,8 @@ def _period_from_form(form_type: str, filing_date: str, period_of_report: Option
     month = dt.month
 
     if form_type in ("10-K", "20-F", "40-F"):
-        return f"{year}_Q4"
+        # Annual filing — emit canonical FY shape (no longer fold to _Q4).
+        return f"{year}_FY"
 
     if form_type in ("10-Q", "6-K"):
         # Map fiscal quarter end month to quarter label
