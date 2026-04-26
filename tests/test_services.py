@@ -16,7 +16,8 @@ from services.metric_normaliser import (
     validate_segment_sums,
 )
 from services.metric_validator import check_plausibility, validate_metrics_batch, filter_by_confidence
-from services.metric_extractor import _is_low_value, _smart_chunk
+from services.metric_extractor import _is_low_value, _smart_chunk, _is_noise_period, _resolve_relative_period
+from services.period_derivation import derive_period_metrics
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -135,6 +136,31 @@ class TestNormalisePeriod:
         assert normalise_period("Six Months Ended June 30, 2025") == "2025_H1"
         assert normalise_period("Twelve Months Ended December 31, 2025") == "2025_FY"
 
+    def test_noise_period_filter(self):
+        # Bare future-year suffixes from contractual-obligation tables.
+        assert _is_noise_period("2027", "2027") is True
+        assert _is_noise_period("2030 AND THEREAFTER", "2030 AND THEREAFTER") is True
+        assert _is_noise_period("2020 AND PRIOR", "2020 AND PRIOR") is True
+        assert _is_noise_period("DUE 3/15/38", "DUE 3/15/38") is True
+        # Real periods that canonicalise must NOT be filtered.
+        assert _is_noise_period("Q3 2025", "2025_Q3") is False
+        assert _is_noise_period("FY 2025", "2025_FY") is False
+        assert _is_noise_period("9M 2025", "2025_L3Q") is False
+        # Empty input — not noise, just absent.
+        assert _is_noise_period("", "") is False
+
+    def test_resolve_relative_period(self):
+        # CURRENT inherits the document period.
+        assert _resolve_relative_period("CURRENT", "2025_Q3") == "2025_Q3"
+        assert _resolve_relative_period("Current Period", "2025_FY") == "2025_FY"
+        # PRIOR steps back via _previous_period (Q3 → Q2 same year).
+        assert _resolve_relative_period("PRIOR PERIOD", "2025_Q3") == "2025_Q2"
+        # PRIOR for FY is YoY (FY 2024).
+        assert _resolve_relative_period("PRIOR", "2025_FY") == "2024_FY"
+        # Unknown labels pass through unchanged.
+        assert _resolve_relative_period("Q4 2025", "2025_Q3") == "Q4 2025"
+        assert _resolve_relative_period("", "2025_Q3") == ""
+
     def test_empty(self):
         assert normalise_period("") == ""
 
@@ -145,6 +171,65 @@ class TestNormalisePeriod:
 # ─────────────────────────────────────────────────────────────────
 # Metric Name Normalisation
 # ─────────────────────────────────────────────────────────────────
+
+class TestPeriodDerivation:
+    """Cross-period additive identities + LTM cross-year derivation."""
+
+    def test_within_year_derivations(self):
+        # Q1+Q2 = H1, Q1+Q2+Q3 = L3Q, ... (within-year rules).
+        seed = [
+            {"metric_name": "sales", "metric_value": 100, "period_label": "2025_Q1", "period_frequency": "Q1"},
+            {"metric_name": "sales", "metric_value": 110, "period_label": "2025_Q2", "period_frequency": "Q2"},
+            {"metric_name": "sales", "metric_value": 120, "period_label": "2025_Q3", "period_frequency": "Q3"},
+            {"metric_name": "sales", "metric_value": 130, "period_label": "2025_Q4", "period_frequency": "Q4"},
+        ]
+        derived = derive_period_metrics(seed)
+        by_freq = {d["period_frequency"]: d["metric_value"] for d in derived}
+        assert by_freq.get("H1") == 210         # Q1+Q2
+        assert by_freq.get("L3Q") == 330        # Q1+Q2+Q3
+        assert by_freq.get("FY") == 460         # Q1+Q2+Q3+Q4
+        assert by_freq.get("H2") == 250         # Q3+Q4
+
+    def test_ltm_cross_year(self):
+        # LTM ending Q3 2025 = Q4(2024) + Q1(2025) + Q2(2025) + Q3(2025)
+        seed = [
+            {"metric_name": "sales", "metric_value": 100, "period_label": "2024_Q4", "period_frequency": "Q4"},
+            {"metric_name": "sales", "metric_value": 110, "period_label": "2025_Q1", "period_frequency": "Q1"},
+            {"metric_name": "sales", "metric_value": 120, "period_label": "2025_Q2", "period_frequency": "Q2"},
+            {"metric_name": "sales", "metric_value": 130, "period_label": "2025_Q3", "period_frequency": "Q3"},
+        ]
+        derived = derive_period_metrics(seed)
+        ltm = [d for d in derived if d["period_frequency"] == "LTM"]
+        assert len(ltm) == 1
+        assert ltm[0]["period_label"] == "2025_LTM"
+        assert ltm[0]["metric_value"] == 460
+        assert ltm[0]["is_derived"] is True
+        assert "LTM as of 2025_Q3" in ltm[0]["source_snippet"]
+
+    def test_ltm_skips_when_real_ltm_exists(self):
+        # Don't overwrite a real LTM row with a derived one.
+        seed = [
+            {"metric_name": "sales", "metric_value": 100, "period_label": "2024_Q4", "period_frequency": "Q4"},
+            {"metric_name": "sales", "metric_value": 110, "period_label": "2025_Q1", "period_frequency": "Q1"},
+            {"metric_name": "sales", "metric_value": 120, "period_label": "2025_Q2", "period_frequency": "Q2"},
+            {"metric_name": "sales", "metric_value": 130, "period_label": "2025_Q3", "period_frequency": "Q3"},
+            {"metric_name": "sales", "metric_value": 999, "period_label": "2025_LTM", "period_frequency": "LTM"},
+        ]
+        derived = derive_period_metrics(seed)
+        ltm = [d for d in derived if d["period_frequency"] == "LTM"]
+        assert ltm == []  # real LTM exists, no derived one
+
+    def test_ltm_skips_stock_metrics(self):
+        # Total assets is a stock — never derive an additive LTM.
+        seed = [
+            {"metric_name": "total_assets", "metric_value": 5000, "period_label": "2024_Q4", "period_frequency": "Q4"},
+            {"metric_name": "total_assets", "metric_value": 5100, "period_label": "2025_Q1", "period_frequency": "Q1"},
+            {"metric_name": "total_assets", "metric_value": 5200, "period_label": "2025_Q2", "period_frequency": "Q2"},
+            {"metric_name": "total_assets", "metric_value": 5300, "period_label": "2025_Q3", "period_frequency": "Q3"},
+        ]
+        derived = derive_period_metrics(seed)
+        assert derived == []
+
 
 class TestNormaliseMetricName:
     def test_revenue_variants(self):

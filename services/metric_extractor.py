@@ -910,6 +910,64 @@ async def extract_by_document_type(
 # Persistence
 # ─────────────────────────────────────────────────────────────────
 
+def _resolve_relative_period(raw: str, doc_period: str) -> str:
+    """Resolve relative descriptors ('CURRENT', 'CURRENT PERIOD',
+    'PRIOR PERIOD', 'PRIOR') against the host document's canonical
+    period_label.
+
+    Returns the resolved canonical label, or the original input if
+    no resolution applies.
+
+    Cross-company audit (2026-04-26) found ~131 rows where the LLM
+    emitted 'CURRENT' or 'PRIOR PERIOD' as the period field rather
+    than the actual quarter — typically when the source document used
+    a column header like 'Current' / 'Prior' instead of the period
+    name. The document itself is always tagged with a real period_label
+    via the harvester, so we use that as the anchor."""
+    if not raw or not doc_period:
+        return raw
+    r = raw.strip().upper()
+    if r in ("CURRENT", "CURRENT PERIOD", "THIS PERIOD"):
+        return doc_period
+    if r in ("PRIOR", "PRIOR PERIOD", "PREVIOUS", "PREVIOUS PERIOD", "LAST PERIOD"):
+        from services.metric_normaliser import _previous_period
+        prev = _previous_period(doc_period)
+        return prev or raw
+    return raw
+
+
+def _is_noise_period(raw: str, canonical: str) -> bool:
+    """True when a period field looks like extraction noise from
+    contractual-obligation / debt-maturity schedules in 10-K notes
+    rather than a real fiscal period.
+
+    Cross-company audit (2026-04-26) found ~92 rows persisted with
+    bare future-year labels ('2026', '2027', '2030 AND THEREAFTER')
+    and 'DUE M/D/YY' debt maturity dates — these polluted the period-
+    shape distribution and weren't usable as metrics anyway. Skip
+    them at persist time.
+
+    Conservative: only fires when normalise_period could NOT produce
+    a canonical 9-shape result. Any input that cleanly canonicalises
+    is trusted and persisted."""
+    if not raw:
+        return False
+    # If normalise_period produced a canonical shape, it's a real period.
+    if canonical and re.match(r"^\d{4}_(Q[1-4]|H[12]|L3Q|FY|LTM)$", canonical.upper()):
+        return False
+    r = raw.strip().upper()
+    # Bare 4-digit year with no shape signal.
+    if re.match(r"^\d{4}$", r):
+        return True
+    # Bucket descriptors from contractual-obligation tables.
+    if re.search(r"\b(AND\s+(THEREAFTER|PRIOR|LATER)|AFTER\s+\d{4}|BEFORE\s+\d{4})\b", r):
+        return True
+    # Debt maturity dates: "DUE 3/15/38", "DUE 12/2030", etc.
+    if re.match(r"^DUE\b", r):
+        return True
+    return False
+
+
 async def _persist_earnings_metrics(db, document, raw_items):
     """Persist extracted metrics in batches to avoid single-row failures
     killing the entire commit. Commits every BATCH_SIZE items."""
@@ -918,6 +976,7 @@ async def _persist_earnings_metrics(db, document, raw_items):
     BATCH_SIZE = 100
     persisted = 0
     skipped = 0
+    skipped_noise = 0
 
     for batch_start in range(0, len(raw_items), BATCH_SIZE):
         batch = raw_items[batch_start:batch_start + BATCH_SIZE]
@@ -938,7 +997,16 @@ async def _persist_earnings_metrics(db, document, raw_items):
                 is_one_off = bool(item.get("_is_one_off", False))
 
                 raw_period = item.get("period") or document.period_label or ""
+                # Resolve relative descriptors (CURRENT / PRIOR PERIOD)
+                # against the host document's period before normalising.
+                raw_period = _resolve_relative_period(raw_period, document.period_label or "")
                 canonical_period = normalise_period(raw_period) or document.period_label
+
+                # Drop debt-maturity / contractual-obligation rows that
+                # the LLM lifted from notes tables — see _is_noise_period.
+                if _is_noise_period(raw_period, canonical_period or ""):
+                    skipped_noise += 1
+                    continue
 
                 # Period frequency: the SHAPE of the period — one of
                 #   Q1 | Q2 | Q3 | Q4   (single quarter, 3 months)
@@ -1022,8 +1090,8 @@ async def _persist_earnings_metrics(db, document, raw_items):
             skipped += batch_count
 
     logger.info(
-        "Persisted %d extracted_metrics for doc %s (%d skipped)",
-        persisted, document.id, skipped,
+        "Persisted %d extracted_metrics for doc %s (%d skipped, %d filtered as period-noise)",
+        persisted, document.id, skipped, skipped_noise,
     )
 
 

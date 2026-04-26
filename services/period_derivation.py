@@ -22,8 +22,12 @@ that accumulate across a period). STOCK metrics (balance-sheet items
 — total assets, debt, equity, cash balance) are point-in-time
 snapshots and are NOT additive — those are excluded by name pattern.
 
-LTM (trailing 12 months) requires cross-year arithmetic + an as-of
-date — deferred to v2.
+LTM (trailing 12 months) is derived in a separate cross-year pass
+(`_derive_ltm_rows`). Three as-of points are supported:
+    LTM_Q3 = Q4(Y-1) + Q1(Y) + Q2(Y) + Q3(Y)
+    LTM_Q2 = Q3(Y-1) + Q4(Y-1) + Q1(Y) + Q2(Y)
+    LTM_Q1 = Q2(Y-1) + Q3(Y-1) + Q4(Y-1) + Q1(Y)
+LTM-as-of-Q4 isn't computed since it equals FY for the same year.
 
 Output rows are tagged is_derived=True with a source_snippet
 explaining the formula used, so callers can flag them in the UI.
@@ -233,9 +237,132 @@ def derive_period_metrics(
             if not progress:
                 break
 
+    # ─────────────────────────────────────────────────────────────
+    # LTM (trailing twelve months) — cross-year derivation
+    # ─────────────────────────────────────────────────────────────
+    # The same-year rules above can't reach LTM since it spans two
+    # fiscal years (e.g. LTM ending Q3 2025 = Q4 2024 + Q1 2025 +
+    # Q2 2025 + Q3 2025). We need a separate pass that groups by
+    # (metric_name, segment) and walks across years.
+    #
+    # Convention: derived LTM rows are labelled `{year}_LTM` and
+    # tagged with the as-of quarter in the source_snippet so the
+    # consumer can disambiguate. Three useful as-of points are
+    # supported (Q1, Q2, Q3 of `year`); LTM-as-of-Q4 is identical
+    # to FY and would just duplicate it.
+    derived.extend(
+        _derive_ltm_rows(rows, groups, derived, skip_stocks, confidence_penalty)
+    )
+
     if derived:
         logger.info(
             "Period-derivation: produced %d derived metric-rows across %d (metric, segment, year) groups",
             len(derived), len(groups),
         )
+    return derived
+
+
+def _derive_ltm_rows(
+    rows: list[dict],
+    groups: dict[tuple[str, str, str], dict[str, dict]],
+    already_derived: list[dict],
+    skip_stocks: bool,
+    confidence_penalty: float,
+) -> list[dict]:
+    """LTM ending Q[1-3] of `year` = Q[1-3](year) + earlier quarters
+    that span back into year-1. Computed as:
+
+        LTM_Q3 = Q4(Y-1) + Q1(Y) + Q2(Y) + Q3(Y)
+        LTM_Q2 = Q3(Y-1) + Q4(Y-1) + Q1(Y) + Q2(Y)
+        LTM_Q1 = Q2(Y-1) + Q3(Y-1) + Q4(Y-1) + Q1(Y)
+
+    Skips when an explicit LTM row already exists for the same
+    (metric, segment, year) — never overwrite a real number."""
+    # Re-index by (metric_name, segment) so we can walk across years.
+    by_pair: dict[tuple[str, str], dict[tuple[str, str], dict]] = {}
+    for (name, seg, year), shape_rows in groups.items():
+        pair = (name, seg)
+        for shape, row in shape_rows.items():
+            by_pair.setdefault(pair, {})[(year, shape)] = row
+
+    # Existing LTM rows aren't captured by `groups` (the main regex
+    # excludes LTM since within-year derivation doesn't apply). Walk
+    # the original rows so we can refuse to overwrite a real LTM.
+    existing_ltm: set[tuple[str, str, str]] = set()
+    for r in rows:
+        name = r.get("metric_name", "")
+        if not name:
+            continue
+        if skip_stocks and is_stock_metric(name):
+            continue
+        seg = (r.get("segment") or "") or ""
+        label = (r.get("period_label") or "").upper()
+        m = re.match(r"^(\d{4})_LTM$", label)
+        if m:
+            existing_ltm.add((name, seg, m.group(1)))
+
+    derived: list[dict] = []
+    for (name, seg), cells in by_pair.items():
+        years = sorted({y for (y, _s) in cells.keys()})
+        for year in years:
+            # Skip if a real or already-derived LTM exists for this year.
+            if (year, "LTM") in cells or (name, seg, year) in existing_ltm:
+                continue
+            try:
+                year_int = int(year)
+            except ValueError:
+                continue
+            prev_year = str(year_int - 1)
+
+            # Try LTM-as-of-Q3 first (most common analyst use), then Q2, Q1.
+            for as_of in ("Q3", "Q2", "Q1"):
+                ingredients_keys: list[tuple[str, str]] = []
+                if as_of == "Q3":
+                    ingredients_keys = [
+                        (prev_year, "Q4"), (year, "Q1"), (year, "Q2"), (year, "Q3"),
+                    ]
+                elif as_of == "Q2":
+                    ingredients_keys = [
+                        (prev_year, "Q3"), (prev_year, "Q4"), (year, "Q1"), (year, "Q2"),
+                    ]
+                else:  # Q1
+                    ingredients_keys = [
+                        (prev_year, "Q2"), (prev_year, "Q3"), (prev_year, "Q4"), (year, "Q1"),
+                    ]
+
+                inputs: list[dict] = []
+                ok = True
+                for k in ingredients_keys:
+                    r = cells.get(k)
+                    if r is None or r.get("metric_value") is None:
+                        ok = False
+                        break
+                    inputs.append(r)
+                if not ok:
+                    continue
+
+                try:
+                    value = sum(float(r["metric_value"]) for r in inputs)
+                except (TypeError, ValueError):
+                    continue
+
+                template = inputs[0]
+                formula = " + ".join(f"{k[0]}_{k[1]}" for k in ingredients_keys)
+                input_conf = min(float(r.get("confidence") or 0.9) for r in inputs)
+                derived_row = {
+                    "metric_name":      name,
+                    "metric_value":     value,
+                    "metric_text":      f"{value} (derived LTM)",
+                    "unit":             template.get("unit"),
+                    "segment":          seg or None,
+                    "period_label":     f"{year}_LTM",
+                    "period_frequency": "LTM",
+                    "source_snippet":   f"derived: LTM as of {year}_{as_of} = {formula}",
+                    "confidence":       round(input_conf * confidence_penalty, 3),
+                    "is_derived":       True,
+                }
+                derived.append(derived_row)
+                cells[(year, "LTM")] = derived_row
+                # One LTM per year — the most-recent as-of we can reach.
+                break
     return derived
