@@ -1669,6 +1669,97 @@ async def admin_period_shapes(
     }
 
 
+@router.get("/admin/extraction-coverage")
+async def admin_extraction_coverage(db: AsyncSession = Depends(get_db)):
+    """Per-company extraction freshness audit. Lists every company with
+    document count, extracted-metric count, % canonical period_label
+    suffix, and a flag if the company is stale (has docs but no metrics).
+
+    Used to identify which tickers need a reprocess after a pipeline
+    upgrade — e.g. when canonical period taxonomy + native PDF + IS/BS/CF
+    Sonnet pass landed and existing rows didn't auto-migrate.
+    """
+    from sqlalchemy import text as sa_text
+    from apps.api.models import Document
+    from apps.api.models import ExtractedMetric
+
+    # One round-trip: per-company doc count + metric count + canonical %.
+    rows = await db.execute(sa_text("""
+        WITH doc_counts AS (
+            SELECT company_id, COUNT(*) AS docs FROM documents GROUP BY company_id
+        ),
+        metric_counts AS (
+            SELECT
+                company_id,
+                COUNT(*) AS metrics,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(SUBSTRING(period_label FROM '[^_]+$'), '')
+                          IN ('Q1','Q2','Q3','Q4','H1','H2','L3Q','FY','LTM')
+                ) AS canonical_metrics
+            FROM extracted_metrics GROUP BY company_id
+        )
+        SELECT
+            c.ticker, c.name, c.sector,
+            COALESCE(d.docs, 0) AS docs,
+            COALESCE(m.metrics, 0) AS metrics,
+            COALESCE(m.canonical_metrics, 0) AS canonical_metrics
+        FROM companies c
+        LEFT JOIN doc_counts d ON d.company_id = c.id
+        LEFT JOIN metric_counts m ON m.company_id = c.id
+        ORDER BY c.ticker
+    """))
+
+    out = []
+    stale_with_docs = 0
+    factor_proxies = 0
+    canonical_pct_total = 0.0
+    canonical_pct_count = 0
+    for r in rows.all():
+        is_factor = (r.sector or "") == "Factor Proxy"
+        if is_factor:
+            factor_proxies += 1
+        canon_pct = (
+            round(100.0 * r.canonical_metrics / r.metrics, 1)
+            if r.metrics else None
+        )
+        is_stale = (r.docs > 0 and r.metrics == 0 and not is_factor)
+        if is_stale:
+            stale_with_docs += 1
+        if canon_pct is not None and not is_factor:
+            canonical_pct_total += canon_pct
+            canonical_pct_count += 1
+        out.append({
+            "ticker":            r.ticker,
+            "name":              r.name,
+            "sector":            r.sector,
+            "docs":              int(r.docs),
+            "metrics":           int(r.metrics),
+            "canonical_metrics": int(r.canonical_metrics),
+            "canonical_pct":     canon_pct,
+            "is_stale":          is_stale,
+            "is_factor_proxy":   is_factor,
+        })
+
+    # Sort: stale-with-docs first (highest doc count), then mixed,
+    # then clean. Surfaces the highest-leverage reprocess candidates.
+    out.sort(key=lambda r: (
+        not r["is_stale"],
+        -(r["docs"] if r["is_stale"] else 0),
+        -(r["metrics"]),
+    ))
+
+    return {
+        "total_companies":            len(out),
+        "factor_proxies":             factor_proxies,
+        "stale_with_docs":            stale_with_docs,
+        "avg_canonical_pct":          (
+            round(canonical_pct_total / canonical_pct_count, 1)
+            if canonical_pct_count else None
+        ),
+        "rows": out,
+    }
+
+
 @router.post("/admin/renormalise-period-labels")
 async def admin_renormalise_period_labels(
     dry_run: bool = True,
