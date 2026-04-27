@@ -1252,7 +1252,7 @@ function renderCkResults(ticker,d){
     const pdocs=dbp[p]||[];
     if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No documents for this period.</div>';}
     // Documents Used at bottom
-    if(pdocs.length){h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:28px;margin-bottom:8px;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Documents in Period</h2><div style="display:flex;gap:6px"><button class="btn2" style="padding:5px 11px;font-size:11px;color:var(--gold);border-color:var(--gold)" onclick="E(\'add-cons-'+esc(p)+'\').click()" title="Upload a consensus pack PDF / spreadsheet — the LLM will extract the consensus column">📊 + Consensus pack</button><button class="btn2" style="padding:5px 11px;font-size:11px" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(p)+'\')" title="Paste consensus values directly as CSV">📋 Paste consensus (CSV)</button></div></div><input type="file" id="add-cons-'+esc(p)+'" accept=".pdf,.docx,.xlsx,.xls,.csv,.txt" style="display:none" onchange="handleAddConsensus(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄','10-K':'📋','10-Q':'📋',annual_report:'📋',proxy_statement:'📋'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const srcLabel=doc.source?({'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎','investegate':'📰'}[doc.source]||''):'';h+='<div class="fr" style="flex-wrap:wrap;gap:6px"><span>'+icon+'</span>'+(doc.source_url?'<a href="'+esc(doc.source_url)+'" target="_blank" rel="noopener" class="fn" style="min-width:150px;text-decoration:none;color:var(--text)" onmouseover="this.style.color=\'var(--gold)\'" onmouseout="this.style.color=\'var(--text)\'" title="Open source document">'+esc(doc.title||'Untitled')+'</a>':'<span class="fn" style="min-width:150px">'+esc(doc.title||'Untitled')+'</span>');h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto;color:var(--gold)" onchange="updateDocMeta(\''+doc.id+'\',{document_type:this.value},\''+ticker+'\')">'+edgarDocTypeOpts(doc.document_type)+'</select>';h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto" onchange="updateDocMeta(\''+doc.id+'\',{period_label:this.value},\''+ticker+'\')">'+edgarPeriodOpts(p)+'</select>';h+='<span style="font-size:10px;color:var(--text4)">'+srcLabel+'</span>'+psBadge;h+='<span class="fs">'+esc((doc.published_at||doc.created_at)?.split('T')[0]||'')+'</span><a href="/api/v1/documents/'+esc(doc.id)+'/file" target="_blank" rel="noopener" class="btn2" style="padding:3px 8px;font-size:10px;color:var(--gold);border-color:var(--gold);text-decoration:none" title="View original PDF inline">📎 PDF</a><button class="btn2" style="padding:3px 8px;font-size:10px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
+    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents in Period</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄','10-K':'📋','10-Q':'📋',annual_report:'📋',proxy_statement:'📋'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const srcLabel=doc.source?({'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎','investegate':'📰'}[doc.source]||''):'';h+='<div class="fr" style="flex-wrap:wrap;gap:6px"><span>'+icon+'</span>'+(doc.source_url?'<a href="'+esc(doc.source_url)+'" target="_blank" rel="noopener" class="fn" style="min-width:150px;text-decoration:none;color:var(--text)" onmouseover="this.style.color=\'var(--gold)\'" onmouseout="this.style.color=\'var(--text)\'" title="Open source document">'+esc(doc.title||'Untitled')+'</a>':'<span class="fn" style="min-width:150px">'+esc(doc.title||'Untitled')+'</span>');h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto;color:var(--gold)" onchange="updateDocMeta(\''+doc.id+'\',{document_type:this.value},\''+ticker+'\')">'+edgarDocTypeOpts(doc.document_type)+'</select>';h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto" onchange="updateDocMeta(\''+doc.id+'\',{period_label:this.value},\''+ticker+'\')">'+edgarPeriodOpts(p)+'</select>';h+='<span style="font-size:10px;color:var(--text4)">'+srcLabel+'</span>'+psBadge;h+='<span class="fs">'+esc((doc.published_at||doc.created_at)?.split('T')[0]||'')+'</span><a href="/api/v1/documents/'+esc(doc.id)+'/file" target="_blank" rel="noopener" class="btn2" style="padding:3px 8px;font-size:10px;color:var(--gold);border-color:var(--gold);text-decoration:none" title="View original PDF inline">📎 PDF</a><button class="btn2" style="padding:3px 8px;font-size:10px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
@@ -1311,12 +1311,13 @@ async function deletePeriod(ticker,period){
 function handleAddDocs(input,ticker,period){
   const files=Array.from(input.files);if(!files.length)return;
   const listEl=E('add-doc-list-'+period);
-  const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',other:'Other'};
+  const T={earnings_release:'Earnings Release',transcript:'Transcript',broker_note:'Broker Note',presentation:'Presentation','10-Q':'10-Q','10-K':'10-K',annual_report:'Annual Report',proxy_statement:'Proxy Statement',sustainability_report:'Sustainability Report',consensus:'Consensus / Estimates',other:'Other'};
   // Auto-detect type from filename
   function guessType(name){
     const n=name.toLowerCase();
     if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))return 'proxy_statement';
     if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';
+    if(n.includes('consensus')||n.includes('estimates')||n.includes('vara')||n.includes('visible alpha'))return 'consensus';
     if(n.includes('transcript')||n.includes('call'))return 'transcript';
     if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';
     if(n.includes('presentation')||n.includes('slides'))return 'presentation';
@@ -1338,33 +1339,6 @@ function handleAddDocs(input,ticker,period){
   // Store files for upload
   window._addDocFiles=staged;
   input.value='';
-}
-
-// Consensus pack upload — bound to the "+ Consensus pack" button in
-// the Documents in Period header. Drops the file straight in tagged
-// document_type='consensus' so the existing pipeline parses it and
-// the consensus_extractor LLM step persists the rows. No staging UI
-// (the analyst already chose to upload as consensus by clicking the
-// dedicated button).
-async function handleAddConsensus(input,ticker,period){
-  var f=(input.files||[])[0];
-  if(!f){return;}
-  input.value='';
-  toast('Uploading consensus pack '+f.name+'…');
-  try{
-    var fd=new FormData();
-    fd.append('files',f);
-    fd.append('period_label',period);
-    fd.append('document_types','consensus');
-    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
-    if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||('HTTP '+r.status));}
-    var d=await r.json();
-    var resDiv=E('res-'+period);
-    if(resDiv){
-      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">📊 Extracting consensus from '+esc(f.name)+'…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
-    }
-    pollReprocess(d.job_id,ticker,period);
-  }catch(e){toast('Consensus upload failed: '+e.message);}
 }
 
 async function uploadAddDocs(ticker,period,count){
