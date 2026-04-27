@@ -326,7 +326,13 @@ async def _process_one_doc(
 
             doc_result["filename"] = doc.title
 
-            # Skip if the document already has sections (parsed) and metrics (extracted)
+            # Skip if the document already has sections (parsed) and metrics (extracted).
+            # Consensus docs are explicitly excluded from the skip check —
+            # their "already done" signal lives in consensus_expectations,
+            # not extracted_metrics. A doc whose type was changed from
+            # "other" → "consensus" after upload would otherwise stay
+            # forever skipped (orphan extracted_metrics from the first
+            # mis-typed run trip the skip every time).
             sections_count_q = await doc_db.execute(
                 select(sa_func.count(DocumentSection.id)).where(DocumentSection.document_id == did)
             )
@@ -336,7 +342,11 @@ async def _process_one_doc(
             )
             metrics_count = metrics_count_q.scalar() or 0
 
-            if sections_count > 0 and metrics_count > 0:
+            if dtype == "consensus":
+                # Force re-extraction so consensus_extractor runs against
+                # the current (correctly-tagged) document.
+                pass
+            elif sections_count > 0 and metrics_count > 0:
                 logger.info("Doc %s already has %d sections and %d metrics — skipping parse/extract",
                             did, sections_count, metrics_count)
                 doc_result["steps"].append({"step": "parse", "status": "skipped", "reason": "already parsed"})
