@@ -506,7 +506,7 @@ async def call_llm_native_async(
     feature: str | None = None,
     ticker: str | None = None,
     period: str | None = None,
-    timeout_seconds: int = 90,
+    timeout_seconds: int = 300,
     pdf_path: str | None = None,
     pdf_cache: bool = True,
 ) -> dict[str, Any]:

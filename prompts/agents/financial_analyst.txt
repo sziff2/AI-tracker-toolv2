@@ -72,10 +72,6 @@ TRANSCRIPT ANALYSIS (pre-computed from the earnings call transcript — if avail
 PRESENTATION ANALYSIS (pre-computed from the investor presentation — if available):
 {presentation_analysis}
 
-RELEVANT PASSAGES FROM THIS PERIOD'S FILINGS (semantic retrieval — quote
-verbatim where helpful, but do not invent figures):
-{rag_passages}
-
 MACRO ASSUMPTIONS (Context Contract — DO NOT CONTRADICT):
 {context_contract}
 
