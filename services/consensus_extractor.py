@@ -28,7 +28,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.consensus_storage import upsert_consensus_row
-from services.llm_client import call_llm_json_async
+from services.llm_client import call_llm_json_async, call_llm_native_async
 
 logger = logging.getLogger(__name__)
 
@@ -118,14 +118,47 @@ async def extract_consensus(
         document_text=text,
     )
 
+    # Native-PDF path when the source is a PDF — Claude reads the layout
+    # directly (merged cells, multi-column tables, headers) which is
+    # materially better at consensus tables than the flattened pdfplumber
+    # text. For .xlsx / .docx / text the parsed text already preserves
+    # row/column alignment via openpyxl tabbed output, so the text path
+    # is fine.
+    pdf_path = None
+    fp = (document.file_path or "").lower()
+    if fp.endswith(".pdf"):
+        pdf_path = document.file_path
+
     try:
-        result = await call_llm_json_async(
-            prompt,
-            max_tokens=4096,
-            feature="consensus_extraction",
-            ticker=ticker,
-            tier="standard",
-        )
+        if pdf_path:
+            from configs.settings import settings as _settings
+            try:
+                native = await call_llm_native_async(
+                    prompt,
+                    model=_settings.agent_default_model,
+                    max_tokens=4096,
+                    feature="consensus_extraction_pdf",
+                    ticker=ticker,
+                    pdf_path=pdf_path,
+                )
+                # Robust JSON parse from the native response
+                from services.llm_client import _parse_json
+                result = _parse_json(native["text"])
+            except Exception as native_exc:
+                logger.warning("Native-PDF consensus path failed for doc %s, falling back to text: %s",
+                               document.id, str(native_exc)[:200])
+                result = await call_llm_json_async(
+                    prompt, max_tokens=4096,
+                    feature="consensus_extraction", ticker=ticker, tier="standard",
+                )
+        else:
+            result = await call_llm_json_async(
+                prompt,
+                max_tokens=4096,
+                feature="consensus_extraction",
+                ticker=ticker,
+                tier="standard",
+            )
     except Exception as exc:
         logger.warning("Consensus extraction LLM call failed for doc %s: %s",
                        document.id, str(exc)[:200])

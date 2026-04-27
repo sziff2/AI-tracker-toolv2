@@ -61,6 +61,44 @@ def extract_text_docx(file_path: str) -> list[dict]:
     return [{"page": 1, "text": "\n".join(paragraphs)}]
 
 
+def extract_text_xlsx(file_path: str) -> list[dict]:
+    """Extract text from a .xlsx workbook. One 'page' per sheet, with
+    cells joined into tab-separated rows that preserve column alignment.
+    Used for consensus packs that arrive as Bloomberg / VARA / Visible
+    Alpha exports (Excel format).
+
+    For .xls (legacy binary), openpyxl can't read it — caller gets
+    empty text and the consensus extractor logs a soft failure rather
+    than crashing. .xlsx covers ~95% of modern exports."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return [{"page": 1, "text": ""}]
+
+    pages: list[dict] = []
+    try:
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+    except Exception as exc:
+        # .xls (legacy), corrupt file, password-protected, etc.
+        logger.warning("openpyxl failed on %s: %s", Path(file_path).name, str(exc)[:200])
+        return [{"page": 1, "text": ""}]
+
+    for i, sheet_name in enumerate(wb.sheetnames):
+        sheet = wb[sheet_name]
+        rows: list[str] = [f"### Sheet: {sheet_name}"]
+        for row in sheet.iter_rows(values_only=True):
+            # Drop fully-empty trailing cells, keep alignment for the rest.
+            cells = list(row)
+            while cells and (cells[-1] is None or cells[-1] == ""):
+                cells.pop()
+            if not cells:
+                continue
+            rows.append("\t".join("" if c is None else str(c) for c in cells))
+        pages.append({"page": i + 1, "text": "\n".join(rows)})
+    wb.close()
+    return pages or [{"page": 1, "text": ""}]
+
+
 def _strip_xbrl(html: str) -> str:
     """Strip inline XBRL wrapper tags (ix:...) that bloat SEC filings.
     These wrap every number/text in verbose XML but contain the same content."""
@@ -345,6 +383,9 @@ async def process_document(db: AsyncSession, document: Document, ticker: str = "
             tables = []
     elif ext in (".docx", ".doc"):
         pages = extract_text_docx(file_path)
+        tables = []
+    elif ext in (".xlsx", ".xls", ".xlsm"):
+        pages = extract_text_xlsx(file_path)
         tables = []
     elif ext in (".htm", ".html", ".xhtml"):
         pages, tables = extract_text_html(file_path)
