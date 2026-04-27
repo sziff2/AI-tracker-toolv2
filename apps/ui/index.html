@@ -2122,50 +2122,17 @@ function renderConsensusUploadHint(ticker,period,withCons,total){
 function renderResultsSummaryCard(ticker,period,d){
   var rows=d.rows||[];
   var withCons=rows.filter(function(r){return r.has_consensus&&r.actual!==null;});
-  var consOnly=rows.filter(function(r){return r.consensus_only;});
-  var actualsOnly=rows.filter(function(r){return !r.has_consensus&&r.actual!==null;});
-  var h='<div class="cd" style="padding:20px;margin-bottom:16px;border-left:3px solid var(--gold)">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
-  h+='<div class="cd-t" style="margin:0">Quarterly Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
+  var h='<div class="cd" style="padding:16px 20px;margin-bottom:16px;border-left:3px solid var(--gold)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
+  h+='<div>';
+  h+='<div class="cd-t" style="margin:0 0 4px 0">Quarterly Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
   h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+rows.length+' metrics · '+withCons.length+' vs consensus · '+(d.prior_period?'YoY vs '+esc(d.prior_period):'no prior period')+'</div>';
   h+='</div>';
-  // Quick action bar
-  h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
   h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\')">+ Paste consensus (CSV)</button>';
   h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="loadResultsSummary(\''+esc(ticker)+'\',\''+esc(period)+'\')">⟳ Refresh</button>';
   h+='</div>';
-  // Table
-  if(!rows.length){h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4)">No metrics yet — run extraction first.</div>';h+='</div>';return h;}
-  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-family:var(--sans);font-size:12px">';
-  h+='<thead><tr style="border-bottom:1px solid var(--border);color:var(--text4);text-align:right">';
-  h+='<th style="text-align:left;padding:7px 8px;font-weight:600">Metric</th>';
-  h+='<th style="padding:7px 8px;font-weight:600">Actual</th>';
-  h+='<th style="padding:7px 8px;font-weight:600">Prior</th>';
-  h+='<th style="padding:7px 8px;font-weight:600">YoY</th>';
-  h+='<th style="padding:7px 8px;font-weight:600">Consensus</th>';
-  h+='<th style="padding:7px 8px;font-weight:600">Beat / Miss</th>';
-  h+='<th style="text-align:left;padding:7px 8px;font-weight:600">Source</th>';
-  h+='</tr></thead><tbody>';
-  rows.forEach(function(r){
-    var bmCol=_bmColour(r.beat_miss_pct);
-    var yoyCol=_bmColour(r.yoy_pct);
-    var unit=r.unit||r.consensus_unit||'';
-    var rowStyle=r.consensus_only?'opacity:0.7;font-style:italic':'';
-    h+='<tr style="border-bottom:1px solid var(--border);'+rowStyle+'">';
-    h+='<td style="padding:7px 8px;color:var(--text)"><strong>'+esc(r.metric_name)+'</strong>';
-    if(unit)h+=' <span style="color:var(--text4);font-size:10px">'+esc(unit)+'</span>';
-    if(r.consensus_only)h+=' <span style="color:var(--amber);font-size:10px;margin-left:4px">consensus only — no actual matched</span>';
-    h+='</td>';
-    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text)">'+_fmtNum(r.actual,unit)+'</td>';
-    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text3)">'+_fmtNum(r.prior_value,unit)+'</td>';
-    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:'+yoyCol+'">'+_fmtPct(r.yoy_pct)+'</td>';
-    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:var(--text3)">'+_fmtNum(r.consensus,unit)+'</td>';
-    h+='<td style="padding:7px 8px;text-align:right;font-family:var(--mono);color:'+bmCol+';font-weight:600">'+_fmtPct(r.beat_miss_pct)+'</td>';
-    h+='<td style="padding:7px 8px;color:var(--text4);font-size:10px">'+esc(r.consensus_source||'')+'</td>';
-    h+='</tr>';
-  });
-  h+='</tbody></table></div>';
-  if(actualsOnly.length){h+='<div style="margin-top:10px;font-family:var(--sans);font-size:11px;color:var(--text4)">'+actualsOnly.length+' metric(s) without a consensus benchmark — upload a consensus pack to expand the comparison.</div>';}
+  h+='</div>';
   h+='</div>';
   return h;
 }
