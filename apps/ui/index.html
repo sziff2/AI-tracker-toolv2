@@ -1252,7 +1252,7 @@ function renderCkResults(ticker,d){
     const pdocs=dbp[p]||[];
     if(!pdocs.length){h+='<div style="padding:20px;color:var(--text4);font-family:var(--sans);font-size:13px">No documents for this period.</div>';}
     // Documents Used at bottom
-    if(pdocs.length){h+='<h2 style="margin-top:28px">Documents in Period</h2>';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄','10-K':'📋','10-Q':'📋',annual_report:'📋',proxy_statement:'📋'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const srcLabel=doc.source?({'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎','investegate':'📰'}[doc.source]||''):'';h+='<div class="fr" style="flex-wrap:wrap;gap:6px"><span>'+icon+'</span>'+(doc.source_url?'<a href="'+esc(doc.source_url)+'" target="_blank" rel="noopener" class="fn" style="min-width:150px;text-decoration:none;color:var(--text)" onmouseover="this.style.color=\'var(--gold)\'" onmouseout="this.style.color=\'var(--text)\'" title="Open source document">'+esc(doc.title||'Untitled')+'</a>':'<span class="fn" style="min-width:150px">'+esc(doc.title||'Untitled')+'</span>');h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto;color:var(--gold)" onchange="updateDocMeta(\''+doc.id+'\',{document_type:this.value},\''+ticker+'\')">'+edgarDocTypeOpts(doc.document_type)+'</select>';h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto" onchange="updateDocMeta(\''+doc.id+'\',{period_label:this.value},\''+ticker+'\')">'+edgarPeriodOpts(p)+'</select>';h+='<span style="font-size:10px;color:var(--text4)">'+srcLabel+'</span>'+psBadge;h+='<span class="fs">'+esc((doc.published_at||doc.created_at)?.split('T')[0]||'')+'</span><a href="/api/v1/documents/'+esc(doc.id)+'/file" target="_blank" rel="noopener" class="btn2" style="padding:3px 8px;font-size:10px;color:var(--gold);border-color:var(--gold);text-decoration:none" title="View original PDF inline">📎 PDF</a><button class="btn2" style="padding:3px 8px;font-size:10px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
+    if(pdocs.length){h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:28px;margin-bottom:8px;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Documents in Period</h2><div style="display:flex;gap:6px"><button class="btn2" style="padding:5px 11px;font-size:11px;color:var(--gold);border-color:var(--gold)" onclick="E(\'add-cons-'+esc(p)+'\').click()" title="Upload a consensus pack PDF / spreadsheet — the LLM will extract the consensus column">📊 + Consensus pack</button><button class="btn2" style="padding:5px 11px;font-size:11px" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(p)+'\')" title="Paste consensus values directly as CSV">📋 Paste consensus (CSV)</button></div></div><input type="file" id="add-cons-'+esc(p)+'" accept=".pdf,.docx,.xlsx,.xls,.csv,.txt" style="display:none" onchange="handleAddConsensus(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';pdocs.forEach(doc=>{const icon={earnings_release:'📊',transcript:'🎙️',broker_note:'📝',presentation:'📑',other:'📄','10-K':'📋','10-Q':'📋',annual_report:'📋',proxy_statement:'📋'}[doc.document_type]||'📄';const ps=doc.parsing_status||'pending';const psBadge=ps==='completed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--green);padding:2px 6px;background:rgba(34,197,94,.1);border-radius:4px">Parsed</span>':ps==='failed'?'<span style="font-family:var(--sans);font-size:10px;color:var(--red);padding:2px 6px;background:rgba(239,68,68,.1);border-radius:4px">Failed</span>':'<span style="font-family:var(--sans);font-size:10px;color:var(--amber);padding:2px 6px;background:rgba(245,158,11,.1);border-radius:4px">'+esc(ps)+'</span>';const srcLabel=doc.source?({'edgar':'🏛','ir_scrape':'🔎','ir_llm':'🤖','manual':'📎','investegate':'📰'}[doc.source]||''):'';h+='<div class="fr" style="flex-wrap:wrap;gap:6px"><span>'+icon+'</span>'+(doc.source_url?'<a href="'+esc(doc.source_url)+'" target="_blank" rel="noopener" class="fn" style="min-width:150px;text-decoration:none;color:var(--text)" onmouseover="this.style.color=\'var(--gold)\'" onmouseout="this.style.color=\'var(--text)\'" title="Open source document">'+esc(doc.title||'Untitled')+'</a>':'<span class="fn" style="min-width:150px">'+esc(doc.title||'Untitled')+'</span>');h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto;color:var(--gold)" onchange="updateDocMeta(\''+doc.id+'\',{document_type:this.value},\''+ticker+'\')">'+edgarDocTypeOpts(doc.document_type)+'</select>';h+='<select class="fi" style="font-size:10px;padding:2px 6px;width:auto" onchange="updateDocMeta(\''+doc.id+'\',{period_label:this.value},\''+ticker+'\')">'+edgarPeriodOpts(p)+'</select>';h+='<span style="font-size:10px;color:var(--text4)">'+srcLabel+'</span>'+psBadge;h+='<span class="fs">'+esc((doc.published_at||doc.created_at)?.split('T')[0]||'')+'</span><a href="/api/v1/documents/'+esc(doc.id)+'/file" target="_blank" rel="noopener" class="btn2" style="padding:3px 8px;font-size:10px;color:var(--gold);border-color:var(--gold);text-decoration:none" title="View original PDF inline">📎 PDF</a><button class="btn2" style="padding:3px 8px;font-size:10px;color:var(--red);border-color:#3d1f23" onclick="deleteDoc(\''+doc.id+'\',\''+ticker+'\')">Remove</button></div>';});}
     h+='<div style="margin-top:12px;margin-bottom:16px"><div class="af" onclick="E(\'add-doc-'+esc(p)+'\').click()"><span style="font-size:18px">+</span> Add more documents to '+esc(p)+'</div>';
     h+='<input type="file" id="add-doc-'+esc(p)+'" accept=".pdf,.docx,.txt" style="display:none" multiple onchange="handleAddDocs(this,\''+esc(ticker)+'\',\''+esc(p)+'\')">';
     h+='<div id="add-doc-list-'+esc(p)+'"></div></div>';
@@ -1338,6 +1338,33 @@ function handleAddDocs(input,ticker,period){
   // Store files for upload
   window._addDocFiles=staged;
   input.value='';
+}
+
+// Consensus pack upload — bound to the "+ Consensus pack" button in
+// the Documents in Period header. Drops the file straight in tagged
+// document_type='consensus' so the existing pipeline parses it and
+// the consensus_extractor LLM step persists the rows. No staging UI
+// (the analyst already chose to upload as consensus by clicking the
+// dedicated button).
+async function handleAddConsensus(input,ticker,period){
+  var f=(input.files||[])[0];
+  if(!f){return;}
+  input.value='';
+  toast('Uploading consensus pack '+f.name+'…');
+  try{
+    var fd=new FormData();
+    fd.append('files',f);
+    fd.append('period_label',period);
+    fd.append('document_types','consensus');
+    var r=await fetch('/api/v1/companies/'+enc(ticker)+'/documents/batch-upload',{method:'POST',body:fd});
+    if(!r.ok){var e=await r.json().catch(function(){return{};});throw new Error(e.detail||('HTTP '+r.status));}
+    var d=await r.json();
+    var resDiv=E('res-'+period);
+    if(resDiv){
+      resDiv.innerHTML='<div id="reprocess-progress" style="padding:24px"><div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><div style="font-family:var(--sans);font-size:14px;color:var(--gold)">📊 Extracting consensus from '+esc(f.name)+'…</div><div id="reprocess-step" style="font-family:var(--sans);font-size:12px;color:var(--text4);margin-left:auto">Starting…</div></div><div style="width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="reprocess-bar" style="height:100%;width:0%;background:var(--gold);border-radius:3px;transition:width .5s"></div></div><div id="reprocess-log" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8"><div style="color:var(--text4)">Waiting for logs…</div></div></div>';
+    }
+    pollReprocess(d.job_id,ticker,period);
+  }catch(e){toast('Consensus upload failed: '+e.message);}
 }
 
 async function uploadAddDocs(ticker,period,count){
@@ -2072,7 +2099,59 @@ async function loadReconciliationBanner(ticker,period,docs){
   }catch(e){/* non-fatal */}
 }
 
-// ─── Quarterly Summary panel — actuals × consensus × YoY ────────
+// ─── Financial Summary — analyst-template table (max ~20 lines) ──
+// Mirrors the buy-side pad layout: IS → CF → BS → Returns → Per Share.
+// Each row maps to extracted metrics by canonical name (with fallbacks);
+// derived rows (margins, growth, ratios) compute from the matched
+// upstream metrics. Rows without data are skipped so the rendered
+// table stays compact.
+const FIN_TEMPLATE = [
+  {section:'Income Statement', rows:[
+    {label:'Revenue',          match:['revenue','total revenue','net sales','total income','turnover','group revenue','net interest income'], type:'currency'},
+    {label:'  Change',         derived:'yoy', from:'Revenue',                         type:'pct'},
+    {label:'Gross profit',     match:['gross profit'],                                 type:'currency'},
+    {label:'  Margin',         derived:'ratio', num:'Gross profit', den:'Revenue',     type:'pct'},
+    {label:'EBITDA',           match:['ebitda','adjusted ebitda'],                     type:'currency'},
+    {label:'  Margin',         derived:'ratio', num:'EBITDA', den:'Revenue',           type:'pct'},
+    {label:'Operating profit', match:['operating profit','operating income','ebit'],   type:'currency'},
+    {label:'  Margin',         derived:'ratio', num:'Operating profit', den:'Revenue', type:'pct'},
+    {label:'Net interest',     match:['net interest','net interest expense'],          type:'currency'},
+    {label:'Net income',       match:['net income','net profit','profit for the period','net income (attributable)'], type:'currency'},
+    {label:'  Margin',         derived:'ratio', num:'Net income', den:'Revenue',       type:'pct'},
+    {label:'Net income (adj.)',match:['adjusted net income','underlying net income'],  type:'currency'},
+    {label:'  Margin',         derived:'ratio', num:'Net income (adj.)', den:'Revenue',type:'pct'},
+  ]},
+  {section:'Cash Flow', rows:[
+    {label:'OCF',              match:['operating cash flow','cash from operations'],   type:'currency'},
+    {label:'Capex + leases',   match:['capex','capital expenditure','capital expenditures'], type:'currency'},
+    {label:'  % Sales',        derived:'ratio', num:'Capex + leases', den:'Revenue',   type:'pct', invert:true},
+    {label:'FCF',              match:['free cash flow','fcf'],                         type:'currency'},
+    {label:'Dividend',         match:['dividends paid','total dividends','dividend'],  type:'currency'},
+    {label:'Buyback (net)',    match:['share buyback','buyback','share repurchases','treasury share purchase'], type:'currency'},
+  ]},
+  {section:'Balance Sheet', rows:[
+    {label:'Net Debt',         match:['net debt'],                                     type:'currency'},
+    {label:'  Net Debt/EBITDA',derived:'ratio', num:'Net Debt', den:'EBITDA',          type:'x'},
+    {label:'Equity',           match:['total equity','shareholders equity','stockholders equity'], type:'currency'},
+  ]},
+  {section:'Returns', rows:[
+    {label:'ROE',              match:['roe','return on equity'],                       type:'pct'},
+    {label:'ROIC',             match:['roic','return on invested capital'],            type:'pct'},
+  ]},
+  {section:'Per Share', rows:[
+    {label:'EPS',              match:['eps','earnings per share','eps (diluted)','diluted eps','eps_diluted'], type:'per_share'},
+    {label:'DPS',              match:['dps','dividend per share','dividends per share'], type:'per_share'},
+    {label:'Book value/sh',    match:['book value per share'],                         type:'per_share'},
+  ]},
+];
+
+// Operational metrics block — anything from extracted_metrics that
+// isn't matched into the standard template. Capped at FIN_OPS_MAX so
+// segment breakdowns / company-specific KPIs (NIM, CET1, combined
+// ratio, RPK, store count, ARR, churn …) surface without exploding
+// the table.
+const FIN_OPS_MAX = 12;
+
 async function loadResultsSummary(ticker,period){
   var el=document.getElementById('results-summary-'+period);
   if(!el)return;
@@ -2080,20 +2159,17 @@ async function loadResultsSummary(ticker,period){
     var r=await fetch('/api/v1/companies/'+enc(ticker)+'/results-summary?period='+encodeURIComponent(period));
     if(!r.ok){el.innerHTML='';return;}
     var d=await r.json();
-    if(!d.rows||!d.rows.length){
-      el.innerHTML=renderConsensusUploadHint(ticker,period,0,0);
-      return;
-    }
-    el.innerHTML=renderResultsSummaryCard(ticker,period,d);
+    var rows=d.rows||[];
+    if(!rows.length){el.innerHTML='';return;}
+    el.innerHTML=renderFinancialSummary(ticker,period,d);
   }catch(e){el.innerHTML='';}
 }
 
 function _fmtNum(v,unit){
   if(v===null||v===undefined||isNaN(v))return '—';
   var u=(unit||'').toUpperCase();
-  var abs=Math.abs(v);
-  // Currency-in-millions / billions formatting; pass through %, x, bps as-is.
   if(u==='%'||u==='X'||u==='BPS')return v.toFixed(2)+(u==='%'?'%':u==='X'?'x':'bps');
+  var abs=Math.abs(v);
   if(abs>=1000)return (v/1000).toFixed(2)+'k';
   if(abs>=10)return v.toFixed(0);
   return v.toFixed(2);
@@ -2110,30 +2186,188 @@ function _bmColour(pct){
   return 'var(--amber)';
 }
 
-function renderConsensusUploadHint(ticker,period,withCons,total){
-  var h='<div class="cd" style="padding:14px 18px;margin-bottom:12px;border-left:3px solid var(--gold)">';
-  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:14px">📊</span><span style="font-family:var(--sans);font-size:12px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.5px">Consensus comparison</span></div>';
-  h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text3);line-height:1.5">No consensus expectations uploaded for '+esc(period)+'. ';
-  h+='Either (a) upload a consensus PDF / spreadsheet via the <strong>Documents</strong> tab and tag it <code style="font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 6px;border-radius:4px">Consensus / Estimates</code> — the LLM will extract the values automatically — or (b) <a href="#" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\');return false;" style="color:var(--gold)">paste a CSV directly</a>.</div>';
-  h+='</div>';
-  return h;
+// Build a name→row index for fast lookups during template matching.
+function _indexRows(rows){
+  var by={};
+  rows.forEach(function(r){
+    var k=(r.metric_name||'').trim().toLowerCase();
+    if(!k)return;
+    // First-write wins — /results-summary already deduped + sorted.
+    if(!by[k])by[k]=r;
+  });
+  return by;
 }
 
-function renderResultsSummaryCard(ticker,period,d){
+// Resolve the template row's matched extracted metric (if any).
+function _resolveTemplate(tplRow,index,matchedLabels){
+  if(tplRow.derived){
+    var num=matchedLabels[tplRow.num];
+    var den=matchedLabels[tplRow.den||tplRow.from];
+    if(tplRow.derived==='yoy'){
+      if(num&&num.actual!=null&&num.prior_value!=null&&num.prior_value!==0){
+        return {actual:(num.actual-num.prior_value)/Math.abs(num.prior_value)*100, unit:'%', consensus:null, beat_miss_pct:null};
+      }
+      return null;
+    }
+    if(tplRow.derived==='ratio'){
+      if(num&&den&&num.actual!=null&&den.actual!=null&&den.actual!==0){
+        var ratio=num.actual/den.actual;
+        if(tplRow.type==='pct')ratio*=100;
+        return {actual:ratio, unit:tplRow.type==='pct'?'%':(tplRow.type==='x'?'x':null), consensus:null, beat_miss_pct:null};
+      }
+      return null;
+    }
+    return null;
+  }
+  // Direct match by canonical name (case-insensitive substring).
+  for(var i=0;i<tplRow.match.length;i++){
+    var key=tplRow.match[i].toLowerCase();
+    if(index[key])return index[key];
+  }
+  // Fallback: substring match on the metric_name keys.
+  var keys=Object.keys(index);
+  for(var j=0;j<tplRow.match.length;j++){
+    var t=tplRow.match[j].toLowerCase();
+    for(var k=0;k<keys.length;k++){
+      if(keys[k]===t||keys[k].indexOf(t)>=0)return index[keys[k]];
+    }
+  }
+  return null;
+}
+
+function renderFinancialSummary(ticker,period,d){
   var rows=d.rows||[];
-  var withCons=rows.filter(function(r){return r.has_consensus&&r.actual!==null;});
-  var h='<div class="cd" style="padding:16px 20px;margin-bottom:16px;border-left:3px solid var(--gold)">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
+  var index=_indexRows(rows);
+  var consUploaded=d.consensus_uploaded||0;
+  var withCons=d.rows_with_consensus||0;
+
+  // Walk template; collect matched rows + remember matches by label
+  // so derived rows (margins, growth) can reference upstream values.
+  var matched={};       // label → /results-summary row
+  var sections=[];      // [{title, lines:[{label, value, fmt, vsCons, vsConsCol}]}]
+  FIN_TEMPLATE.forEach(function(sec){
+    var lines=[];
+    sec.rows.forEach(function(tplRow){
+      var data=_resolveTemplate(tplRow,index,matched);
+      if(!data)return;
+      // Only persist non-derived matches into `matched` — derived rows
+      // shouldn't be reusable as upstream for further derivations.
+      if(!tplRow.derived)matched[tplRow.label]=data;
+      var unit=data.unit||(tplRow.type==='pct'?'%':(tplRow.type==='x'?'x':''));
+      var valStr;
+      if(tplRow.type==='pct')valStr=_fmtPct(data.actual);
+      else valStr=_fmtNum(data.actual,unit);
+      // Inline vs-consensus when available.
+      var vsCons='', vsCol='var(--text4)';
+      if(data.has_consensus&&data.beat_miss_pct!=null){
+        vsCons=_fmtPct(data.beat_miss_pct)+' vs cons';
+        vsCol=_bmColour(data.beat_miss_pct);
+      }
+      lines.push({label:tplRow.label, value:valStr, vsCons:vsCons, vsCol:vsCol, derived:!!tplRow.derived});
+    });
+    if(lines.length)sections.push({title:sec.section, lines:lines});
+  });
+
+  // Operational metrics — extracted rows that didn't match any template
+  // line + carry an actual value. Cap at FIN_OPS_MAX, prefer rows with
+  // a segment tag or higher confidence.
+  var matchedKeys={};
+  rows.forEach(function(r){
+    var k=(r.metric_name||'').trim().toLowerCase();
+    Object.keys(matched).forEach(function(){});
+  });
+  // Build a set of metric keys covered by the template's direct matches.
+  var templateMatchKeys=new Set();
+  FIN_TEMPLATE.forEach(function(sec){
+    sec.rows.forEach(function(tpl){
+      if(!tpl.match)return;
+      tpl.match.forEach(function(m){
+        var key=m.toLowerCase();
+        if(index[key])templateMatchKeys.add(key);
+      });
+    });
+  });
+  var ops=rows.filter(function(r){
+    if(r.actual==null)return false;
+    var k=(r.metric_name||'').trim().toLowerCase();
+    if(templateMatchKeys.has(k))return false;
+    if(/^guidance:/i.test(r.metric_name))return false;
+    return true;
+  });
+  ops.sort(function(a,b){
+    var aSeg=(a.segment?1:0), bSeg=(b.segment?1:0);
+    if(aSeg!==bSeg)return bSeg-aSeg;
+    return (b.confidence||0)-(a.confidence||0);
+  });
+  ops=ops.slice(0,FIN_OPS_MAX);
+
+  // ── Render ───────────────────────────────────────────────────
+  var h='<div class="cd" style="padding:18px 22px;margin-bottom:16px;border-left:3px solid var(--gold)">';
+  // Header
+  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+  h+='<div class="cd-t" style="margin:0">Financial Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
+  var consBadge=consUploaded>0?(withCons+' / '+consUploaded+' matched to consensus'):'no consensus uploaded';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+(d.prior_period?'YoY vs '+esc(d.prior_period)+' · ':'')+esc(consBadge)+'</div>';
+  h+='</div>';
+
+  if(!sections.length&&!ops.length){
+    h+='<div style="font-family:var(--sans);font-size:12px;color:var(--text4)">No template metrics matched. Either extraction is thin or metric names need normalising.</div>';
+    h+='</div>';return h;
+  }
+
+  // Two-column layout when both blocks have content
+  h+='<div style="display:grid;grid-template-columns:'+(ops.length?'1fr 1fr':'1fr')+';gap:24px;align-items:start">';
+
+  // Template column
   h+='<div>';
-  h+='<div class="cd-t" style="margin:0 0 4px 0">Quarterly Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
-  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+rows.length+' metrics · '+withCons.length+' vs consensus · '+(d.prior_period?'YoY vs '+esc(d.prior_period):'no prior period')+'</div>';
+  sections.forEach(function(sec){
+    h+='<div style="font-family:var(--sans);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gold);margin:14px 0 6px 0;border-bottom:1px solid var(--border);padding-bottom:4px">'+esc(sec.title)+'</div>';
+    sec.lines.forEach(function(l){
+      var indent=l.derived?'  ':'';
+      var labelStyle=l.derived?'color:var(--text3);font-size:11px':'color:var(--text);font-size:12px;font-weight:500';
+      var valStyle=l.derived?'color:var(--text3);font-size:11px':'color:var(--text);font-size:12px;font-weight:600';
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;gap:10px;font-family:var(--sans)">';
+      h+='<span style="'+labelStyle+';white-space:pre">'+esc(indent+l.label.replace(/^\s+/,''))+'</span>';
+      h+='<div style="display:flex;align-items:baseline;gap:10px">';
+      if(l.vsCons)h+='<span style="font-family:var(--sans);font-size:10px;color:'+l.vsCol+'">'+esc(l.vsCons)+'</span>';
+      h+='<span style="'+valStyle+';font-family:var(--mono);min-width:60px;text-align:right">'+esc(l.value)+'</span>';
+      h+='</div>';
+      h+='</div>';
+    });
+  });
   h+='</div>';
-  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-  h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="openConsensusPaste(\''+esc(ticker)+'\',\''+esc(period)+'\')">+ Paste consensus (CSV)</button>';
-  h+='<button class="btn2" style="padding:5px 11px;font-size:11px" onclick="loadResultsSummary(\''+esc(ticker)+'\',\''+esc(period)+'\')">⟳ Refresh</button>';
-  h+='</div>';
-  h+='</div>';
-  h+='</div>';
+
+  // Operational metrics column
+  if(ops.length){
+    h+='<div>';
+    h+='<div style="font-family:var(--sans);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gold);margin:14px 0 6px 0;border-bottom:1px solid var(--border);padding-bottom:4px">Operational Metrics</div>';
+    ops.forEach(function(r){
+      var unit=r.unit||r.consensus_unit||'';
+      var val=_fmtNum(r.actual,unit);
+      var seg=r.segment?(' '+r.segment):'';
+      var vsCons='',vsCol='var(--text4)';
+      if(r.has_consensus&&r.beat_miss_pct!=null){
+        vsCons=_fmtPct(r.beat_miss_pct)+' vs cons';
+        vsCol=_bmColour(r.beat_miss_pct);
+      }
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;gap:10px;font-family:var(--sans)">';
+      h+='<span style="color:var(--text);font-size:12px"><span style="font-weight:500">'+esc(r.metric_name)+'</span>';
+      if(r.segment)h+=' <span style="color:var(--text4);font-size:10px">· '+esc(r.segment)+'</span>';
+      if(unit)h+=' <span style="color:var(--text4);font-size:10px">'+esc(unit)+'</span>';
+      h+='</span>';
+      h+='<div style="display:flex;align-items:baseline;gap:10px">';
+      if(vsCons)h+='<span style="font-family:var(--sans);font-size:10px;color:'+vsCol+'">'+esc(vsCons)+'</span>';
+      h+='<span style="color:var(--text);font-size:12px;font-weight:600;font-family:var(--mono);min-width:60px;text-align:right">'+esc(val)+'</span>';
+      h+='</div>';
+      h+='</div>';
+    });
+    if((rows.filter(function(r){return r.actual!=null&&!templateMatchKeys.has((r.metric_name||'').trim().toLowerCase())&&!/^guidance:/i.test(r.metric_name);}).length)>FIN_OPS_MAX){
+      h+='<div style="margin-top:8px;font-family:var(--sans);font-size:10px;color:var(--text4)">+ '+(rows.length-FIN_OPS_MAX-sections.reduce(function(s,x){return s+x.lines.length;},0))+' more — see KPIs tab</div>';
+    }
+    h+='</div>';
+  }
+  h+='</div>'; // grid
+  h+='</div>'; // card
   return h;
 }
 
