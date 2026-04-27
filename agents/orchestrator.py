@@ -593,7 +593,7 @@ class AgentOrchestrator:
         self, db: AsyncSession, company_id: str, period_label: str
     ) -> bool:
         """Phase A is complete only when EVERY document in the period has
-        both been parsed AND had extraction run against it.
+        been parsed AND had extraction run against it.
 
         Parsing alone isn't enough — the batch pipeline parses first,
         then runs section-aware / two-pass extraction, which can take
@@ -601,43 +601,50 @@ class AgentOrchestrator:
         reads 'completed' but metrics haven't been written yet. Firing
         agents in that window hands them an empty extraction dataset.
 
-        ExtractionProfile is written once per document at the END of
-        the extractor's `_persist_extraction_profile` call, so its
-        presence is a reliable "extraction actually finished" signal.
-        We require one ExtractionProfile row per Document in the period."""
+        Two extraction-completion signals are accepted, either suffices:
+          • ExtractionProfile row present (clean shutdown)
+          • At least one ExtractedMetric row present (worker crashed
+            after metric INSERT but before profile UPSERT — Sanofi
+            2026_Q1 hit this on the 2026-04-27 OOM restart)
+
+        Intersect with current-period document IDs so orphan
+        metric.document_id values from deleted/re-tagged docs don't
+        inflate the count past `total_docs`."""
         try:
-            from apps.api.models import Document, ExtractionProfile
+            from apps.api.models import Document, ExtractionProfile, ExtractedMetric
             from sqlalchemy import func
-            # Total document count for this period
-            doc_q = await db.execute(
-                select(func.count(Document.id))
+            # All documents in the period and how many are parsed.
+            doc_rows_q = await db.execute(
+                select(Document.id, Document.parsing_status)
                 .where(Document.company_id == company_id)
                 .where(Document.period_label == period_label)
-                .where(Document.parsing_status == "completed")
             )
-            total_parsed = int(doc_q.scalar() or 0)
-            if total_parsed == 0:
+            doc_rows = doc_rows_q.all()
+            total_docs = len(doc_rows)
+            if total_docs == 0:
+                return False
+            total_parsed = sum(1 for _id, ps in doc_rows if ps == "completed")
+            if total_parsed != total_docs:
                 return False
 
-            # Documents with at least one ExtractionProfile row
-            # (distinct document_id because a reprocess can create >1)
-            prof_q = await db.execute(
-                select(func.count(func.distinct(ExtractionProfile.document_id)))
+            docs_in_period = {did for did, _ps in doc_rows}
+
+            prof_doc_ids_q = await db.execute(
+                select(func.distinct(ExtractionProfile.document_id))
                 .where(ExtractionProfile.company_id == company_id)
                 .where(ExtractionProfile.period_label == period_label)
             )
-            total_with_profile = int(prof_q.scalar() or 0)
-
-            # Also require the total document count (parsed or not) matches
-            # — otherwise a mid-parse document would let us slip through.
-            total_q = await db.execute(
-                select(func.count(Document.id))
-                .where(Document.company_id == company_id)
-                .where(Document.period_label == period_label)
+            metric_doc_ids_q = await db.execute(
+                select(func.distinct(ExtractedMetric.document_id))
+                .where(ExtractedMetric.company_id == company_id)
+                .where(ExtractedMetric.period_label == period_label)
+                .where(ExtractedMetric.document_id.is_not(None))
             )
-            total_docs = int(total_q.scalar() or 0)
+            extracted_ids = {row[0] for row in prof_doc_ids_q.all() if row[0]}
+            extracted_ids |= {row[0] for row in metric_doc_ids_q.all() if row[0]}
+            extracted_ids &= docs_in_period
 
-            return total_docs > 0 and total_parsed == total_docs and total_with_profile == total_docs
+            return len(extracted_ids) == total_docs
         except Exception as e:
             logger.warning("Phase A check failed: %s", str(e)[:200])
             return False
