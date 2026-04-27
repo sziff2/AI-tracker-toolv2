@@ -44,37 +44,44 @@ _PROMPT = """You are extracting CONSENSUS / STREET ESTIMATE values from a resear
 Company: {company_name} ({ticker})
 Period:  {period_label}
 
-The document below is an analyst-curated consensus pack — it typically contains:
-  • Broker / sell-side mean or median estimates
-  • Per-metric consensus tables (Bloomberg / VARA / Visible Alpha export)
-  • Comparison tables with Actual / Reported and Consensus / Estimate columns
+The document is an analyst-curated consensus pack — typically Bloomberg /
+VARA / Visible Alpha exports with one row per metric and many columns per
+broker (Mean Consensus, Median Consensus, High, Low, then individual broker
+estimates from Barclays, DB, Citi, JPM, etc.).
 
-Your job: extract the CONSENSUS column ONLY. Do NOT extract the actual /
-reported figures — those already live elsewhere in the system.
+═══════════════════════════════════════════════════════════════
+ABSOLUTE OUTPUT CONSTRAINTS — read carefully:
 
-Output a JSON object: {{"items": [...]}}. Each item has:
-  metric_name      — canonical metric name (e.g. "Total Income", "NII", "EPS",
-                     "Operating Profit", "ROE", "Cost/Income Ratio", "CET1 Ratio")
+  1. ONE row per metric (per segment if applicable). NEVER emit one row
+     per broker. The output should be ~15-40 items total, NOT 200+.
+
+  2. Pick the BEST single consensus value per metric using this priority:
+       a) "Median Consensus" column   → source="consensus (median)"
+       b) "Mean Consensus" column     → source="consensus (mean)"
+       c) Single broker if no median  → source="<broker name>"
+     Ignore High / Low / individual broker columns when a median or mean
+     is present.
+
+  3. Skip "Actuals" / "Reported" columns — actuals live elsewhere.
+
+  4. Skip per-period columns that don't match {period_label} (e.g. if
+     the workbook has Q1/Q2/Q3 columns, take only the {period_label} one).
+
+  5. Skip rows with no numeric estimate (qualitative outlook → skip).
+
+  6. Do not invent. If unclear whether a number is consensus or actual,
+     leave it out.
+═══════════════════════════════════════════════════════════════
+
+Output JSON: {{"items": [...]}}. Each item:
+  metric_name      — canonical name (e.g. "Revenue", "EPS", "Operating Profit",
+                     "Sales: Dupixent" for segment lines)
+  segment          — segment / product / business-unit name OR null
   consensus_value  — number ONLY (no currency or unit symbol)
-  unit             — e.g. "SEK_M", "USD_M", "EUR_M", "GBP_M", "%", "x", "bps",
-                     "SEK" for per-share metrics. Use null when ambiguous.
-  source           — broker name when single-source ("Goldman Sachs",
-                     "Morgan Stanley"). Use "consensus" when median/mean
-                     across multiple analysts. Use the document's own
-                     description otherwise.
-  notes            — optional one-line context (e.g. "median of 14 brokers",
-                     "ex-VAT refund")
-
-CRITICAL rules:
-  1. Consensus only — never copy actuals, prior-period figures, or YoY change.
-  2. Period scope — only extract values that match {period_label}. If the
-     document covers multiple periods, ignore non-matching ones.
-  3. Numeric only — if a row has no numeric estimate (qualitative outlook),
-     skip it.
-  4. Don't invent — if you can't tell whether a number is consensus or
-     actual, leave it out.
-  5. Per-share figures stay in the per-share unit — if EPS consensus is
-     "SEK 2.98", emit consensus_value=2.98, unit="SEK".
+  unit             — "USD_M" / "EUR_M" / "GBP_M" / "SEK_M" / "%" / "x" /
+                     "bps" / "EUR" (per-share), or null when ambiguous
+  source           — "consensus (median)" | "consensus (mean)" | broker name
+  notes            — optional ≤1-line context (e.g. "median of 14 brokers")
 
 Respond ONLY with the JSON object. No preamble, no markdown fences.
 
@@ -136,7 +143,7 @@ async def extract_consensus(
                 native = await call_llm_native_async(
                     prompt,
                     model=_settings.agent_default_model,
-                    max_tokens=8192,
+                    max_tokens=16384,
                     feature="consensus_extraction_pdf",
                     ticker=ticker,
                     pdf_path=pdf_path,
@@ -148,13 +155,13 @@ async def extract_consensus(
                 logger.warning("Native-PDF consensus path failed for doc %s, falling back to text: %s",
                                document.id, str(native_exc)[:200])
                 result = await call_llm_json_async(
-                    prompt, max_tokens=8192,
+                    prompt, max_tokens=16384,
                     feature="consensus_extraction", ticker=ticker, tier="standard",
                 )
         else:
             result = await call_llm_json_async(
                 prompt,
-                max_tokens=8192,
+                max_tokens=16384,
                 feature="consensus_extraction",
                 ticker=ticker,
                 tier="standard",
