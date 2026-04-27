@@ -136,7 +136,7 @@ async def extract_consensus(
                 native = await call_llm_native_async(
                     prompt,
                     model=_settings.agent_default_model,
-                    max_tokens=4096,
+                    max_tokens=8192,
                     feature="consensus_extraction_pdf",
                     ticker=ticker,
                     pdf_path=pdf_path,
@@ -148,13 +148,13 @@ async def extract_consensus(
                 logger.warning("Native-PDF consensus path failed for doc %s, falling back to text: %s",
                                document.id, str(native_exc)[:200])
                 result = await call_llm_json_async(
-                    prompt, max_tokens=4096,
+                    prompt, max_tokens=8192,
                     feature="consensus_extraction", ticker=ticker, tier="standard",
                 )
         else:
             result = await call_llm_json_async(
                 prompt,
-                max_tokens=4096,
+                max_tokens=8192,
                 feature="consensus_extraction",
                 ticker=ticker,
                 tier="standard",
