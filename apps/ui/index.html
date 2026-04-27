@@ -2168,11 +2168,15 @@ async function loadResultsSummary(ticker,period){
 function _fmtNum(v,unit){
   if(v===null||v===undefined||isNaN(v))return '—';
   var u=(unit||'').toUpperCase();
-  if(u==='%'||u==='X'||u==='BPS')return v.toFixed(2)+(u==='%'?'%':u==='X'?'x':'bps');
+  if(u==='%')return v.toFixed(2)+'%';
+  if(u==='X')return v.toFixed(2)+'x';
+  if(u==='BPS')return v.toFixed(0)+'bps';
   var abs=Math.abs(v);
-  if(abs>=1000)return (v/1000).toFixed(2)+'k';
-  if(abs>=10)return v.toFixed(0);
-  return v.toFixed(2);
+  // Currency-in-millions style — keep the value, just add thousands sep.
+  // Per-share / small ratios (<10) → 2 decimals.
+  if(abs<1)return v.toFixed(3);
+  if(abs<10)return v.toFixed(2);
+  return Math.round(v).toLocaleString('en-US');
 }
 function _fmtPct(v){
   if(v===null||v===undefined||isNaN(v))return '—';
@@ -2186,11 +2190,19 @@ function _bmColour(pct){
   return 'var(--amber)';
 }
 
+// Normalise a metric name for matching — collapse underscores /
+// hyphens / multiple spaces so the template (which uses "operating
+// profit") matches snake_case ("operating_income") and TitleCase
+// ("Operating Profit") sources alike.
+function _matchKey(name){
+  return (name||'').toLowerCase().replace(/[_\-]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
 // Build a name→row index for fast lookups during template matching.
 function _indexRows(rows){
   var by={};
   rows.forEach(function(r){
-    var k=(r.metric_name||'').trim().toLowerCase();
+    var k=_matchKey(r.metric_name);
     if(!k)return;
     // First-write wins — /results-summary already deduped + sorted.
     if(!by[k])by[k]=r;
@@ -2219,17 +2231,19 @@ function _resolveTemplate(tplRow,index,matchedLabels){
     }
     return null;
   }
-  // Direct match by canonical name (case-insensitive substring).
+  // Direct match — _matchKey-normalised on both sides so snake_case,
+  // TitleCase, hyphenated all collapse to the same canonical form.
   for(var i=0;i<tplRow.match.length;i++){
-    var key=tplRow.match[i].toLowerCase();
+    var key=_matchKey(tplRow.match[i]);
     if(index[key])return index[key];
   }
-  // Fallback: substring match on the metric_name keys.
+  // Fallback: token-aware substring match. Either the template term
+  // is a substring of the metric key OR vice versa, after normalisation.
   var keys=Object.keys(index);
   for(var j=0;j<tplRow.match.length;j++){
-    var t=tplRow.match[j].toLowerCase();
+    var t=_matchKey(tplRow.match[j]);
     for(var k=0;k<keys.length;k++){
-      if(keys[k]===t||keys[k].indexOf(t)>=0)return index[keys[k]];
+      if(keys[k]===t||keys[k].indexOf(t)>=0||t.indexOf(keys[k])>=0)return index[keys[k]];
     }
   }
   return null;
@@ -2276,20 +2290,18 @@ function renderFinancialSummary(ticker,period,d){
     var k=(r.metric_name||'').trim().toLowerCase();
     Object.keys(matched).forEach(function(){});
   });
-  // Build a set of metric keys covered by the template's direct matches.
+  // Build a set of metric keys covered by anything the template matched
+  // (direct OR substring fallback) so we don't double-show them in
+  // Operational Metrics. Walk `matched` (built above), pull the actual
+  // metric_name keys that resolved.
   var templateMatchKeys=new Set();
-  FIN_TEMPLATE.forEach(function(sec){
-    sec.rows.forEach(function(tpl){
-      if(!tpl.match)return;
-      tpl.match.forEach(function(m){
-        var key=m.toLowerCase();
-        if(index[key])templateMatchKeys.add(key);
-      });
-    });
+  Object.keys(matched).forEach(function(label){
+    var row=matched[label];
+    if(row&&row.metric_name)templateMatchKeys.add(_matchKey(row.metric_name));
   });
   var ops=rows.filter(function(r){
     if(r.actual==null)return false;
-    var k=(r.metric_name||'').trim().toLowerCase();
+    var k=_matchKey(r.metric_name);
     if(templateMatchKeys.has(k))return false;
     if(/^guidance:/i.test(r.metric_name))return false;
     return true;
@@ -2301,13 +2313,32 @@ function renderFinancialSummary(ticker,period,d){
   });
   ops=ops.slice(0,FIN_OPS_MAX);
 
+  // Detect dominant currency unit for the FX header. Vote across the
+  // matched template rows; ignore %, x, bps which aren't currencies.
+  var unitVotes={};
+  Object.keys(matched).forEach(function(label){
+    var row=matched[label];
+    if(!row||!row.unit)return;
+    var u=row.unit.toUpperCase();
+    if(u==='%'||u==='X'||u==='BPS')return;
+    unitVotes[u]=(unitVotes[u]||0)+1;
+  });
+  var fxUnit='';
+  Object.keys(unitVotes).forEach(function(u){
+    if(!fxUnit||unitVotes[u]>unitVotes[fxUnit])fxUnit=u;
+  });
+  // Pretty-print "EUR_M" → "EURm", "USD_B" → "USDb".
+  var fxDisplay=fxUnit?fxUnit.replace(/_M$/,'m').replace(/_B$/,'b').replace(/_K$/,'k').replace(/_/,''):'';
+
   // ── Render ───────────────────────────────────────────────────
   var h='<div class="cd" style="padding:18px 22px;margin-bottom:16px;border-left:3px solid var(--gold)">';
   // Header
   h+='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
-  h+='<div class="cd-t" style="margin:0">Financial Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
+  h+='<div><div class="cd-t" style="margin:0">Financial Summary — '+esc(normalisePeriodLabel(period)||period)+'</div>';
+  if(fxDisplay)h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);margin-top:2px">FX: '+esc(fxDisplay)+'</div>';
+  h+='</div>';
   var consBadge=consUploaded>0?(withCons+' / '+consUploaded+' matched to consensus'):'no consensus uploaded';
-  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4)">'+(d.prior_period?'YoY vs '+esc(d.prior_period)+' · ':'')+esc(consBadge)+'</div>';
+  h+='<div style="font-family:var(--sans);font-size:11px;color:var(--text4);text-align:right">'+(d.prior_period?'YoY vs '+esc(d.prior_period)+'<br>':'')+esc(consBadge)+'</div>';
   h+='</div>';
 
   if(!sections.length&&!ops.length){
@@ -2361,8 +2392,15 @@ function renderFinancialSummary(ticker,period,d){
       h+='</div>';
       h+='</div>';
     });
-    if((rows.filter(function(r){return r.actual!=null&&!templateMatchKeys.has((r.metric_name||'').trim().toLowerCase())&&!/^guidance:/i.test(r.metric_name);}).length)>FIN_OPS_MAX){
-      h+='<div style="margin-top:8px;font-family:var(--sans);font-size:10px;color:var(--text4)">+ '+(rows.length-FIN_OPS_MAX-sections.reduce(function(s,x){return s+x.lines.length;},0))+' more — see KPIs tab</div>';
+    var totalOpsAvailable=rows.filter(function(r){
+      if(r.actual==null)return false;
+      var k=_matchKey(r.metric_name);
+      if(templateMatchKeys.has(k))return false;
+      if(/^guidance:/i.test(r.metric_name))return false;
+      return true;
+    }).length;
+    if(totalOpsAvailable>FIN_OPS_MAX){
+      h+='<div style="margin-top:8px;font-family:var(--sans);font-size:10px;color:var(--text4)">+ '+(totalOpsAvailable-FIN_OPS_MAX)+' more — see KPIs tab</div>';
     }
     h+='</div>';
   }
