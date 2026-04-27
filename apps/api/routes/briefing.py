@@ -49,16 +49,27 @@ async def download_briefing_pdf(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    # 2. Latest synthesis for period — try two sources in priority order:
-    #   a) legacy ResearchOutput (full_analysis / batch_synthesis) — the
-    #      older batch pipeline writes here; may be absent on Phase-B
-    #      agent-pipeline runs
-    #   b) the new agent_outputs table — Phase-B pipeline writes structured
-    #      outputs per agent (financial_analyst, debate_agent, bear_case,
-    #      bull_case, guidance_tracker, quality_control). We stitch those
-    #      into a briefing dict the renderer already understands.
+    # 2. Latest synthesis + raw agent outputs.
+    # Always pull agent_outputs — the renderer now mirrors the UI cards
+    # (financial_analyst / transcript / presentation / bear / bull /
+    # debate / QC / competitive_positioning / guidance_tracker) so the
+    # PDF and the UI surface the same structured content. The legacy
+    # ResearchOutput "full_analysis" stitched briefing is kept only as
+    # a fallback for older runs that pre-date the agent pipeline.
     briefing: dict = {}
     agent_outs: dict[str, dict] = {}
+
+    aoq = await db.execute(
+        select(AgentOutput).where(
+            AgentOutput.company_id == company.id,
+            AgentOutput.period_label == period,
+            AgentOutput.status == "completed",
+        ).order_by(desc(AgentOutput.created_at))
+    )
+    for ao in aoq.scalars():
+        # Keep only the most recent output per agent (order is desc)
+        if ao.agent_id not in agent_outs and isinstance(ao.output_json, dict):
+            agent_outs[ao.agent_id] = ao.output_json
 
     out_q = await db.execute(
         select(ResearchOutput).where(
@@ -72,28 +83,17 @@ async def download_briefing_pdf(
         try:
             data = json.loads(analysis.content_json)
             briefing = data.get("synthesis") or data.get("briefing") or {}
-            # Some runs flatten directly onto root — accept that too
             if not briefing and any(k in data for k in ("headline", "bottom_line")):
                 briefing = data
         except Exception as exc:
             logger.warning("briefing content_json parse failed: %s", exc)
 
-    # Fallback: build from agent_outputs if legacy synthesis is absent.
-    if not briefing:
-        aoq = await db.execute(
-            select(AgentOutput).where(
-                AgentOutput.company_id == company.id,
-                AgentOutput.period_label == period,
-                AgentOutput.status == "completed",
-            ).order_by(desc(AgentOutput.created_at))
-        )
-        for ao in aoq.scalars():
-            # Keep only the most recent output per agent (order is desc)
-            if ao.agent_id not in agent_outs and isinstance(ao.output_json, dict):
-                agent_outs[ao.agent_id] = ao.output_json
+    # If nothing stitched but agents are there, fall back to the flat shim
+    # so the renderer's legacy "Bottom line" block isn't empty.
+    if not briefing and agent_outs:
         briefing = _briefing_from_agent_outputs(agent_outs)
 
-    if not briefing:
+    if not briefing and not agent_outs:
         raise HTTPException(
             status_code=409,
             detail=f"No synthesis output for {ticker_u} {period} — run analysis first",
@@ -171,7 +171,17 @@ async def download_briefing_pdf(
             "rationale":   getattr(d, "rationale", "") or getattr(d, "note", ""),
         })
 
-    # 7. Render
+    # 7. Financial Summary feed — same shape as /results-summary so the
+    #    PDF can render the analyst-template table that sits at the top
+    #    of the Results tab in the UI.
+    fin_summary: dict = {}
+    try:
+        from apps.api.routes.consensus import results_summary as _results_summary_route
+        fin_summary = await _results_summary_route(ticker_u, period, db)
+    except Exception as exc:
+        logger.warning("results_summary lookup failed in briefing PDF: %s", str(exc)[:200])
+
+    # 8. Render
     from services.briefing_pdf import render_briefing_pdf
     try:
         pdf_bytes = render_briefing_pdf(
@@ -183,6 +193,8 @@ async def download_briefing_pdf(
             scenarios=scenarios,
             kpi_rows=kpi_rows,
             decisions=decisions,
+            agent_outs=agent_outs,
+            fin_summary=fin_summary,
             generated_at=datetime.now(timezone.utc),
         )
     except Exception as exc:
