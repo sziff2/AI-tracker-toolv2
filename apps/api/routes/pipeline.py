@@ -55,9 +55,21 @@ async def get_phase_a_status(
     # extractor ran successfully — they're written by the same code path
     # but a worker crash between the metric INSERT and the profile UPSERT
     # can leave the profile missing while metrics are present (Sanofi
-    # 2026_Q1 hit this during the OOM restart on 2026-04-27). Without
-    # the OR-fallback that doc would block phase_a_complete forever
-    # despite having 200+ usable metrics in the table.
+    # 2026_Q1 hit this during the OOM restart on 2026-04-27).
+    #
+    # Critical: intersect with the CURRENT period's document IDs. A
+    # naive distinct-count over ExtractedMetric can return MORE rows
+    # than the period actually contains when documents have been
+    # deleted or re-tagged — those orphan metric.document_id values
+    # would otherwise inflate `extracted` past `total` and silently
+    # fail the equality check the other way.
+    docs_in_period_q = await db.execute(
+        select(Document.id)
+        .where(Document.company_id == company.id)
+        .where(Document.period_label == period)
+    )
+    docs_in_period = {row[0] for row in docs_in_period_q.all()}
+
     prof_doc_ids_q = await db.execute(
         select(func.distinct(ExtractionProfile.document_id))
         .where(ExtractionProfile.company_id == company.id)
@@ -69,8 +81,9 @@ async def get_phase_a_status(
         .where(ExtractedMetric.period_label == period)
         .where(ExtractedMetric.document_id.is_not(None))
     )
-    extracted_ids = {row[0] for row in prof_doc_ids_q.all() if row[0]}
-    extracted_ids |= {row[0] for row in metric_doc_ids_q.all() if row[0]}
+    extracted_ids_raw = {row[0] for row in prof_doc_ids_q.all() if row[0]}
+    extracted_ids_raw |= {row[0] for row in metric_doc_ids_q.all() if row[0]}
+    extracted_ids = extracted_ids_raw & docs_in_period
     extracted = len(extracted_ids)
 
     all_parsed = total > 0 and done == total
