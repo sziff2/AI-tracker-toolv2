@@ -351,8 +351,14 @@ def _scenarios_from_agent_outputs(agents: dict[str, dict]) -> dict:
     return out
 
 
-def _compact_str(v, max_len: int = 1200) -> str:
-    """Coerce anything reasonable to a readable single string for the PDF."""
+def _compact_str(v, max_len: int = 20000) -> str:
+    """Coerce anything reasonable to a readable single string for the PDF.
+
+    Default cap was 1200 chars (with nested calls at 300) which clipped
+    bull/bear theses mid-sentence ("The bull case was stro..."). Bumped
+    to 20K so analyst narratives flow through unchanged. Nested dict/
+    list serialisation still uses 800 per sub-value so a single field
+    doesn't dominate."""
     if v is None:
         return ""
     if isinstance(v, (int, float, bool)):
@@ -364,10 +370,10 @@ def _compact_str(v, max_len: int = 1200) -> str:
         for k, val in v.items():
             if val is None or val == "":
                 continue
-            parts.append(f"{k}: {_compact_str(val, max_len=300)}")
+            parts.append(f"{k}: {_compact_str(val, max_len=800)}")
         s = " | ".join(parts)
     elif isinstance(v, list):
-        s = "; ".join(_compact_str(x, max_len=300) for x in v if x not in (None, ""))
+        s = "; ".join(_compact_str(x, max_len=800) for x in v if x not in (None, ""))
     else:
         s = str(v)
     if len(s) > max_len:

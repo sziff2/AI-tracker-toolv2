@@ -777,9 +777,19 @@ def _qc_section(story: list, styles: dict, qc: dict) -> None:
         _bullets(story, styles, qc["flags"])
 
 
-def _compact(v, max_len: int = 2500) -> str:
-    """Like _compact_str in briefing.py but with a longer cap so the
-    PDF preserves narrative length closer to what the UI shows."""
+def _compact(v, max_len: int = 20000) -> str:
+    """Coerce anything reasonable to a single string for the PDF.
+
+    Default cap of 20000 chars is effectively no truncation for
+    narrative agent outputs — bull_thesis / bear_thesis / debate_summary
+    / revenue_assessment etc. are 2-3 paragraph writeups that can run
+    3-6K chars. The previous 2500 cap was clipping them mid-sentence
+    ("The bull case was stro..."). reportlab Paragraph wraps long
+    text fine, so the only reason to cap is for sanity against
+    runaway LLM output (200K+).
+
+    Nested dict / list serialisation passes a smaller cap (400) per
+    sub-value so a single rich-dict field doesn't dominate."""
     if v is None:
         return ""
     if isinstance(v, (int, float, bool)):
