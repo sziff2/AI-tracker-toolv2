@@ -1317,7 +1317,7 @@ function handleAddDocs(input,ticker,period){
     const n=name.toLowerCase();
     if(n.includes('proxy')||n.includes('def14')||n.includes('agm'))return 'proxy_statement';
     if(n.includes('sustainability')||n.includes('esg')||n.includes('csr'))return 'sustainability_report';
-    if(n.includes('consensus')||n.includes('estimates')||n.includes('vara')||n.includes('visible alpha'))return 'consensus';
+    if(n.includes('consensus')||n.includes('estimates')||n.includes('vara')||n.includes('visible alpha')||n.includes('modl')||n.startsWith('model_')||n.includes('_model.')||n.includes('estimateroll')||n.match(/\.xlsx?$/)&&n.match(/(modl|model|consen|estim|broker.?est)/i))return 'consensus';
     if(n.includes('transcript')||n.includes('call'))return 'transcript';
     if(n.includes('broker')||n.includes('note')||n.includes('research'))return 'broker_note';
     if(n.includes('presentation')||n.includes('slides'))return 'presentation';
