@@ -294,7 +294,29 @@ async def results_summary(
     cons_rows = cons_q.scalars().all()
 
     def _key(name: str) -> str:
-        return (name or "").strip().lower()
+        # Mirror the UI's _matchKey() — collapse underscores / hyphens
+        # to spaces so snake_case ("diluted_eps"), Title Case
+        # ("Diluted EPS"), and hyphenated forms all resolve to the
+        # same token. Without this, consensus rows ("Operating Income",
+        # "Diluted EPS") never join Sanofi's actuals ("operating_income",
+        # "diluted_eps") and every consensus shows as consensus_only.
+        import re as _re
+        s = (name or "").lower().replace("_", " ").replace("-", " ")
+        return _re.sub(r"\s+", " ", s).strip()
+
+    def _key_variants(name: str) -> list[str]:
+        """Generate the lookup key plus a couple of common-suffix
+        variants so 'diluted eps' joins 'diluted eps (gaap)' / 'eps
+        diluted' / 'adjusted diluted eps'."""
+        k = _key(name)
+        out = [k]
+        # Strip parenthetical qualifier: "diluted eps (gaap)" → "diluted eps"
+        bare = _re.sub(r"\s*\(.*?\)\s*$", "", k).strip()
+        if bare and bare != k:
+            out.append(bare)
+        return out
+
+    import re as _re
 
     # Index prior + consensus by normalised metric name.
     prior_by_name: dict[str, ExtractedMetric] = {}
@@ -308,12 +330,26 @@ async def results_summary(
 
     cons_by_name: dict[str, ConsensusExpectation] = {}
     for r in cons_rows:
-        cons_by_name[_key(r.metric_name)] = r
+        for k in _key_variants(r.metric_name):
+            # First-write wins so the original (full) name takes priority
+            cons_by_name.setdefault(k, r)
+
+    def _lookup_consensus(name: str) -> ConsensusExpectation | None:
+        # Try the actual's key + variants directly, then substring match.
+        for k in _key_variants(name):
+            if k in cons_by_name:
+                return cons_by_name[k]
+        actual_k = _key(name)
+        for ck, row in cons_by_name.items():
+            if ck and (ck in actual_k or actual_k in ck):
+                return row
+        return None
 
     # Build the joined rows. Drive off actuals, then add consensus-only
     # rows (consensus uploaded but no matching extracted metric — usually
     # means the metric name doesn't align; surface so the analyst sees it).
     seen_keys: set[str] = set()
+    matched_cons_keys: set[str] = set()
     rows: list[dict] = []
 
     for r in cur_rows:
@@ -324,8 +360,10 @@ async def results_summary(
         actual = float(r.metric_value) if r.metric_value is not None else None
         prior = prior_by_name.get(k)
         prior_v = float(prior.metric_value) if (prior and prior.metric_value is not None) else None
-        cons = cons_by_name.get(k)
+        cons = _lookup_consensus(r.metric_name)
         cons_v = float(cons.consensus_value) if (cons and cons.consensus_value is not None) else None
+        if cons is not None:
+            matched_cons_keys.add(_key(cons.metric_name))
 
         yoy_pct = None
         if actual is not None and prior_v not in (None, 0):
@@ -360,8 +398,11 @@ async def results_summary(
 
     # Consensus-only rows (no matching actual). Helpful for the analyst:
     # if they uploaded "Total income" but the extractor wrote "Revenue",
-    # the mismatch is now visible.
+    # the mismatch is now visible. Skip rows already matched via
+    # _lookup_consensus to avoid duplicating them as "consensus_only".
     for k, cons in cons_by_name.items():
+        if k in matched_cons_keys:
+            continue
         if k in seen_keys:
             continue
         cons_v = float(cons.consensus_value) if cons.consensus_value is not None else None
