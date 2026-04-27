@@ -49,6 +49,10 @@ class BullCaseAgent(BaseAgent):
     # Override to Sonnet — mirror of bear_case, same reasoning demands.
     model_override = "claude-sonnet-4-6"
 
+    # Mirror bear_case: 8192 to avoid mid-string JSON truncation on
+    # data-rich companies. See financial_analyst.py for context.
+    max_tokens = 8192
+
     depends_on = ["financial_analyst"]
     feeds_into = ["debate_agent"]   # pm_agent removed — doesn't exist (Tier 7.6)
 

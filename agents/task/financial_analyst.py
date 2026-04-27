@@ -79,6 +79,16 @@ class FinancialAnalystAgent(BaseAgent):
     # this output, so sloppy reasoning here cascades.
     model_override = "claude-sonnet-4-6"
 
+    # Override BaseAgent's 4096-token default. The output structure
+    # (revenue/margin/cash-flow/segment/management commentary +
+    # tracked-KPI scores + key surprises + key assumptions) is verbose
+    # for data-rich companies — Sanofi 2026_Q1 (288 metrics, granular
+    # product franchises, MD&A narrative, RAG passages) ran out of
+    # output tokens at ~3500 and the JSON parse failed mid-string
+    # ("Unterminated string ... char 14149") on 2026-04-27. 8192 is
+    # well within Sonnet's per-call cap and gives ~2x headroom.
+    max_tokens = 8192
+
     # Orchestration
     depends_on = []  # transcript + presentation analyses are pre-built during ingestion
     feeds_into = ["bear_case", "bull_case", "guidance_tracker"]

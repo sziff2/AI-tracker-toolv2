@@ -60,6 +60,11 @@ class DebateAgent(BaseAgent):
     # step in the pipeline; Haiku struggles with the nuance.
     model_override = "claude-sonnet-4-6"
 
+    # 8192 to match bull/bear — debate aggregates BOTH sides plus the
+    # financial_analyst output and produces a synthesis longer than
+    # either input. Same truncation risk; same fix.
+    max_tokens = 8192
+
     depends_on = ["bear_case", "bull_case", "financial_analyst"]
     feeds_into = ["quality_control"]   # pm_agent removed — doesn't exist (Tier 7.6)
 

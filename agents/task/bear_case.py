@@ -56,6 +56,12 @@ class BearCaseAgent(BaseAgent):
     # risk scoring and citation-backed arguments needs quality model.
     model_override = "claude-sonnet-4-6"
 
+    # 8192 vs the BaseAgent default of 4096 — narrative output (bear
+    # thesis + risks + downside scenario + sources) routinely exceeds
+    # 4K on data-rich companies. See financial_analyst.py for the
+    # Sanofi 2026_Q1 truncation that motivated the bump.
+    max_tokens = 8192
+
     depends_on = ["financial_analyst"]
     feeds_into = ["debate_agent"]   # pm_agent removed — doesn't exist (Tier 7.6)
 
