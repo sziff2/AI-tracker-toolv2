@@ -33,8 +33,8 @@ async def get_phase_a_status(
     if not company:
         raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
 
-    from apps.api.models import Document, ExtractionProfile
-    from sqlalchemy import func
+    from apps.api.models import Document, ExtractionProfile, ExtractedMetric
+    from sqlalchemy import func, or_
 
     # Per-status document count for this period
     rows = await db.execute(
@@ -50,13 +50,28 @@ async def get_phase_a_status(
     processing = counts.get("processing", 0)
     failed = counts.get("failed", 0)
 
-    # Distinct documents with at least one ExtractionProfile row
-    prof_q = await db.execute(
-        select(func.count(func.distinct(ExtractionProfile.document_id)))
+    # Documents that have either an ExtractionProfile row OR at least one
+    # ExtractedMetric row count as "extracted". Either signal proves the
+    # extractor ran successfully — they're written by the same code path
+    # but a worker crash between the metric INSERT and the profile UPSERT
+    # can leave the profile missing while metrics are present (Sanofi
+    # 2026_Q1 hit this during the OOM restart on 2026-04-27). Without
+    # the OR-fallback that doc would block phase_a_complete forever
+    # despite having 200+ usable metrics in the table.
+    prof_doc_ids_q = await db.execute(
+        select(func.distinct(ExtractionProfile.document_id))
         .where(ExtractionProfile.company_id == company.id)
         .where(ExtractionProfile.period_label == period)
     )
-    extracted = int(prof_q.scalar() or 0)
+    metric_doc_ids_q = await db.execute(
+        select(func.distinct(ExtractedMetric.document_id))
+        .where(ExtractedMetric.company_id == company.id)
+        .where(ExtractedMetric.period_label == period)
+        .where(ExtractedMetric.document_id.is_not(None))
+    )
+    extracted_ids = {row[0] for row in prof_doc_ids_q.all() if row[0]}
+    extracted_ids |= {row[0] for row in metric_doc_ids_q.all() if row[0]}
+    extracted = len(extracted_ids)
 
     all_parsed = total > 0 and done == total
     all_extracted = all_parsed and extracted == total
@@ -66,13 +81,8 @@ async def get_phase_a_status(
     blocking_docs: list[dict] = []
     if (not all_extracted) and total > 0:
         if all_parsed:
-            # Extraction is the bottleneck — show docs still missing a profile
-            extracted_ids_q = await db.execute(
-                select(func.distinct(ExtractionProfile.document_id))
-                .where(ExtractionProfile.company_id == company.id)
-                .where(ExtractionProfile.period_label == period)
-            )
-            extracted_ids = {row[0] for row in extracted_ids_q.all()}
+            # Extraction is the bottleneck — `extracted_ids` already
+            # includes both ExtractionProfile + ExtractedMetric signals.
             pd_q = await db.execute(
                 select(Document.id, Document.document_type, Document.source_url)
                 .where(Document.company_id == company.id)
