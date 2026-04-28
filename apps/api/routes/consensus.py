@@ -293,56 +293,84 @@ async def results_summary(
     )
     cons_rows = cons_q.scalars().all()
 
-    def _key(name: str) -> str:
-        # Mirror the UI's _matchKey() — collapse underscores / hyphens
-        # to spaces so snake_case ("diluted_eps"), Title Case
-        # ("Diluted EPS"), and hyphenated forms all resolve to the
-        # same token. Without this, consensus rows ("Operating Income",
-        # "Diluted EPS") never join Sanofi's actuals ("operating_income",
-        # "diluted_eps") and every consensus shows as consensus_only.
-        import re as _re
-        s = (name or "").lower().replace("_", " ").replace("-", " ")
-        return _re.sub(r"\s+", " ", s).strip()
-
-    def _key_variants(name: str) -> list[str]:
-        """Generate the lookup key plus a couple of common-suffix
-        variants so 'diluted eps' joins 'diluted eps (gaap)' / 'eps
-        diluted' / 'adjusted diluted eps'."""
-        k = _key(name)
-        out = [k]
-        # Strip parenthetical qualifier: "diluted eps (gaap)" → "diluted eps"
-        bare = _re.sub(r"\s*\(.*?\)\s*$", "", k).strip()
-        if bare and bare != k:
-            out.append(bare)
-        return out
-
     import re as _re
+
+    # Adjectives stripped from both sides before comparing — "adjusted
+    # operating income" + "operating income" should join, but "operating
+    # income growth" should NOT join "operating income" (different metric).
+    _STRIP_PREFIX = {
+        "adjusted", "underlying", "reported", "company", "broker",
+        "consensus", "basis", "gaap", "non-gaap", "diluted", "basic",
+        "total", "net", "core",
+    }
+    # Trailing tokens that change the SUBSTANCE of a metric — never strip.
+    # We don't strip these but we use them to reject sloppy substring
+    # matches (operating_income_growth ≠ operating_income).
+    _SUBSTANCE_TOKENS = {
+        "growth", "yoy", "qoq", "margin", "ratio", "rate", "pct",
+        "change", "delta", "bridge", "gap", "abs", "effect",
+    }
+
+    def _key(name: str) -> str:
+        s = (name or "").lower().replace("_", " ").replace("-", " ")
+        # Collapse parentheticals to spaces so "(GAAP)" doesn't trip token logic.
+        s = _re.sub(r"\(.*?\)", " ", s)
+        s = _re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _core_tokens(name: str) -> tuple[str, ...]:
+        """Tokenise + drop generic adjectives. The remaining ordered
+        tokens are the metric's *substance*. Two metrics join iff their
+        core token tuples are equal AND neither carries a substance
+        token the other lacks."""
+        toks = [t for t in _key(name).split() if t and t not in _STRIP_PREFIX]
+        return tuple(toks)
+
+    def _is_derivative(name: str) -> bool:
+        """Skip rows that compute from a base metric — they share the
+        base name as a substring but represent a different number
+        (e.g. operating_income_growth, BRIDGE_GAP_*, tax_effect_*).
+        Substring fallback would otherwise match these to the absolute
+        consensus and produce nonsense beat/miss values like +250%."""
+        n = (name or "").lower()
+        if any(s in n for s in ("bridge_", "bridge:", "_growth", " growth",
+                                "tax_effect", "_pct", "_yoy", "_qoq",
+                                "_change", "_delta")):
+            return True
+        return False
 
     # Index prior + consensus by normalised metric name.
     prior_by_name: dict[str, ExtractedMetric] = {}
     for r in prior_rows:
         k = _key(r.metric_name)
-        # Keep the highest-confidence row when duplicates exist.
         if k not in prior_by_name or (
             float(r.confidence or 0) > float(prior_by_name[k].confidence or 0)
         ):
             prior_by_name[k] = r
 
-    cons_by_name: dict[str, ConsensusExpectation] = {}
+    # Build TWO consensus indexes: full key + core-token tuple. The
+    # core-tuple lookup catches "Adjusted Operating Income" ↔
+    # "operating_income" while NOT matching "Operating Income Growth"
+    # (different core-token tuple).
+    cons_by_key: dict[str, ConsensusExpectation] = {}
+    cons_by_core: dict[tuple, ConsensusExpectation] = {}
     for r in cons_rows:
-        for k in _key_variants(r.metric_name):
-            # First-write wins so the original (full) name takes priority
-            cons_by_name.setdefault(k, r)
+        cons_by_key.setdefault(_key(r.metric_name), r)
+        core = _core_tokens(r.metric_name)
+        if core:
+            cons_by_core.setdefault(core, r)
 
     def _lookup_consensus(name: str) -> ConsensusExpectation | None:
-        # Try the actual's key + variants directly, then substring match.
-        for k in _key_variants(name):
-            if k in cons_by_name:
-                return cons_by_name[k]
-        actual_k = _key(name)
-        for ck, row in cons_by_name.items():
-            if ck and (ck in actual_k or actual_k in ck):
-                return row
+        if _is_derivative(name):
+            return None
+        # Exact key match
+        k = _key(name)
+        if k in cons_by_key:
+            return cons_by_key[k]
+        # Core-token tuple match (drops "adjusted" / "diluted" / etc.)
+        core = _core_tokens(name)
+        if core and core in cons_by_core:
+            return cons_by_core[core]
         return None
 
     # Build the joined rows. Drive off actuals, then add consensus-only
@@ -400,7 +428,7 @@ async def results_summary(
     # if they uploaded "Total income" but the extractor wrote "Revenue",
     # the mismatch is now visible. Skip rows already matched via
     # _lookup_consensus to avoid duplicating them as "consensus_only".
-    for k, cons in cons_by_name.items():
+    for k, cons in cons_by_key.items():
         if k in matched_cons_keys:
             continue
         if k in seen_keys:
