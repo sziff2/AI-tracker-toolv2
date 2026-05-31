@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     app_password: str = ""          # Set via APP_PASSWORD env var. Empty = no auth.
     session_secret: str = "change-me-in-production"  # Signs session cookies
 
+    # Bearer token for the /api/v1/public/* read-only routes consumed by
+    # external tools (e.g. the LinkedIn agent). Empty = the public routes
+    # are disabled. Set via LINKEDIN_AGENT_API_TOKEN env var.
+    linkedin_agent_api_token: str = ""
+
     # ── Database ─────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/research_agent"
     database_url_sync: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/research_agent"

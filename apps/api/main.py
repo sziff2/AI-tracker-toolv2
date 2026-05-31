@@ -39,6 +39,7 @@ from apps.api.routes import (
 )
 from apps.api.routes.feedback import router as feedback_router
 from apps.api.routes.pipeline import router as pipeline_router
+from apps.api.routes.public_portfolio import router as public_portfolio_router
 from configs.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -507,6 +508,8 @@ app.add_middleware(
     allow_origins=[
         "https://ai-tracker-tool-production.up.railway.app",
         "http://localhost:8000",
+        "http://localhost:5173",
+        "http://localhost:4173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -542,6 +545,23 @@ import secrets
 
 _AUTH_OPEN_PATHS = {"/health", "/robots.txt", "/login", "/auth/login"}
 
+# Read-only public API consumed by external tools (LinkedIn agent etc).
+# Bypasses the session cookie but still requires the bearer token.
+_PUBLIC_API_PREFIX = "/api/v1/public/"
+
+
+def _check_public_bearer(request: Request) -> bool:
+    """True iff path is under the public API and the bearer token matches."""
+    if not request.url.path.startswith(_PUBLIC_API_PREFIX):
+        return False
+    token = settings.linkedin_agent_api_token
+    if not token:
+        return False
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(auth[len("Bearer "):], token)
+
 
 def _sign_session(value: str) -> str:
     """Create a signed session token."""
@@ -565,6 +585,11 @@ if settings.app_password:
         # Allow open paths
         if path in _AUTH_OPEN_PATHS:
             return await call_next(request)
+        # Public read-only API: bearer token instead of session cookie
+        if path.startswith(_PUBLIC_API_PREFIX):
+            if _check_public_bearer(request):
+                return await call_next(request)
+            return JSONResponse({"detail": "Invalid or missing bearer token"}, status_code=401)
         # Check session cookie
         session = request.cookies.get("session")
         if session and _verify_session(session):
@@ -663,6 +688,8 @@ app.include_router(harvester_router, prefix=PREFIX)
 app.include_router(analytics_router, prefix=PREFIX)
 app.include_router(feedback_router, prefix=PREFIX)
 app.include_router(pipeline_router, prefix=PREFIX)
+# Bearer-token read-only API for external tools (LinkedIn agent etc.)
+app.include_router(public_portfolio_router, prefix=PREFIX + "/public")
 
 # Tier 3.3 — briefing PDF download
 from apps.api.routes.briefing import router as briefing_router
