@@ -582,6 +582,11 @@ if settings.app_password:
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
         path = request.url.path
+        # CORS preflight must reach CORSMiddleware untouched — it carries no
+        # Authorization header by design, so auth checks would 401 it and
+        # the browser would surface that as "Failed to fetch".
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # Allow open paths
         if path in _AUTH_OPEN_PATHS:
             return await call_next(request)
